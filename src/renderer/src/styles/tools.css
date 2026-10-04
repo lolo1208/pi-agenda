@@ -1,0 +1,111 @@
+.tool-sidebar {
+  background: var(--bg);
+  border-left: 1px solid var(--border);
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+}
+
+.tool-tabs {
+  border-bottom: 1px solid var(--border);
+  gap: 3px;
+  padding: 8px;
+  display: flex;
+}
+
+.tool-tabs button {
+  background: none;
+  border: 0;
+  flex: 1;
+  padding: 7px 9px;
+  font-size: 12px;
+}
+
+.tool-tabs button[aria-pressed="true"] {
+  background: var(--hover);
+}
+
+.tool-placeholder {
+  text-align: center;
+  color: var(--muted);
+  flex-direction: column;
+  flex: 1;
+  justify-content: center;
+  align-items: center;
+  gap: 15px;
+  padding: 28px;
+  display: flex;
+}
+
+.tool-placeholder p {
+  max-width: 230px;
+  font-size: 12px;
+  line-height: 1.9;
+}
+
+.snapshot-panel {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.snapshot-summary {
+  padding: 24px 18px;
+}
+
+.snapshot-summary > button {
+  margin: 15px 0 0;
+}
+
+.snapshot-summary h3 {
+  margin: 12px 0;
+}
+
+.snapshot-summary details {
+  margin: 18px 0;
+  font-size: 12px;
+}
+
+.checkpoint {
+  border-bottom: 1px solid var(--border);
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 0;
+  display: flex;
+}
+
+.file {
+  text-align: left;
+  width: 100%;
+  margin: 6px 0;
+}
+
+.file span {
+  overflow-wrap: anywhere;
+  flex: 1;
+}
+
+.file b {
+  color: var(--success);
+}
+
+.diff {
+  border-top: 1px solid var(--border);
+  flex-direction: column;
+  height: 480px;
+  min-height: 250px;
+  display: flex;
+}
+
+.diff header {
+  overflow-wrap: anywhere;
+  height: auto;
+  padding: 10px 14px;
+}
+
+.empty {
+  color: var(--muted);
+  padding: 30px;
+  font-size: 13px;
+}

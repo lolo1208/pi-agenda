@@ -1,0 +1,27 @@
+node_modules/
+out/
+release/
+coverage/
+*.log
+.env*
+!.env.example
+
+# Test and build artifacts
+*.tsbuildinfo
+vitest.config.*.timestamp-*
+playwright-report/
+test-results/
+
+# Editor and operating system files
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/launch.json
+!.vscode/tasks.json
+*.swp
+*.swo
+*~

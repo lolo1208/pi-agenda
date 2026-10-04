@@ -1,0 +1,391 @@
+:root {
+  --ui-font-size: 14px;
+  --ui-font-family: Inter, "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: var(--ui-font-family);
+  color: var(--text);
+  background: var(--bg);
+  font-size: var(--ui-font-size);
+  font-synthesis: none;
+  --bg: #f2f2ee;
+  --sidebar: #e5e6e1;
+  --surface: #fdfdfa;
+  --text: #252728;
+  --muted: #737772;
+  --border: #dfe1da;
+  --hover: #e8e9e3;
+  --selected: #3c4043;
+  --selected-text: #fff;
+  --accent: #3979dc;
+  --accent-foreground: #fff;
+  --error-bg: #fbe9e5;
+  --error: #a33628;
+  --error-foreground: #fff;
+  --success-bg: #e8f1e8;
+  --success: #327046;
+  --code: #eee;
+  color-scheme: light;
+}
+
+:root[data-font="system"] {
+  --ui-font-family: system-ui, sans-serif;
+}
+
+:root[data-font="segoe"] {
+  --ui-font-family: "Segoe UI", sans-serif;
+}
+
+:root[data-font="yahei"] {
+  --ui-font-family: "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+}
+
+:root[data-theme="dark"] {
+  --bg: #121314;
+  --sidebar: #191a1b;
+  --surface: #202122;
+  --text: #bfbfbf;
+  --muted: #96999a;
+  --border: #2a2b2c;
+  --hover: #2c2d2e;
+  --selected: #313233;
+  --selected-text: #ededed;
+  --accent: #48a0c7;
+  --accent-foreground: #121314;
+  --error-bg: #3a1d1d;
+  --error: #f48771;
+  --error-foreground: #121314;
+  --success-bg: #193328;
+  --success: #72c892;
+  --code: #242526;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+button, input, select, textarea {
+  font: inherit;
+  color: inherit;
+}
+
+button:not([data-slot]) {
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 8px;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  display: inline-flex;
+}
+
+button:not([data-slot]):hover {
+  background: var(--hover);
+}
+
+button:not([data-slot]):disabled, button:not([data-slot]):disabled:hover {
+  border-color: var(--border);
+  background: var(--hover);
+  color: var(--muted);
+  opacity: 1;
+  cursor: not-allowed;
+}
+
+button:not([data-slot]):focus-visible, input:not([data-slot]):focus-visible, select:not([data-slot]):focus-visible, textarea:not([data-slot]):focus-visible, summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.ui-button {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  border-radius: 8px;
+  transition: background-color .15s, color .15s, border-color .15s;
+}
+
+:where(.ui-button-default):hover {
+  background: var(--hover);
+}
+
+.ui-button-destructive {
+  background: var(--error);
+  color: var(--error-foreground);
+}
+
+:where(.ui-button-destructive):hover {
+  background: var(--error);
+}
+
+.ui-button-outline {
+  border-color: var(--border);
+  background: var(--surface);
+  color: var(--text);
+}
+
+:where(.ui-button-outline):hover {
+  background: var(--hover);
+}
+
+.ui-button-secondary {
+  background: var(--hover);
+  color: var(--text);
+}
+
+:where(.ui-button-secondary):hover {
+  filter: brightness(.96);
+}
+
+.ui-button-ghost {
+  color: var(--text);
+  background: none;
+}
+
+:where(.ui-button-ghost):hover {
+  background: var(--hover);
+}
+
+.ui-button-link {
+  color: var(--accent);
+  text-underline-offset: 4px;
+  background: none;
+  border-color: #0000;
+  padding: 0;
+  text-decoration: underline;
+}
+
+:where(.ui-button-link):hover {
+  color: var(--text);
+}
+
+.ui-button:disabled, .ui-button:disabled:hover {
+  border-color: var(--border);
+  background: var(--hover);
+  color: var(--muted);
+  opacity: 1;
+  cursor: not-allowed;
+}
+
+button.ui-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+input:not([data-slot]), select:not([data-slot]), textarea:not([data-slot]) {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  min-width: 0;
+  padding: 9px 12px;
+}
+
+input:not([data-slot])::placeholder, textarea:not([data-slot])::placeholder {
+  color: var(--muted);
+  opacity: .65;
+}
+
+svg {
+  stroke-width: 1.5px;
+  flex-shrink: 0;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+h1, h2, h3, p {
+  margin: 0;
+}
+
+h2 {
+  margin-bottom: 12px;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+h3 {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.icon-button {
+  background: none;
+  border: 0;
+  border-radius: 6px;
+  padding: 6px;
+}
+
+.list-label {
+  color: var(--muted);
+  justify-content: space-between;
+  padding: 6px 12px 14px;
+  font-size: 13px;
+  display: flex;
+}
+
+.list-label span {
+  font-size: 11px;
+}
+
+.project-chevron {
+  flex: none;
+  transition: transform .15s;
+}
+
+.project-chevron.expanded {
+  transform: rotate(90deg);
+}
+
+.project-remove-button {
+  width: 28px;
+  height: 28px;
+  color: var(--muted);
+  opacity: .45;
+  background: none;
+  border: 0;
+  padding: 0;
+}
+
+.project-remove-button:hover {
+  background: var(--error-bg);
+  color: var(--error);
+  opacity: 1;
+}
+
+.project-start {
+  width: 100%;
+  color: var(--muted);
+  background: none;
+  border: 0;
+  justify-content: flex-start;
+  padding: 7px 10px 7px 32px;
+  font-size: 12px;
+}
+
+.project-start:hover {
+  color: var(--text);
+}
+
+header {
+  border-bottom: 1px solid var(--border);
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  min-height: 47px;
+  padding: 0 15px;
+  font-size: 13px;
+  display: flex;
+}
+
+.welcome-mark {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 17px;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  margin-bottom: 9px;
+  font-family: Georgia, serif;
+  font-size: 36px;
+  display: grid;
+}
+
+.busy-dot {
+  background: var(--accent);
+  border-radius: 50%;
+  width: 6px;
+  height: 6px;
+  display: inline-block;
+}
+
+.badge {
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 3px 10px;
+  font-size: 11px;
+}
+
+summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+
+code {
+  font-family: Consolas, monospace;
+  font-size: 12px;
+}
+
+.primary {
+  background: var(--accent);
+  color: var(--accent-foreground);
+  border-color: #0000;
+}
+
+.primary:hover {
+  background: var(--accent);
+}
+
+.hint {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.9;
+}
+
+.muted {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.error, .success {
+  background: var(--error-bg);
+  color: var(--error);
+  overflow-wrap: anywhere;
+  border-radius: 8px;
+  margin: 12px;
+  padding: 12px;
+  font-size: 12px;
+  line-height: 1.8;
+}
+
+.error button {
+  margin-left: 10px;
+}
+
+.success {
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.sr-only {
+  clip: rect(0,0,0,0);
+  white-space: nowrap;
+  border: 0;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  position: absolute;
+  overflow: hidden;
+}
+
+.project-new-button {
+  background: var(--accent);
+  width: 100%;
+  color: var(--accent-foreground);
+  border-color: #0000;
+  justify-content: flex-start;
+  margin-top: 16px;
+}
+
+.project-new-button:hover {
+  background: var(--accent);
+}

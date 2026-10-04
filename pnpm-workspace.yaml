@@ -1,0 +1,6 @@
+# Use a conventional node_modules layout for Electron packaging.
+nodeLinker: hoisted
+allowBuilds:
+  electron: true
+  electron-winstaller: true
+  esbuild: true

@@ -1,0 +1,66 @@
+.project-picker-backdrop {
+  z-index: 20;
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+  background: #11131866;
+  place-items: center;
+  padding: 20px;
+  display: grid;
+  position: fixed;
+  inset: 36px 0 0;
+}
+
+.project-picker {
+  border: 1px solid var(--border);
+  background: var(--bg);
+  border-radius: 16px;
+  width: min(520px, 100%);
+  max-height: min(640px, 100%);
+  padding: 22px;
+  overflow: auto;
+  box-shadow: 0 18px 55px #0003;
+}
+
+.project-picker-heading {
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 20px;
+  display: flex;
+}
+
+.project-picker-heading h2 {
+  margin: 0 0 6px;
+}
+
+.project-picker-heading p, .project-picker-list small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.project-picker-list {
+  gap: 6px;
+  max-height: 330px;
+  display: grid;
+  overflow: auto;
+}
+
+.project-picker-list > button {
+  text-align: left;
+  justify-content: flex-start;
+  width: 100%;
+  padding: 12px;
+}
+
+.project-picker-list > button > span {
+  flex: 1;
+  gap: 4px;
+  min-width: 0;
+  display: grid;
+}
+
+.project-picker-list b, .project-picker-list small {
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+}
