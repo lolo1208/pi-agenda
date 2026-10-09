@@ -6,6 +6,14 @@ coverage/
 .env*
 !.env.example
 
+# 脚本生成的图标（保留 resources/app-icon.png 原图）
+/resources/icons/
+/src/renderer/public/icons/
+
+# 本地测试代码与目录
+/tests/
+/vitest.config.ts
+
 # Test and build artifacts
 *.tsbuildinfo
 vitest.config.*.timestamp-*

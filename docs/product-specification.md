@@ -1,6 +1,6 @@
-# Pi Console（指派台）产品与技术规格
+# Pi Agenda · 行动派 产品与技术规格
 
-更新日期：2026-10-04。本文记录目标范围，实现状态以[开发路线](development-roadmap.md)和[验收记录](acceptance-testing.md)为准。
+更新日期：2026-10-09。本文记录目标范围，实现状态以[开发路线](development-roadmap.md)和[验收记录](acceptance-testing.md)为准。
 
 ## 项目定位
 

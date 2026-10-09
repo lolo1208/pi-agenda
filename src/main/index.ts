@@ -11,11 +11,13 @@ let mainWindow: BrowserWindow | null = null
 let snapshotManager: ShadowGitManager | undefined
 let modelSettings: ModelSettingsStore
 let modelService: ModelService
-let piConsoleDirectory: string
+let piAgendaDirectory: string
 const rendererFile = path.join(__dirname, '../renderer/index.html')
+const iconDirectory = app.isPackaged ? path.join(process.resourcesPath, 'icons') : path.join(app.getAppPath(), 'resources', 'icons')
+const windowIcon = path.join(iconDirectory, process.platform === 'win32' ? 'icon.ico' : 'icon.png')
 const rendererUrl = !app.isPackaged && process.env.ELECTRON_RENDERER_URL || pathToFileURL(rendererFile).href
 function createWindow(): void {
-  mainWindow = new BrowserWindow({ width: 1440, height: 920, minWidth: 960, minHeight: 640, backgroundColor: '#f2f2ee', frame: false, thickFrame: true,
+  mainWindow = new BrowserWindow({ width: 1440, height: 920, minWidth: 960, minHeight: 640, backgroundColor: '#f2f2ee', frame: false, thickFrame: true, icon: windowIcon,
     webPreferences: { preload: path.join(__dirname, '../preload/index.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true }
   })
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
@@ -34,7 +36,9 @@ function createWindow(): void {
   void mainWindow.loadURL(rendererUrl)
 }
 void app.whenReady().then(() => {
-  piConsoleDirectory = path.join(app.getPath('home'), '.pi-console')
+  if (process.platform === 'win32') app.setAppUserModelId('dev.piagenda.desktop')
+  if (process.platform === 'darwin') app.dock?.setIcon(path.join(iconDirectory, 'icon.png'))
+  piAgendaDirectory = path.join(app.getPath('home'), '.pi-agenda')
   modelSettings = new ModelSettingsStore(path.join(app.getPath('userData'), 'model-settings.json'), {
     isAvailable: () => safeStorage.isEncryptionAvailable() && (process.platform !== 'linux' || safeStorage.getSelectedStorageBackend() !== 'basic_text'),
     encrypt: value => safeStorage.encryptString(value),
@@ -47,7 +51,7 @@ void app.whenReady().then(() => {
     getModelSettings: () => modelSettings,
     getModelService: () => modelService,
     setSnapshotManager: manager => { snapshotManager = manager },
-    dataDirectory: piConsoleDirectory,
+    dataDirectory: piAgendaDirectory,
     rendererUrl,
   })
   createWindow()

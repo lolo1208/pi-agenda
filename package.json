@@ -1,12 +1,13 @@
 {
-  "name": "pi-console",
+  "name": "pi-agenda",
   "version": "0.1.0",
   "private": true,
-  "description": "Pi Console（指派台）— 本地桌面 AI 编程助手，支持影子快照、代码差异检查与文件和对话同步回滚",
-  "author": "Pi Console",
+  "description": "Pi Agenda · 行动派 — 本地桌面 AI 编程助手，支持影子快照、代码差异检查与文件和对话同步回滚",
+  "author": "Pi Agenda",
   "main": "out/main/index.js",
   "scripts": {
     "dev": "pnpm electron:install && electron-vite dev",
+    "icons:generate": "node scripts/generate-icons.cjs",
     "electron:install": "node scripts/install-electron.cjs",
     "typecheck": "tsc --noEmit",
     "build": "pnpm typecheck && electron-vite build",
@@ -47,28 +48,35 @@
     "electron-builder": "^26.0.0",
     "electron-vite": "^4.0.0",
     "jsdom": "^30.1.1",
+    "sharp": "^0.35.5",
     "tailwindcss": "^4.1.0",
     "typescript": "^5.9.0",
     "vite": "^7.0.0",
     "vitest": "^4.1.11"
   },
   "build": {
-    "appId": "dev.piconsole.desktop",
-    "productName": "Pi Console",
+    "appId": "dev.piagenda.desktop",
+    "productName": "Pi Agenda · 行动派",
     "directories": {
-      "output": "release"
+      "output": "release",
+      "buildResources": "resources/icons"
     },
     "files": [
       "out/**/*",
       "package.json"
     ],
     "asar": true,
+    "extraResources": [
+      { "from": "resources/icons", "to": "icons", "filter": ["icon.png", "icon.ico"] }
+    ],
     "win": {
+      "icon": "resources/icons/icon.ico",
       "target": [
         "nsis"
       ]
     },
     "mac": {
+      "icon": "resources/icons/icon.icns",
       "target": [
         "dmg"
       ],

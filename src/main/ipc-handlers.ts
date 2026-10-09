@@ -1,5 +1,6 @@
-import { dialog, ipcMain, type BrowserWindow } from 'electron'
+import { dialog, ipcMain, shell, type BrowserWindow } from 'electron'
 import path from 'node:path'
+import { ConversationStore } from './conversation-store'
 import { fileURLToPath } from 'node:url'
 import { IPC_CHANNELS } from '../shared/api'
 import { ShadowGitManager } from './snapshot/shadow-git-manager'
@@ -38,6 +39,7 @@ function parseString(value: unknown): string {
 }
 
 export function registerIpcHandlers(dependencies: IpcHandlerDependencies): void {
+  const conversations = new ConversationStore(path.join(dependencies.dataDirectory, 'conversations.json'))
   const requireSnapshotManager = (): ShadowGitManager => {
     const manager = dependencies.getSnapshotManager()
     if (!manager) throw new Error('请先选择项目')
@@ -58,6 +60,8 @@ export function registerIpcHandlers(dependencies: IpcHandlerDependencies): void 
     })
   }
 
+  handle(IPC_CHANNELS.conversationsLoad, () => conversations.load())
+  handle(IPC_CHANNELS.conversationsSave, state => conversations.save(state))
   handle(IPC_CHANNELS.selectProject, async () => {
     const window = dependencies.getMainWindow()
     if (!window) throw new Error('应用窗口尚未准备就绪')
@@ -80,6 +84,13 @@ export function registerIpcHandlers(dependencies: IpcHandlerDependencies): void 
     const canonicalRoot = await ShadowGitManager.removeProjectStorage(root, dependencies.dataDirectory)
     if (dependencies.getSnapshotManager()?.getRoot() === canonicalRoot) dependencies.setSnapshotManager(undefined)
   })
+  handle(IPC_CHANNELS.projectDirectory, async value => {
+    const root = parseString(value)
+    const currentRoot = requireSnapshotManager().getRoot()
+    if (!path.isAbsolute(root) || path.resolve(root) !== path.resolve(currentRoot)) throw new Error('只能打开当前项目目录')
+    const error = await shell.openPath(currentRoot)
+    if (error) throw new Error('无法打开项目目录，请检查目录是否存在')
+  })
   handle(IPC_CHANNELS.checkpoint, label => requireSnapshotManager().createCheckpoint(parseString(label)))
   handle(IPC_CHANNELS.changes, (base, current) => requireSnapshotManager().getChanges(parseString(base), parseString(current)))
   handle(IPC_CHANNELS.diff, (base, current, file) => requireSnapshotManager().getDiff(parseString(base), parseString(current), parseString(file)))
@@ -88,8 +99,10 @@ export function registerIpcHandlers(dependencies: IpcHandlerDependencies): void 
   handle(IPC_CHANNELS.modelDelete, id => modelResult(() => dependencies.getModelSettings().delete(id)))
   handle(IPC_CHANNELS.modelActivate, id => modelResult(() => dependencies.getModelSettings().setActive(id)))
   handle(IPC_CHANNELS.modelTest, (id, requestId) => modelResult(() => dependencies.getModelService().request(id, requestId, null, true)))
-  handle(IPC_CHANNELS.modelChat, (id, requestId, messages) => modelResult(() => dependencies.getModelService().request(id, requestId, messages, false)))
+  handle(IPC_CHANNELS.modelChat, (id, requestId, messages, customPrompt) => modelResult(() => dependencies.getModelService().request(id, requestId, messages, false, customPrompt)))
   handle(IPC_CHANNELS.modelCancel, requestId => modelResult(() => dependencies.getModelService().cancel(requestId)))
+  handle(IPC_CHANNELS.ollamaConnect, baseUrl => modelResult(() => dependencies.getModelService().connectOllama(baseUrl)))
+  handle(IPC_CHANNELS.ollamaInfo, (baseUrl, model) => modelResult(() => dependencies.getModelService().getOllamaModelInfo(baseUrl, model)))
   handle(IPC_CHANNELS.windowMinimize, () => { dependencies.getMainWindow()?.minimize() })
   handle(IPC_CHANNELS.windowToggleMaximize, () => {
     const window = dependencies.getMainWindow()

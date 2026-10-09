@@ -1,7 +1,7 @@
 import { copyFile, mkdir, readdir } from 'node:fs/promises'
 import path from 'node:path'
 
-const EXCLUDED_NAMES = new Set(['.git', '.pi-console', '.cherrypi', 'node_modules', 'dist', 'out', 'release', '.aws', '.ssh'])
+const EXCLUDED_NAMES = new Set(['.git', '.pi-agenda', '.pi-console', '.cherrypi', 'node_modules', 'dist', 'out', 'release', '.aws', '.ssh'])
 
 function shouldExcludeEntry(name: string): boolean {
   return EXCLUDED_NAMES.has(name.toLowerCase()) || /^\.env(?:\.|$)/i.test(name)

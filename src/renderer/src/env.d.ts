@@ -1,2 +1,2 @@
-import type { PiConsoleApi } from '../../shared/api'
-declare global { interface Window { piConsole: PiConsoleApi } }
+import type { PiAgendaApi } from '../../shared/api'
+declare global { interface Window { piAgenda: PiAgendaApi } }

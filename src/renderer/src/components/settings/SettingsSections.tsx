@@ -3,25 +3,55 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
+import { Textarea } from '@/components/ui/textarea'
 import { Moon, RotateCcw, Sun } from 'lucide-react'
 import type { Preferences } from '../../preferences'
+import { useRef, useState } from 'react'
+import { MAX_CUSTOM_PROMPT_LENGTH, PROVIDER_PRESETS, type ModelSettings } from '../../../../shared/models'
+import { unwrapModelResult } from '../../model-result'
 
 interface PreferencesSectionProps {
   preferences: Preferences
   onPreferences: (preferences: Preferences) => void
 }
 
-export function GeneralSettingsSection({ preferences, onPreferences, isMac }: PreferencesSectionProps & { isMac: boolean }): React.JSX.Element {
+export function GeneralSettingsSection({ preferences, onPreferences, isMac, settings, onModelSettingsChange, onBusyChange }: PreferencesSectionProps & {
+  isMac: boolean
+  settings: ModelSettings | null
+  onModelSettingsChange(settings: ModelSettings): void
+  onBusyChange(busy: boolean): void
+}): React.JSX.Element {
+  const [saving, setSaving] = useState(false)
+  const savingRef = useRef(false)
+  const [error, setError] = useState('')
+  const usableProfiles = settings?.profiles.filter(item => item.enabled !== false && item.available !== false) ?? []
+  const changeDefault = async (id: string): Promise<void> => {
+    if (savingRef.current || id === settings?.activeProfileId) return
+    savingRef.current = true; setSaving(true); onBusyChange(true); setError('')
+    try { onModelSettingsChange(unwrapModelResult(await window.piAgenda.setActiveModel(id))) }
+    catch (e) { setError(e instanceof Error ? e.message : '默认模型保存失败，请重试。') }
+    finally { savingRef.current = false; setSaving(false); onBusyChange(false) }
+  }
   return <>
     <h2>通用</h2>
     <p className="section-description">调整工作台的默认行为。</p>
     <section className="settings-card">
       <div className="setting-row">
+        <div><h3>默认模型</h3><p>新建会话时使用，可在会话中单独切换。</p></div>
+        <div className="settings-select-control settings-model-select"><Select value={usableProfiles.some(item => item.id === settings?.activeProfileId) ? settings!.activeProfileId! : ''} disabled={saving || !usableProfiles.length} onValueChange={id => { void changeDefault(id) }}>
+          <SelectTrigger aria-label="默认模型"><SelectValue placeholder={settings ? '请先在模型供应商中启用模型' : '正在读取模型…'} /></SelectTrigger>
+          <SelectContent>{usableProfiles.map(item => <SelectItem key={item.id} value={item.id}>{item.name} · {PROVIDER_PRESETS.find(provider => provider.id === item.provider)?.label ?? item.provider}</SelectItem>)}</SelectContent>
+        </Select></div>
+      </div>
+      {saving && <p className="hint" role="status">正在保存默认模型…</p>}
+      {error && <p className="error" role="alert">{error}</p>}
+      <div className="settings-divider" />
+      <div className="setting-row">
         <div><h3>代码差异显示</h3><p>用于右侧快照中的文件对比。</p></div>
-        <Select value={preferences.inlineDiff ? 'inline' : 'split'} onValueChange={value => onPreferences({ ...preferences, inlineDiff: value === 'inline' })}>
-          <SelectTrigger className="min-w-[150px] rounded-full" aria-label="代码差异显示"><SelectValue /></SelectTrigger>
+        <div className="settings-select-control settings-diff-select"><Select value={preferences.inlineDiff ? 'inline' : 'split'} onValueChange={value => onPreferences({ ...preferences, inlineDiff: value === 'inline' })}>
+          <SelectTrigger aria-label="代码差异显示"><SelectValue /></SelectTrigger>
           <SelectContent><SelectItem value="split">左右分栏</SelectItem><SelectItem value="inline">内联对比</SelectItem></SelectContent>
-        </Select>
+        </Select></div>
       </div>
       <div className="settings-divider" />
       <div className="shortcut-setting">
@@ -32,7 +62,12 @@ export function GeneralSettingsSection({ preferences, onPreferences, isMac }: Pr
         </div>
       </div>
     </section>
-    <p className="hint">设置自动保存在此设备。任务对话和草稿暂存于本次打开期间，关闭应用后不保留。</p>
+    <section className="settings-card custom-prompt-setting">
+      <Label htmlFor="custom-prompt">自定义提示词</Label>
+      <p id="custom-prompt-description" className="hint">每次发送消息时都会附带这些指令，对所有模型和会话生效。留空则不附加。</p>
+      <Textarea id="custom-prompt" aria-describedby="custom-prompt-description" rows={5} maxLength={MAX_CUSTOM_PROMPT_LENGTH} value={preferences.customPrompt} placeholder="例如：请使用简体中文回答，先给出结论，再说明原因。" onChange={event => onPreferences({ ...preferences, customPrompt: event.target.value })} />
+    </section>
+    <p className="hint">设置自动保存在此设备。</p>
   </>
 }
 
@@ -77,9 +112,9 @@ export function AppearanceSettingsSection({ preferences, onPreferences }: Prefer
 
 export function AboutSettingsSection(): React.JSX.Element {
   return <>
-    <h2>关于 Pi Console</h2>
+    <h2>关于 Pi Agenda · 行动派</h2>
     <section className="settings-card">
-      <h3>Pi Console <span className="muted">0.1.0</span></h3>
+      <h3>Pi Agenda · 行动派 <span className="muted">0.1.0</span></h3>
       <p>本地桌面 AI 编程助手</p>
       <p className="hint">已支持模型文本对话、手动快照与代码差异。文件浏览器、终端和浏览器将在后续版本实现。</p>
       <p className="hint">模型配置由本地存储管理，API Key 使用系统安全存储加密。当前对话不会自动上传项目文件。</p>

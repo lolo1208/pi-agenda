@@ -1,4 +1,4 @@
-﻿import { Button } from '@/components/ui/button'
+import { Button } from '@/components/ui/button'
 import React, { useEffect, useState } from 'react'
 
 import { FolderOpen, PanelRightOpen, PlusCircle } from 'lucide-react'
@@ -21,7 +21,7 @@ export default function App(): React.JSX.Element {
     pendingProjectRemoval, setPendingProjectRemoval, busyTasks, setBusyTasks, tasks, setTasks,
     currentTask, query, setQuery, collapsedProjects, setCollapsedProjects, searchOpen, setSearchOpen,
     projectSnapshot, isChatBusy, updateProjectSnapshot, runAction, createProjectTask,
-    chooseExistingProject, selectTask, removeProject, captureCheckpoint,
+    chooseExistingProject, selectTask, removeTask, removeProject, captureCheckpoint,
   } = workspace
   const { checkpoints, changes, diff } = projectSnapshot
   const [preferences, setPreferences] = useState(readPreferences)
@@ -33,10 +33,10 @@ export default function App(): React.JSX.Element {
   const [tool, setTool] = useState<'snapshots' | 'files' | 'terminal' | 'browser'>('snapshots')
   const loadSettings = (): void => {
     setSettingsError('')
-    void window.piConsole.getModelSettings().then(unwrapModelResult).then(setSettings).catch(e => setSettingsError(e instanceof Error ? e.message : '无法读取模型设置'))
+    void window.piAgenda.getModelSettings().then(unwrapModelResult).then(setSettings).catch(e => setSettingsError(e instanceof Error ? e.message : '无法读取模型设置'))
   }
   useEffect(loadSettings, [])
-  useEffect(() => window.piConsole.onWindowMaximizedChange?.(setIsMaximized), [])
+  useEffect(() => window.piAgenda.onWindowMaximizedChange?.(setIsMaximized), [])
   useEffect(() => {
     document.documentElement.dataset.theme = preferences.theme
     document.documentElement.dataset.font = preferences.font
@@ -44,7 +44,7 @@ export default function App(): React.JSX.Element {
   }, [preferences.theme, preferences.font, preferences.fontSize])
   const updatePreferences = (next: Preferences): void => {
     setPreferences(next)
-    try { localStorage.setItem('pi-console.preferences', JSON.stringify({ ...next, sendWithCtrlEnterVersion: 1 })) } catch { setError('偏好设置未能保存，重启后将恢复默认值。请检查本地存储。') }
+    try { localStorage.setItem('pi-agenda.preferences', JSON.stringify({ ...next, sendWithCtrlEnterVersion: 1 })) } catch { setError('偏好设置未能保存，重启后将恢复默认值。请检查本地存储。') }
   }
   const activeProfile = settings?.profiles.find(item => item.id === settings.activeProfileId)
   const filtered = tasks.filter(item => `${item.title} ${item.preview} ${item.project ?? ''}`.toLowerCase().includes(query.trim().toLowerCase()))
@@ -55,14 +55,14 @@ export default function App(): React.JSX.Element {
     groupedTasks.set(group, [...(groupedTasks.get(group) ?? []), task])
   }
   if (!query.trim()) for (const root of knownProjects) if (!groupedTasks.has(root)) groupedTasks.set(root, [])
-  return <div className="window-shell">
+  return <div className={`window-shell ${toolsOpen ? 'tools-open' : ''}`}>
     <WindowTitleBar
-      pageTitle={settingsSection ? '设置' : currentTask?.title ?? 'Pi Console'}
-      projectName={currentTask?.project?.split(/[\\/]/).filter(Boolean).at(-1) ?? null}
+      pageTitle={settingsSection ? '设置' : currentTask?.title ?? ''}
+      projectName={settingsSection ? null : currentTask?.project?.split(/[\\/]/).filter(Boolean).at(-1) ?? null}
       isMaximized={isMaximized}
-      onMinimize={() => { void window.piConsole.minimizeWindow() }}
-      onToggleMaximize={() => { void window.piConsole.toggleMaximizeWindow() }}
-      onClose={() => { void window.piConsole.closeWindow() }}
+      onMinimize={() => { void window.piAgenda.minimizeWindow() }}
+      onToggleMaximize={() => { void window.piAgenda.toggleMaximizeWindow() }}
+      onClose={() => { void window.piAgenda.closeWindow() }}
     />
     <div className={`app ${toolsOpen ? 'tools-open' : ''}`} hidden={settingsSection !== null}>
       <ProjectSidebar
@@ -84,16 +84,17 @@ export default function App(): React.JSX.Element {
         onPendingProjectRemovalChange={setPendingProjectRemoval}
         onRemoveProject={removeProject}
         onSelectTask={selectTask}
+        onRemoveTask={removeTask}
         onCreateProjectTask={chooseExistingProject}
         onOpenSettings={() => setSettingsSection('general')}
       />
       <main className="conversation">
-        <header className="conversation-header"><div><span>{currentTask?.title ?? '新建对话'}</span><span className="conversation-project">{currentTask?.project?.split(/[\\/]/).filter(Boolean).at(-1) ?? '选择项目以开始'}</span></div><Button className="icon-button" aria-label={toolsOpen ? '收起工具栏' : '展开工具栏'} aria-expanded={toolsOpen} onClick={() => setToolsOpen(value => !value)}><PanelRightOpen size={18} /></Button></header>
+        <header className="conversation-header"><Button className="icon-button" aria-label={toolsOpen ? '收起工具栏' : '展开工具栏'} aria-expanded={toolsOpen} onClick={() => setToolsOpen(value => !value)}><PanelRightOpen size={18} /></Button></header>
         {!currentTask && <section className="no-task-state"><FolderOpen size={30} /><h1>从一个项目开始</h1><p>为新对话选择已有项目，或添加一个新的目录。</p><Button className="project-new-button" onClick={() => setProjectPickerOpen(true)}><PlusCircle size={17} />新建对话</Button></section>}
-        {tasks.map(task => <div className="task-chat" key={task.id} hidden={task.id !== currentTask?.id}><ModelChat profile={activeProfile} onBusyChange={busy => setBusyTasks(items => busy ? [...items.filter(id => id !== task.id), task.id] : items.filter(id => id !== task.id))} onOpenSettings={() => setSettingsSection('models')} settingsDisabled={isChatBusy} sendWithCtrlEnter={preferences.sendWithCtrlEnter} onMessagesChange={messages => setTasks(items => items.map(item => item.id === task.id ? { ...item, title: messages.find(message => message.role === 'user')?.content.slice(0, 36) ?? '新建对话', preview: messages.at(-1)?.content.slice(0, 90) ?? '开始一段新的对话' } : item))} /></div>)}
+        {tasks.map(task => <div className="task-chat" key={task.id} hidden={task.id !== currentTask?.id}><ModelChat customPrompt={preferences.customPrompt} project={task.project} providers={settings?.providers} initialMessages={task.messages} initialDraft={task.draft} initialDraftImages={task.draftImages} onDraftChange={(draft, draftImages) => setTasks(items => items.map(item => item.id === task.id && (item.draft !== draft || item.draftImages !== draftImages) ? { ...item, draft, draftImages } : item))} profile={activeProfile} profiles={settings?.profiles} onBusyChange={busy => setBusyTasks(items => busy ? [...items.filter(id => id !== task.id), task.id] : items.filter(id => id !== task.id))} onOpenSettings={() => setSettingsSection('models')} settingsDisabled={isChatBusy} sendWithCtrlEnter={preferences.sendWithCtrlEnter} onMessagesChange={messages => setTasks(items => items.map(item => item.id === task.id ? { ...item, messages, updatedAt: Date.now(), title: messages.find(message => message.role === 'user')?.content.slice(0, 36) || (messages.some(message => message.images?.length) ? '图片对话' : '新建对话'), preview: messages.at(-1)?.content.slice(0, 90) ?? '开始一段新的对话' } : item))} /></div>)}
         {error && <p role="alert" className="error">{error}</p>}
         {settingsError && <p role="alert" className="error">{settingsError}<Button onClick={loadSettings}>重新读取设置</Button></p>}
-        <footer className="conversation-status"><span><FolderOpen size={13} />{currentTask?.project?.split(/[\\/]/).filter(Boolean).at(-1) ?? UNLINKED_PROJECT_LABEL}</span><span>文本对话 · 本次打开期间保留</span></footer>
+
       </main>
       {toolsOpen && <ToolSidebar
         project={project}
@@ -107,7 +108,7 @@ export default function App(): React.JSX.Element {
         onToolChange={setTool}
         onClose={() => setToolsOpen(false)}
         onCaptureCheckpoint={captureCheckpoint}
-        onSelectDiff={filePath => { void runAction(async () => updateProjectSnapshot({ diff: await window.piConsole.getDiff(checkpoints.at(-2)!.hash, checkpoints.at(-1)!.hash, filePath) })) }}
+        onSelectDiff={filePath => { void runAction(async () => updateProjectSnapshot({ diff: await window.piAgenda.getDiff(checkpoints.at(-2)!.hash, checkpoints.at(-1)!.hash, filePath) })) }}
       />}
     </div>
     {settingsSection !== null && <SettingsPage initialSection={settingsSection} settings={settings} error={settingsError} reload={loadSettings} preferences={preferences} onPreferences={updatePreferences} onChange={setSettings} onClose={() => setSettingsSection(null)} />}

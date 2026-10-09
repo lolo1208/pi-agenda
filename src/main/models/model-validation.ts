@@ -1,4 +1,4 @@
-import { PROVIDER_PRESETS, type ChatMessage, type ModelProfile, type SaveModelProfile } from '../../shared/models'
+import { MAX_MESSAGE_IMAGES, MAX_IMAGE_BYTES, MAX_CONVERSATION_IMAGE_BYTES, PROVIDER_PRESETS, type ChatImage, type ChatMessage, type ModelProfile, type SaveModelProfile } from '../../shared/models'
 
 export class ModelError extends Error {}
 export function asRecord(value: unknown): Record<string, unknown> {
@@ -26,15 +26,26 @@ function numberInRange(value: unknown, min: number, max: number, label: string, 
   if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max || (integer && !Number.isInteger(value))) throw new ModelError(`${label}须在 ${min}–${max} 范围内${integer ? '且为整数' : ''}`)
   return value
 }
+export function normalizeOllamaUrl(value: unknown): string {
+  const url = new URL(normalizeBaseUrl(value))
+  if (!['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) throw new ModelError('Ollama 目前仅支持本机服务地址')
+  return url.href.replace(/\/+$/, '').replace(/\/v1$/, '')
+}
 export function parseProfile(value: unknown): ModelProfile {
   const item = asRecord(value)
   if (!PROVIDER_PRESETS.some(preset => preset.id === item.provider)) throw new ModelError('未知服务商')
   if (item.protocol !== 'anthropic' && item.protocol !== 'openai-compatible') throw new ModelError('不支持的模型协议')
   if (item.tokenParameter !== 'max_tokens' && item.tokenParameter !== 'max_completion_tokens') throw new ModelError('无效的 Token 参数')
+  if (item.enabled !== undefined && typeof item.enabled !== 'boolean') throw new ModelError('模型启用状态无效')
+  if (item.thinking !== undefined && item.thinking !== null && typeof item.thinking !== 'boolean') throw new ModelError('推理模式无效')
+  const contextTokens = item.contextTokens === undefined || item.contextTokens === null ? null : numberInRange(item.contextTokens, 1, 2097152, '上下文上限', true)
+  if (contextTokens !== null && typeof item.maxTokens === 'number' && item.maxTokens > contextTokens) throw new ModelError('输出 Token 上限不能超过上下文上限')
   return {
     id: profileId(item.id), name: requiredString(item.name, '配置名称', 80),
     provider: item.provider as ModelProfile['provider'], protocol: item.protocol,
-    baseUrl: normalizeBaseUrl(item.baseUrl), model: requiredString(item.model, '模型 ID', 200),
+    baseUrl: item.provider === 'ollama' ? normalizeOllamaUrl(item.baseUrl) : normalizeBaseUrl(item.baseUrl), model: requiredString(item.model, '模型 ID', 200),
+    contextTokens, enabled: item.enabled === undefined ? true : item.enabled,
+    thinking: item.thinking ?? null,
     temperature: item.temperature === null ? null : numberInRange(item.temperature, 0, item.protocol === 'anthropic' ? 1 : 2, 'Temperature'),
     maxTokens: numberInRange(item.maxTokens, 1, 131072, '输出 Token 上限', true),
     tokenParameter: item.tokenParameter,
@@ -53,14 +64,38 @@ export function parseSaveProfile(value: unknown): SaveModelProfile {
 export function parseMessages(value: unknown): ChatMessage[] {
   if (!Array.isArray(value) || value.length < 1 || value.length > 100) throw new ModelError('对话须包含 1–100 条消息，请清空对话后重试')
   let length = 0
+  let imageBytes = 0
   const messages = value.map(message => {
     const item = asRecord(message)
     if (item.role !== 'user' && item.role !== 'assistant') throw new ModelError('无效消息角色')
-    const content = requiredString(item.content, '消息', 32000)
+    let images: ChatImage[] | undefined
+    if (item.images !== undefined) {
+      if (item.role !== 'user' || !Array.isArray(item.images) || item.images.length > MAX_MESSAGE_IMAGES) throw new ModelError(`每条用户消息最多包含 ${MAX_MESSAGE_IMAGES} 张图片`)
+      images = item.images.map(value => {
+        const image = asRecord(value)
+        const id = profileId(image.id)
+        const name = requiredString(image.name, '图片名称', 255)
+        if (typeof image.dataUrl !== 'string' || image.dataUrl.length > Math.ceil(MAX_IMAGE_BYTES / 3) * 4 + 64) throw new ModelError('每张图片不能超过 5 MiB')
+        const match = /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/]+={0,2})$/.exec(image.dataUrl)
+        if (!match || match[2].length % 4 !== 0) throw new ModelError('图片须为 PNG、JPEG 或 WebP 格式')
+        const bytes = Buffer.from(match[2], 'base64')
+        const valid = match[1] === 'png' ? bytes.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))
+          : match[1] === 'jpeg' ? bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff
+          : bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP'
+        if (!valid || bytes.toString('base64') !== match[2]) throw new ModelError('图片内容或格式无效，请重新选择图片')
+        if (bytes.length > MAX_IMAGE_BYTES) throw new ModelError('每张图片不能超过 5 MiB')
+        imageBytes += bytes.length
+        return { id, name, dataUrl: image.dataUrl }
+      })
+    }
+    if (typeof item.content !== 'string' || item.content.length > 32000) throw new ModelError('消息不能超过 32000 个字符')
+    const content = item.content.trim()
+    if (!content && !images?.length) throw new ModelError('消息不能为空')
     length += content.length
-    return { role: item.role, content } as ChatMessage
+    return { role: item.role, content, ...(images?.length ? { images } : {}) } as ChatMessage
   })
   if (length > 128000) throw new ModelError('对话过长，请清空对话后重试')
+  if (imageBytes > MAX_CONVERSATION_IMAGE_BYTES) throw new ModelError('对话图片总量超过 32 MiB，请新建对话后重试')
   if (messages.at(-1)?.role !== 'user') throw new ModelError('最后一条消息必须为用户输入')
   return messages
 }

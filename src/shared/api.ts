@@ -1,10 +1,14 @@
-import type { ChatMessage, ModelReply, ModelResult, ModelSettings, SaveModelProfile } from './models'
+import type { ChatMessage, ModelDescriptor, ModelReply, ModelResult, ModelSettings, SaveModelProfile } from './models'
 export interface Checkpoint { hash: string; createdAt: string; label: string }
 export interface ChangedFile { path: string; status: 'A' | 'M' | 'D'; additions: number; deletions: number; binary: boolean }
 export interface FileDiff { path: string; before: string; after: string; binary: boolean }
-export interface PiConsoleApi {
+import type { ConversationState } from './conversations'
+export interface PiAgendaApi {
+  loadConversations(): Promise<ConversationState>
+  saveConversations(state: ConversationState): Promise<void>
   selectProject(): Promise<string | null>
   openProject(path: string): Promise<string>
+  openProjectDirectory(path: string): Promise<void>
   removeProject(path: string): Promise<void>
   createCheckpoint(label: string): Promise<Checkpoint>
   getChanges(base: string, current: string): Promise<ChangedFile[]>
@@ -14,18 +18,22 @@ export interface PiConsoleApi {
   deleteModelProfile(id: string): Promise<ModelResult<ModelSettings>>
   setActiveModel(id: string): Promise<ModelResult<ModelSettings>>
   testModel(id: string, requestId: string): Promise<ModelResult<ModelReply>>
-  chatWithModel(id: string, requestId: string, messages: ChatMessage[]): Promise<ModelResult<ModelReply>>
+  chatWithModel(id: string, requestId: string, messages: ChatMessage[], customPrompt?: string): Promise<ModelResult<ModelReply>>
   cancelModelRequest(requestId: string): Promise<ModelResult<void>>
+  connectOllama(baseUrl: string): Promise<ModelResult<ModelSettings>>
+  getOllamaModelInfo(baseUrl: string, model: string): Promise<ModelResult<ModelDescriptor>>
   minimizeWindow(): Promise<void>
   toggleMaximizeWindow(): Promise<boolean>
   closeWindow(): Promise<void>
   onWindowMaximizedChange(callback: (maximized: boolean) => void): () => void
 }
 export const IPC_CHANNELS = {
+  conversationsLoad: 'conversations:load', conversationsSave: 'conversations:save',
   selectProject: 'project:select', checkpoint: 'snapshot:create',
   changes: 'snapshot:changes', diff: 'snapshot:diff',
   modelSettings: 'models:list', modelSave: 'models:save', modelDelete: 'models:delete',
   modelActivate: 'models:activate', modelTest: 'models:test', modelChat: 'models:chat', modelCancel: 'models:cancel',
+  ollamaConnect: 'models:ollama-connect', ollamaInfo: 'models:ollama-info',
   windowMinimize: 'window:minimize', windowToggleMaximize: 'window:toggle-maximize', windowClose: 'window:close', windowMaximized: 'window:maximized',
-  projectOpen: 'project:open', projectRemove: 'project:remove'
+  projectOpen: 'project:open', projectRemove: 'project:remove', projectDirectory: 'project:directory'
 } as const

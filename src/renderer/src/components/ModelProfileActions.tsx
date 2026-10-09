@@ -4,21 +4,20 @@ interface ModelProfileActionsProps {
   hasSavedProfile: boolean
   deletePending: boolean
   onSave: () => void
-  onSaveAndActivate: () => void
   onSaveAndTest: () => void
   onRequestDelete: () => void
   onConfirmDelete: () => void
   onCancelDelete: () => void
+  isLocal?: boolean
 }
 
-export function ModelProfileActions({ hasSavedProfile, deletePending, onSave, onSaveAndActivate, onSaveAndTest, onRequestDelete, onConfirmDelete, onCancelDelete }: ModelProfileActionsProps): React.JSX.Element {
+export function ModelProfileActions({ hasSavedProfile, deletePending, onSave, onSaveAndTest, onRequestDelete, onConfirmDelete, onCancelDelete, isLocal }: ModelProfileActionsProps): React.JSX.Element {
   return <>
     <div className="button-row">
       <Button className="primary" onClick={onSave}>保存配置</Button>
-      <Button onClick={onSaveAndActivate}>保存并使用</Button>
       <Button onClick={onSaveAndTest}>保存并测试连接</Button>
     </div>
-    <p className="hint">测试将发送一条固定短消息，会产生服务端推理请求及可能的费用；自携带聊天历史。</p>
+    <p className="hint">{isLocal ? '测试将发送一条短消息，加载本地模型并占用计算资源，不携带聊天历史。' : '测试将发送一条固定短消息，可能产生服务端费用，不携带聊天历史。'}</p>
     {hasSavedProfile && <div className="button-row">
       {deletePending ? <>
         <span>删除此配置和密钥？</span>

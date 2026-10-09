@@ -13,7 +13,7 @@
 
 - [x] Electron、React、TypeScript、Tailwind 骨架与三栏工作台。
 - [x] Context Isolation、Preload 白名单、IPC 来源与参数校验。
-- [x] Pi Console 名称、pnpm 锁文件、开发文档和命名约定。
+- [x] Pi Agenda 名称、pnpm 锁文件、开发文档和命名约定。
 - [x] 模型设置表单：服务商、Endpoint、模型、参数与多配置管理。
 - [x] safeStorage 密钥保存/替换/删除与不可用处理（系统后端实机验收待补）。
 - [x] 实际模型连接测试、延迟、超时和取消反馈（模拟及本地 HTTP 验证通过）。

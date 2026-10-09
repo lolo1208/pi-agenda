@@ -6,12 +6,20 @@
 }
 
 @media (max-width: 1100px) {
+.window-shell {
+  --task-sidebar-width: 220px;
+}
+
+.window-shell.tools-open {
+  --task-sidebar-width: 200px;
+}
+
 .app {
-  grid-template-columns: 220px minmax(0, 1fr);
+  grid-template-columns: var(--task-sidebar-width) minmax(0, 1fr);
 }
 
 .app.tools-open {
-  grid-template-columns: 200px minmax(300px, 1fr) 330px;
+  grid-template-columns: var(--task-sidebar-width) minmax(300px, 1fr) 330px;
 }
 
 .settings-layout {
@@ -28,15 +36,19 @@
 }
 
 @media (max-width: 850px) {
+.window-shell.tools-open {
+  --task-sidebar-width: 220px;
+}
+
 .app.tools-open {
-  grid-template-columns: 220px minmax(0, 1fr);
+  grid-template-columns: var(--task-sidebar-width) minmax(0, 1fr);
 }
 
 .tool-sidebar {
   z-index: 5;
   width: min(420px, 100%);
   position: fixed;
-  top: 47px;
+  top: var(--titlebar-height);
   bottom: 0;
   right: 0;
   box-shadow: -10px 0 35px #0002;
@@ -54,17 +66,21 @@
 }
 
 @media (max-width: 600px) {
+.window-shell, .window-shell.tools-open {
+  --task-sidebar-width: 165px;
+}
+
 .window-titlebar-drag {
-  gap: 6px;
   padding: 0 8px;
+}
+
+.window-brand {
+  flex-basis: calc(var(--task-sidebar-width) - 8px);
+  gap: 6px;
 }
 
 .window-app-name {
   font-size: 11px;
-}
-
-.window-project-title {
-  display: none;
 }
 
 .window-controls button {
@@ -72,7 +88,7 @@
 }
 
 .app, .app.tools-open {
-  grid-template-columns: 165px minmax(0, 1fr);
+  grid-template-columns: var(--task-sidebar-width) minmax(0, 1fr);
 }
 
 .task-sidebar {
@@ -85,16 +101,12 @@
   font-size: 10px;
 }
 
-.sidebar-brand b {
-  font-size: 10px;
-}
-
 .chat-scroll {
   padding: 0 16px;
 }
 
 .composer-wrap {
-  padding: 10px 12px 0;
+  padding: 10px 12px 10px;
 }
 
 .composer-mode {
@@ -103,7 +115,11 @@
 
 .composer-actions > div {
   justify-content: space-between;
-  width: 100%;
+}
+
+.composer-actions > div:last-child {
+  flex: 1;
+  justify-content: flex-end;
 }
 
 .chat-welcome {
@@ -112,14 +128,6 @@
 
 .chat-welcome h1 {
   font-size: 20px;
-}
-
-.conversation-status {
-  padding: 10px 12px;
-}
-
-.conversation-status > span:last-child {
-  display: none;
 }
 
 .settings-layout {

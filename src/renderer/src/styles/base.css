@@ -7,7 +7,7 @@
   font-size: var(--ui-font-size);
   font-synthesis: none;
   --bg: #f2f2ee;
-  --sidebar: #e5e6e1;
+  --sidebar: #EAEAE5;
   --surface: #fdfdfa;
   --text: #252728;
   --muted: #737772;
@@ -291,10 +291,13 @@ header {
   place-items: center;
   width: 52px;
   height: 52px;
-  margin-bottom: 9px;
-  font-family: Georgia, serif;
-  font-size: 36px;
   display: grid;
+}
+
+.welcome-mark img {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
 }
 
 .busy-dot {

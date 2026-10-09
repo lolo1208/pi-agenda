@@ -2,6 +2,7 @@
 @import './styles/base.css';
 @import './styles/application-layout.css';
 @import './styles/conversation.css';
+@import './styles/conversation-model-picker.css';
 @import './styles/tools.css';
 @import './styles/settings.css';
 @import './styles/project-picker.css';

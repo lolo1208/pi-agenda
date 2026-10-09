@@ -4,11 +4,12 @@
 
 | 用途 | 名称 |
 | --- | --- |
-| 英文 / 中文 | Pi Console / 指派台 |
-| 包名 / 推荐仓库目录 | `pi-console` |
-| application ID | `dev.piconsole.desktop` |
-| 桥接类型 / 对象 | `PiConsoleApi` / `window.piConsole` |
-| 影子仓库与暂存区 | `~/.pi-console/projects/<项目路径哈希>/` |
+| 产品全名 | Pi Agenda · 行动派 |
+| 英文 / 中文 | Pi Agenda / 行动派 |
+| 包名 / 推荐仓库目录 | `pi-agenda` |
+| application ID | `dev.piagenda.desktop` |
+| 桥接类型 / 对象 | `PiAgendaApi` / `window.piAgenda` |
+| 影子仓库与暂存区 | `~/.pi-agenda/projects/<项目路径哈希>/` |
 
 ## 命名约定
 
@@ -18,7 +19,7 @@
 | --- | --- | --- |
 | 目录、普通 TS、文档 | kebab-case | `shadow-git-manager.ts`、`development-guide.md` |
 | React 组件文件与组件 | PascalCase | `App.tsx`、`ChangedFilesList` |
-| 类、接口、类型 | PascalCase，无 I/T 前缀 | `ShadowGitManager`、`PiConsoleApi` |
+| 类、接口、类型 | PascalCase，无 I/T 前缀 | `ShadowGitManager`、`PiAgendaApi` |
 | 变量、属性、函数 | camelCase，体现职责 | `snapshotManager`、`rendererUrl`、`createCheckpoint` |
 | 布尔状态 | 优先 is/has/can/should | `isBusy`、`canRestore` |
 | 固定模块常量 | UPPER_SNAKE_CASE | `IPC_CHANNELS`、`EXCLUDED_NAMES` |
@@ -26,7 +27,7 @@
 | 测试文件 | 模块名 + `.test.ts(x)` | `shadow-git-manager.test.ts` |
 | IPC 通道 | 领域:动作，使用共享常量 | `snapshot:create` |
 | 数据库（接入时） | snake_case，表用复数 | `tool_calls`、`turn_id` |
-| 自定义环境变量 | PI_CONSOLE_ + UPPER_SNAKE_CASE | `PI_CONSOLE_LOG_LEVEL` |
+| 自定义环境变量 | PI_AGENDA_ + UPPER_SNAKE_CASE | `PI_AGENDA_LOG_LEVEL` |
 
 作具入口保留惯例，如 `index.ts`、`main.tsx`、`env.d.ts` 和 `electron.vite.config.ts`；外部 API 名称不重写。避免语义模糊的模块级 `data`、`manager`；局部循环索引可用 `i`。
 

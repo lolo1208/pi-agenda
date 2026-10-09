@@ -1,4 +1,5 @@
-import type { ModelReply, ModelResult } from '../../shared/models'
+import { MAX_CUSTOM_PROMPT_LENGTH, type ModelDescriptor, type ModelReply, type ModelResult, type ModelSettings } from '../../shared/models'
+import { OllamaClient } from './ollama-client'
 import { ModelClient } from './model-client'
 import { ModelSettingsStore } from './model-settings-store'
 import { ModelError, parseMessages, profileId } from './model-validation'
@@ -10,9 +11,14 @@ export async function modelResult<T>(action: () => Promise<T>): Promise<ModelRes
 
 export class ModelService {
   private pending: { id: string; controller: AbortController } | null = null
-  constructor(private readonly store: ModelSettingsStore, private readonly client = new ModelClient()) {}
+  constructor(private readonly store: ModelSettingsStore, private readonly client = new ModelClient(), private readonly ollama = new OllamaClient()) {}
+  async connectOllama(baseUrl: unknown): Promise<ModelSettings> {
+    const models = await this.ollama.list(baseUrl)
+    return this.store.syncOllama(baseUrl, models)
+  }
+  getOllamaModelInfo(baseUrl: unknown, model: unknown): Promise<ModelDescriptor> { return this.ollama.info(baseUrl, model) }
 
-  async request(id: unknown, requestId: unknown, messages: unknown, isTest: boolean): Promise<ModelReply> {
+  async request(id: unknown, requestId: unknown, messages: unknown, isTest: boolean, customPrompt?: unknown): Promise<ModelReply> {
     const operationId = profileId(requestId)
     if (this.pending) throw new ModelError('已有模型请求运行，请等待完成或取消')
     const controller = new AbortController()
@@ -22,9 +28,11 @@ export class ModelService {
     try {
       const config = await this.store.getForRequest(id)
       const conversation = isTest ? [{ role: 'user' as const, content: 'Reply with OK.' }] : parseMessages(messages)
+      if (!isTest && customPrompt !== undefined && (typeof customPrompt !== 'string' || customPrompt.length > MAX_CUSTOM_PROMPT_LENGTH)) throw new ModelError(`自定义提示词必须为文本且不能超过 ${MAX_CUSTOM_PROMPT_LENGTH} 个字符`)
+      const instruction = !isTest && typeof customPrompt === 'string' ? customPrompt.trim() : ''
       controller.signal.throwIfAborted()
       timer = setTimeout(() => { timedOut = true; controller.abort() }, config.profile.timeoutSeconds * 1000)
-      const result = await this.client.complete(config.profile, config.apiKey, conversation, controller.signal)
+      const result = await this.client.complete(config.profile, config.apiKey, conversation, controller.signal, instruction)
       controller.signal.throwIfAborted()
       return result
     } catch (error) {
