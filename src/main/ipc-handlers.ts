@@ -1,4 +1,4 @@
-import { dialog, ipcMain, shell, type BrowserWindow } from 'electron'
+import { clipboard, dialog, ipcMain, shell, type BrowserWindow } from 'electron'
 import path from 'node:path'
 import { ConversationStore } from './conversation-store'
 import { fileURLToPath } from 'node:url'
@@ -6,12 +6,15 @@ import { IPC_CHANNELS } from '../shared/api'
 import { ShadowGitManager } from './snapshot/shadow-git-manager'
 import { ModelSettingsStore } from './models/model-settings-store'
 import { ModelService, modelResult } from './models/model-service'
+import type { ChatgptService } from './models/chatgpt-service'
+import { ModelError } from './models/model-validation'
 
 interface IpcHandlerDependencies {
   getMainWindow: () => BrowserWindow | null
   getSnapshotManager: () => ShadowGitManager | undefined
   getModelSettings: () => ModelSettingsStore
   getModelService: () => ModelService
+  getChatgptService?: () => ChatgptService
   setSnapshotManager: (manager: ShadowGitManager | undefined) => void
   dataDirectory: string
   rendererUrl: string
@@ -39,6 +42,11 @@ function parseString(value: unknown): string {
 }
 
 export function registerIpcHandlers(dependencies: IpcHandlerDependencies): void {
+  const chatgpt = (): ChatgptService => {
+    const service = dependencies.getChatgptService?.()
+    if (!service) throw new Error('ChatGPT 订阅服务尚未初始化')
+    return service
+  }
   const conversations = new ConversationStore(path.join(dependencies.dataDirectory, 'conversations.json'))
   const requireSnapshotManager = (): ShadowGitManager => {
     const manager = dependencies.getSnapshotManager()
@@ -61,7 +69,12 @@ export function registerIpcHandlers(dependencies: IpcHandlerDependencies): void 
   }
 
   handle(IPC_CHANNELS.conversationsLoad, () => conversations.load())
-  handle(IPC_CHANNELS.conversationsSave, state => conversations.save(state))
+  handle(IPC_CHANNELS.conversationsSave, async state => {
+    const previous = conversations.load()
+    conversations.save(state)
+    const remaining = new Set((state as import('../shared/conversations').ConversationState).tasks.map(task => task.id))
+    for (const task of previous.tasks) if (!remaining.has(task.id)) await dependencies.getModelService().removeHistory(task.id)
+  })
   handle(IPC_CHANNELS.selectProject, async () => {
     const window = dependencies.getMainWindow()
     if (!window) throw new Error('应用窗口尚未准备就绪')
@@ -92,14 +105,33 @@ export function registerIpcHandlers(dependencies: IpcHandlerDependencies): void 
     if (error) throw new Error('无法打开项目目录，请检查目录是否存在')
   })
   handle(IPC_CHANNELS.checkpoint, label => requireSnapshotManager().createCheckpoint(parseString(label)))
-  handle(IPC_CHANNELS.changes, (base, current) => requireSnapshotManager().getChanges(parseString(base), parseString(current)))
+  handle(IPC_CHANNELS.changes, async (base, current, project) => {
+    const root = project === undefined ? undefined : parseString(project)
+    if (root && !path.isAbsolute(root)) throw new Error('项目路径必须是绝对路径')
+    const manager = root ? await ShadowGitManager.open(root, dependencies.dataDirectory) : requireSnapshotManager()
+    return manager.getChanges(parseString(base), parseString(current))
+  })
+  handle(IPC_CHANNELS.rollback, (base, current) => {
+    if (dependencies.getModelService().isBusy()) throw new Error('请先停止代理任务再回滚文件')
+    return requireSnapshotManager().rollback(parseString(base), parseString(current))
+  })
   handle(IPC_CHANNELS.diff, (base, current, file) => requireSnapshotManager().getDiff(parseString(base), parseString(current), parseString(file)))
   handle(IPC_CHANNELS.modelSettings, () => modelResult(() => dependencies.getModelSettings().list()))
+  handle(IPC_CHANNELS.chatgptStatus, () => modelResult(() => chatgpt().status()))
+  handle(IPC_CHANNELS.chatgptStart, () => modelResult(async () => { if (dependencies.getModelService().isBusy()) throw new ModelError('请先停止模型请求再授权账号'); return chatgpt().start() }))
+  handle(IPC_CHANNELS.chatgptOpen, () => modelResult(async () => { await shell.openExternal(await chatgpt().authorizationUrl()) }))
+  handle(IPC_CHANNELS.chatgptCopy, () => modelResult(async () => { clipboard.writeText(await chatgpt().authorizationUrl()) }))
+  handle(IPC_CHANNELS.chatgptSubmit, url => modelResult(() => chatgpt().submit(url)))
+  handle(IPC_CHANNELS.chatgptCancel, () => modelResult(() => chatgpt().cancel()))
+  handle(IPC_CHANNELS.chatgptLogout, () => modelResult(async () => { if (dependencies.getModelService().isBusy()) throw new ModelError('请先停止模型请求再退出账号'); await chatgpt().logout() }))
+  handle(IPC_CHANNELS.chatgptModels, () => modelResult(() => chatgpt().refreshModels()))
+  handle(IPC_CHANNELS.chatgptUsage, () => modelResult(() => chatgpt().usage()))
   handle(IPC_CHANNELS.modelSave, input => modelResult(() => dependencies.getModelSettings().save(input)))
   handle(IPC_CHANNELS.modelDelete, id => modelResult(() => dependencies.getModelSettings().delete(id)))
   handle(IPC_CHANNELS.modelActivate, id => modelResult(() => dependencies.getModelSettings().setActive(id)))
   handle(IPC_CHANNELS.modelTest, (id, requestId) => modelResult(() => dependencies.getModelService().request(id, requestId, null, true)))
-  handle(IPC_CHANNELS.modelChat, (id, requestId, messages, customPrompt) => modelResult(() => dependencies.getModelService().request(id, requestId, messages, false, customPrompt)))
+  handle(IPC_CHANNELS.modelChat, (id, requestId, messages, customPrompt, context, agent) => modelResult(() => dependencies.getModelService().request(id, requestId, messages, false, customPrompt, context, agent)))
+  handle(IPC_CHANNELS.agentHistory, id => modelResult(() => dependencies.getModelService().history(id)))
   handle(IPC_CHANNELS.modelCancel, requestId => modelResult(() => dependencies.getModelService().cancel(requestId)))
   handle(IPC_CHANNELS.ollamaConnect, baseUrl => modelResult(() => dependencies.getModelService().connectOllama(baseUrl)))
   handle(IPC_CHANNELS.ollamaInfo, (baseUrl, model) => modelResult(() => dependencies.getModelService().getOllamaModelInfo(baseUrl, model)))

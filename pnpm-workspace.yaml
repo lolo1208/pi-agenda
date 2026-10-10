@@ -1,6 +1,8 @@
 # Use a conventional node_modules layout for Electron packaging.
 nodeLinker: hoisted
 allowBuilds:
+  '@google/genai': false
   electron: true
   electron-winstaller: true
   esbuild: true
+  protobufjs: false

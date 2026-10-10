@@ -1,5 +1,5 @@
 export type ModelProtocol = 'openai-compatible' | 'anthropic'
-export type ProviderId = 'openai' | 'anthropic' | 'deepseek' | 'ollama' | 'vllm' | 'custom'
+export type ProviderId = 'chatgpt' | 'openai' | 'anthropic' | 'deepseek' | 'ollama' | 'vllm' | 'custom'
 export interface ModelProfile {
   id: string
   name: string
@@ -40,14 +40,35 @@ export const MAX_MESSAGE_IMAGES = 8
 export const MAX_CUSTOM_PROMPT_LENGTH = 32000
 export const MAX_IMAGE_BYTES = 5 * 1024 * 1024
 export const MAX_CONVERSATION_IMAGE_BYTES = 32 * 1024 * 1024
-export interface ChatImage { id: string; name: string; dataUrl: string }
+export const MAX_MESSAGE_ATTACHMENTS = 8
+export const MAX_ATTACHMENT_BYTES = 32 * 1024 * 1024
+export const MAX_CONVERSATION_ATTACHMENT_BYTES = 128 * 1024 * 1024
+export interface ChatAttachment { id: string; name: string; dataUrl: string }
+/** 沿用图片附件的类型与存储字段，兼容已有会话；现在可包含任意文件。 */
+export type ChatImage = ChatAttachment
 export interface ChatMessage { role: 'user' | 'assistant'; content: string; images?: ChatImage[] }
-export interface ModelUsage { inputTokens: number; outputTokens: number }
+export interface ModelUsage { inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheWriteTokens?: number }
 export interface ModelRateLimit { kind: 'requests' | 'tokens'; limit: number; remaining: number; reset?: string }
-export interface ModelReply { text: string; elapsedMs: number; model: string; truncated: boolean; usage?: ModelUsage; rateLimits?: ModelRateLimit[] }
+export interface ChatgptAuthStatus { state: 'signed-out' | 'authorizing' | 'signed-in'; url?: string; manualInput?: boolean; error?: string; catalogSource?: 'account' | 'sdk' }
+export interface SubscriptionWindow { seconds: number; usedPercent: number; resetsAt?: number }
+export interface ResetCredits { availableCount: number; earliestExpiresAt?: number | null }
+export interface ChatgptUsage { windows: SubscriptionWindow[]; fetchedAt: number; plan?: string; error?: string; resetCredits?: ResetCredits; resetCreditsError?: string }
+export interface ModelReply { text: string; elapsedMs: number; model: string; truncated: boolean; usage?: ModelUsage; roundUsage?: ModelUsage; rateLimits?: ModelRateLimit[]; compaction?: import('./context').ContextCompaction; messages?: ChatMessage[] }
+export interface AgentRequestOptions { conversationId: string; project?: string | null }
+export interface AgentSnapshot { project: string; before: import('./api').Checkpoint; after: import('./api').Checkpoint }
+export interface AgentEvent {
+  requestId: string
+  conversationId: string
+  type: 'text' | 'status' | 'transcript' | 'snapshot'
+  text?: string
+  resetText?: boolean
+  messages?: ChatMessage[]
+  snapshot?: AgentSnapshot
+}
 export type ModelResult<T> = { ok: true; value: T } | { ok: false; error: string }
 export interface ProviderPreset { id: ProviderId; label: string; protocol: ModelProtocol; baseUrl: string }
 export const PROVIDER_PRESETS: ProviderPreset[] = [
+  { id: 'chatgpt', label: 'ChatGPT 订阅', protocol: 'openai-compatible', baseUrl: 'https://chatgpt.com/backend-api' },
   { id: 'openai', label: 'OpenAI', protocol: 'openai-compatible', baseUrl: 'https://api.openai.com/v1' },
   { id: 'anthropic', label: 'Claude', protocol: 'anthropic', baseUrl: 'https://api.anthropic.com/v1' },
   { id: 'deepseek', label: 'DeepSeek', protocol: 'openai-compatible', baseUrl: 'https://api.deepseek.com/v1' },

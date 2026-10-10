@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import type { ConversationState } from '../shared/conversations'
+import { ATTACHMENT_DATA_URL } from '../shared/attachments'
 
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('会话文件格式无效')
@@ -10,7 +11,7 @@ function record(value: unknown): Record<string, unknown> {
 function images(value: unknown): boolean {
   return value === undefined || Array.isArray(value) && value.every(image => {
     const item = record(image)
-    return typeof item.id === 'string' && typeof item.name === 'string' && typeof item.dataUrl === 'string' && /^data:image\/(png|jpeg|webp|gif);base64,/.test(item.dataUrl)
+    return typeof item.id === 'string' && typeof item.name === 'string' && typeof item.dataUrl === 'string' && ATTACHMENT_DATA_URL.test(item.dataUrl)
   })
 }
 
@@ -22,6 +23,10 @@ function parseState(value: unknown): ConversationState {
     const task = record(value)
     if (typeof task.id !== 'string' || !task.id || ids.has(task.id) || typeof task.title !== 'string' || typeof task.preview !== 'string' || !(task.project === null || typeof task.project === 'string') || !(task.updatedAt === undefined || typeof task.updatedAt === 'number' && Number.isFinite(task.updatedAt)) || !(task.draft === undefined || typeof task.draft === 'string') || !images(task.draftImages)) throw new Error('会话文件格式无效')
     ids.add(task.id)
+    if (task.compaction !== undefined) {
+      const compaction = record(task.compaction)
+      if (typeof compaction.summary !== 'string' || !compaction.summary.trim() || compaction.summary.length > 32000 || !Number.isSafeInteger(compaction.coveredMessages) || (compaction.coveredMessages as number) < 1 || !Array.isArray(task.messages) || (compaction.coveredMessages as number) > task.messages.length) throw new Error('会话摘要格式无效')
+    }
     if (task.messages !== undefined && (!Array.isArray(task.messages) || !task.messages.every(value => {
       const message = record(value)
       return (message.role === 'user' || message.role === 'assistant') && typeof message.content === 'string' && images(message.images)

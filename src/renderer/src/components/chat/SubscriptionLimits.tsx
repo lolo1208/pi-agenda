@@ -1,0 +1,52 @@
+import { useEffect, useState } from 'react'
+import { Tooltip } from 'radix-ui'
+import { Button } from '@/components/ui/button'
+import type { ChatgptUsage, ModelReply } from '../../../../shared/models'
+import { LatestRound } from './LatestRound'
+
+export function resetCountdown(resetsAt: number | undefined, now: number): string {
+  if (!resetsAt || !Number.isFinite(resetsAt)) return '重置时间暂未提供'
+  const remaining = resetsAt * 1000 - now
+  if (remaining <= 0) return '已到重置时间，等待更新'
+  if (remaining < 60000) return '不到 1 分钟后重置'
+  const minutes = Math.ceil(remaining / 60000)
+  const parts = [
+    Math.floor(minutes / 1440) ? `${Math.floor(minutes / 1440)} 天` : '',
+    Math.floor(minutes % 1440 / 60) ? `${Math.floor(minutes % 1440 / 60)} 小时` : '',
+    minutes % 60 ? `${minutes % 60} 分钟` : ''
+  ].filter(Boolean)
+  return `${parts.join(' ')}后重置`
+}
+
+export function SubscriptionLimits({ usage, latestReply }: { usage?: ChatgptUsage; latestReply?: ModelReply }): React.JSX.Element {
+  const [open, setOpen] = useState(false)
+  const [now, setNow] = useState(Date.now)
+  useEffect(() => {
+    if (!open) return
+    const timer = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [open])
+  const windows = [{ seconds: 18000, label: '5 小时' }, { seconds: 604800, label: '7 天' }]
+  return <Tooltip.Root open={open} onOpenChange={value => { setNow(Date.now()); setOpen(value) }}><Tooltip.Trigger asChild><Button type="button" variant="ghost" className="composer-limits" aria-label="ChatGPT 订阅使用限制">
+    {windows.map(({ seconds, label }) => { const item = usage?.windows.find(window => window.seconds === seconds); return <span key={seconds} className={item && item.usedPercent >= 90 ? 'context-warning' : undefined}>{label} {item ? `剩余 ${Math.max(0, Math.floor(100 - item.usedPercent))}%` : '未知'}</span> })}
+  </Button></Tooltip.Trigger><Tooltip.Portal><Tooltip.Content className="composer-status-tooltip subscription-tooltip" side="top" align="end" sideOffset={8} collisionPadding={12}>
+    <div className="subscription-tooltip-heading"><strong>ChatGPT 订阅额度</strong>{usage?.plan && <span className="subscription-plan">{usage.plan}</span>}</div>
+    <div className="subscription-windows">{windows.map(({ seconds, label }) => {
+      const item = usage?.windows.find(window => window.seconds === seconds)
+      const used = item ? Math.min(100, Math.max(0, item.usedPercent)) : null
+      return <div className="subscription-window" key={seconds}>
+        <div className="subscription-window-heading"><span>{label}额度</span><span className={used !== null && used >= 90 ? 'subscription-warning' : undefined}>{used !== null ? `已用 ${used}%` : '暂无数据'}</span></div>
+        {used !== null && <div className="subscription-meter" aria-hidden="true"><div className={used >= 90 ? 'subscription-meter-warning' : undefined} style={{ width: `${used}%` }} /></div>}
+        <div className="subscription-reset">{item ? resetCountdown(item.resetsAt, now) : '服务尚未提供此窗口的额度'}</div>
+      </div>
+    })}</div>
+    <dl className="subscription-facts subscription-reset-facts">
+      <div><dt>可用重置</dt><dd>{usage?.resetCredits ? `${usage.resetCredits.availableCount} 次` : usage?.resetCreditsError ? '读取失败' : '暂未提供'}</dd></div>
+      <div><dt>最早过期</dt><dd>{usage?.resetCredits?.availableCount === 0 ? '无可用重置' : usage?.resetCredits?.earliestExpiresAt
+        ? new Date(usage.resetCredits.earliestExpiresAt).toLocaleString('zh-CN', { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })
+        : usage?.resetCredits?.earliestExpiresAt === null ? '不过期' : usage?.resetCreditsError ? '读取失败，将自动重试' : '暂未提供'}</dd></div>
+    </dl>
+    <LatestRound reply={latestReply} />
+    <div className={`subscription-footer${usage?.error ? ' subscription-warning' : ''}`}>{usage?.error ?? (usage?.fetchedAt ? `更新于 ${new Date(usage.fetchedAt).toLocaleTimeString('zh-CN')}` : '正在读取订阅额度…')}</div>
+  </Tooltip.Content></Tooltip.Portal></Tooltip.Root>
+}

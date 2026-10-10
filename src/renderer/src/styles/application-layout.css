@@ -184,6 +184,40 @@
   padding: 2px;
 }
 
+.task-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.task-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.task-list::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--muted) 32%, transparent);
+  border-radius: 999px;
+}
+
+.task-list::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--muted) 48%, transparent);
+}
+
+.task-list::-webkit-scrollbar-button,
+.task-list::-webkit-scrollbar-button:single-button,
+.task-list::-webkit-scrollbar-button:vertical:decrement,
+.task-list::-webkit-scrollbar-button:vertical:increment,
+.task-list::-webkit-scrollbar-button:start:decrement,
+.task-list::-webkit-scrollbar-button:end:increment {
+  display: none;
+  width: 0;
+  height: 0;
+  min-width: 0;
+  min-height: 0;
+  -webkit-appearance: none;
+  appearance: none;
+  border: 0;
+  background: transparent;
+}
+
 .project-group {
   margin: 0 0 18px;
 }

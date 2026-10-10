@@ -3,7 +3,8 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { ArrowUp, Plus, Sparkles, Square } from 'lucide-react'
-import { MAX_IMAGE_BYTES, MAX_MESSAGE_IMAGES, type ChatImage, type ModelProfileView } from '../../../../shared/models'
+import { MAX_ATTACHMENT_BYTES, MAX_MESSAGE_ATTACHMENTS, type ChatImage, type ModelProfileView } from '../../../../shared/models'
+import { attachmentMime } from '../../../../shared/attachments'
 import { ChatImages } from './ChatImages'
 import { ConversationModelPicker } from './ConversationModelPicker'
 
@@ -57,25 +58,23 @@ export function ChatComposer({ profile, profiles, onSelectModel, prompt, images,
   const addImages = async (files: File[]): Promise<void> => {
     if (isBusy || readingRef.current || !files.length) return
     setImageError('')
-    if (images.length + files.length > MAX_MESSAGE_IMAGES) { setImageError(`最多添加 ${MAX_MESSAGE_IMAGES} 张图片。`); return }
-    if (files.some(file => !['image/png', 'image/jpeg', 'image/webp'].includes(file.type))) { setImageError('请选择 PNG、JPEG 或 WebP 图片。'); return }
-    if (files.some(file => !file.size || file.size > MAX_IMAGE_BYTES)) { setImageError('每张图片须大于 0 字节且不超过 5 MiB。'); return }
+    if (images.length + files.length > MAX_MESSAGE_ATTACHMENTS) { setImageError(`最多添加 ${MAX_MESSAGE_ATTACHMENTS} 个附件。`); return }
+    if (files.some(file => file.size > MAX_ATTACHMENT_BYTES)) { setImageError('每个附件不能超过 32 MiB。'); return }
     readingRef.current = true; setReading(true)
     try {
       const added = await Promise.all(files.map(file => new Promise<ChatImage>((resolve, reject) => {
         const reader = new FileReader()
         reader.onload = () => {
-          const dataUrl = String(reader.result)
-          const image = new Image()
-          image.onload = () => resolve({ id: crypto.randomUUID(), name: file.name.slice(0, 255) || '粘贴的图片', dataUrl })
-          image.onerror = () => reject(new Error('图片无法读取，请选择有效的图片文件。'))
-          image.src = dataUrl
+          const data = String(reader.result).split(',')[1] ?? ''
+          const mime = attachmentMime(file.name, file.type)
+          resolve({ id: crypto.randomUUID(), name: file.name.slice(0, 255) || '粘贴的附件', dataUrl: `data:${mime};base64,${data}` })
         }
-        reader.onerror = () => reject(new Error('图片读取失败，请重试。'))
+        reader.onerror = () => reject(new Error('附件读取失败，请重试。'))
+        reader.onabort = () => reject(new Error('附件读取已取消，请重试。'))
         reader.readAsDataURL(file)
       })))
       onImagesChange([...images, ...added])
-    } catch (error) { setImageError(error instanceof Error ? error.message : '图片读取失败，请重试。') }
+    } catch (error) { setImageError(error instanceof Error ? error.message : '附件读取失败，请重试。') }
     finally { readingRef.current = false; setReading(false) }
   }
 
@@ -87,12 +86,12 @@ export function ChatComposer({ profile, profiles, onSelectModel, prompt, images,
   }}>
     {images.length > 0 && <ChatImages images={images} disabled={isBusy || reading} onRemove={id => onImagesChange(images.filter(image => image.id !== id))} />}
     {imageError && <p className="composer-image-error" role="alert">{imageError}</p>}
-    <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" multiple hidden aria-label="选择图片附件" onChange={event => {
+    <input ref={fileRef} type="file" multiple hidden aria-label="选择文件附件" onChange={event => {
       void addImages(Array.from(event.target.files ?? [])); event.target.value = ''
     }} />
     <Label className="sr-only" htmlFor={promptId}>消息</Label>
     <Textarea ref={textareaRef} rows={1} id={promptId} aria-label="消息" value={prompt} maxLength={32000} disabled={isBusy} placeholder={hasMessages ? '继续聊一聊…' : '描述你想完成的任务…'} onChange={event => onPromptChange(event.target.value)} onPaste={event => {
-      const files = Array.from(event.clipboardData.items).filter(item => item.kind === 'file' && item.type.startsWith('image/')).map(item => item.getAsFile()).filter((file): file is File => Boolean(file))
+      const files = Array.from(event.clipboardData.items).filter(item => item.kind === 'file').map(item => item.getAsFile()).filter((file): file is File => Boolean(file))
       if (files.length) { event.preventDefault(); void addImages(files) }
     }} onKeyDown={event => {
       if (event.key !== 'Enter' || event.nativeEvent.isComposing) return
@@ -101,8 +100,8 @@ export function ChatComposer({ profile, profiles, onSelectModel, prompt, images,
     }} />
     <div className="composer-actions">
       <div className="composer-tools">
-        <Button type="button" className="attach-image-button" aria-label="添加图片" title="添加图片，也可粘贴或拖入" disabled={isBusy || reading || images.length >= MAX_MESSAGE_IMAGES} onClick={() => fileRef.current?.click()}><Plus size={17} /></Button>
-        <span className="composer-mode"><Sparkles size={14} />{reading ? '正在添加图片…' : '对话'}</span>
+        <Button type="button" className="attach-image-button" aria-label="添加附件" title="添加文件，也可粘贴或拖入" disabled={isBusy || reading || images.length >= MAX_MESSAGE_ATTACHMENTS} onClick={() => fileRef.current?.click()}><Plus size={17} /></Button>
+        <span className="composer-mode"><Sparkles size={14} />{reading ? '正在添加附件…' : '对话'}</span>
       </div>
       <div>
         <ConversationModelPicker profile={profile} profiles={profiles ?? (profile ? [profile] : [])} disabled={isBusy || settingsDisabled} onSelect={onSelectModel ?? (() => undefined)} onOpenSettings={onOpenSettings} />

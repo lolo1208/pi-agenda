@@ -7,17 +7,20 @@ import { ChatImages } from './ChatImages'
 interface ChatTranscriptProps {
   messages: ChatMessage[]
   pendingMessage: ChatMessage | null
+  streamedText?: string
+  agentStatus?: string
+  isBusy?: boolean
   hasProfile: boolean
   settingsDisabled?: boolean
   onOpenSettings: () => void
 }
 
-export function ChatTranscript({ messages, pendingMessage, hasProfile, settingsDisabled, onOpenSettings }: ChatTranscriptProps): React.JSX.Element {
+export function ChatTranscript({ messages, pendingMessage, streamedText = '', agentStatus, isBusy, hasProfile, settingsDisabled, onOpenSettings }: ChatTranscriptProps): React.JSX.Element {
   const endRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    endRef.current?.scrollIntoView?.({ block: 'end', behavior: 'smooth' })
-  }, [messages, pendingMessage])
+    endRef.current?.scrollIntoView?.({ block: 'end', behavior: 'instant' })
+  }, [messages, pendingMessage, streamedText])
 
   return <div className="chat-scroll">
     {!messages.length && !pendingMessage && <div className="chat-welcome">
@@ -40,8 +43,10 @@ export function ChatTranscript({ messages, pendingMessage, hasProfile, settingsD
           {Boolean(pendingMessage.images?.length) && <ChatImages images={pendingMessage.images!} />}
           {pendingMessage.content && <p>{pendingMessage.content}</p>}
         </article>
-        <div className="thinking" role="status"><span className="busy-dot" />正在等待模型回复…</div>
+        {!isBusy && <div className="thinking" role="status"><span className="busy-dot" />正在等待模型回复…</div>}
       </>}
+      {streamedText && <article className="chat-message assistant" aria-label="正在生成的回复"><strong><Sparkles size={15} />Pi Agenda</strong><p>{streamedText}</p></article>}
+      {isBusy && <div className="thinking" role="status"><span className="busy-dot" />{agentStatus || '正在等待模型回复…'}</div>}
       <div ref={endRef} />
     </div>
   </div>

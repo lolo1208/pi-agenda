@@ -21,10 +21,12 @@ export default function App(): React.JSX.Element {
     pendingProjectRemoval, setPendingProjectRemoval, busyTasks, setBusyTasks, tasks, setTasks,
     currentTask, query, setQuery, collapsedProjects, setCollapsedProjects, searchOpen, setSearchOpen,
     projectSnapshot, isChatBusy, updateProjectSnapshot, runAction, createProjectTask,
-    chooseExistingProject, selectTask, removeTask, removeProject, captureCheckpoint,
+    chooseExistingProject, selectTask, removeTask, removeProject, captureCheckpoint, rollbackCheckpoint,
   } = workspace
   const { checkpoints, changes, diff } = projectSnapshot
   const [preferences, setPreferences] = useState(readPreferences)
+  const [systemPrefersDark, setSystemPrefersDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches)
+  const resolvedTheme = preferences.theme === 'system' ? (systemPrefersDark ? 'dark' : 'light') : preferences.theme
   const [settings, setSettings] = useState<ModelSettings | null>(null)
   const [settingsError, setSettingsError] = useState('')
   const [settingsSection, setSettingsSection] = useState<string | null>(null)
@@ -38,10 +40,16 @@ export default function App(): React.JSX.Element {
   useEffect(loadSettings, [])
   useEffect(() => window.piAgenda.onWindowMaximizedChange?.(setIsMaximized), [])
   useEffect(() => {
-    document.documentElement.dataset.theme = preferences.theme
+    const query = window.matchMedia('(prefers-color-scheme: dark)')
+    const update = (): void => setSystemPrefersDark(query.matches)
+    query.addEventListener('change', update)
+    return () => query.removeEventListener('change', update)
+  }, [])
+  useEffect(() => {
+    document.documentElement.dataset.theme = resolvedTheme
     document.documentElement.dataset.font = preferences.font
     document.documentElement.style.setProperty('--ui-font-size', `${preferences.fontSize}px`)
-  }, [preferences.theme, preferences.font, preferences.fontSize])
+  }, [resolvedTheme, preferences.font, preferences.fontSize])
   const updatePreferences = (next: Preferences): void => {
     setPreferences(next)
     try { localStorage.setItem('pi-agenda.preferences', JSON.stringify({ ...next, sendWithCtrlEnterVersion: 1 })) } catch { setError('偏好设置未能保存，重启后将恢复默认值。请检查本地存储。') }
@@ -91,23 +99,24 @@ export default function App(): React.JSX.Element {
       <main className="conversation">
         <header className="conversation-header"><Button className="icon-button" aria-label={toolsOpen ? '收起工具栏' : '展开工具栏'} aria-expanded={toolsOpen} onClick={() => setToolsOpen(value => !value)}><PanelRightOpen size={18} /></Button></header>
         {!currentTask && <section className="no-task-state"><FolderOpen size={30} /><h1>从一个项目开始</h1><p>为新对话选择已有项目，或添加一个新的目录。</p><Button className="project-new-button" onClick={() => setProjectPickerOpen(true)}><PlusCircle size={17} />新建对话</Button></section>}
-        {tasks.map(task => <div className="task-chat" key={task.id} hidden={task.id !== currentTask?.id}><ModelChat customPrompt={preferences.customPrompt} project={task.project} providers={settings?.providers} initialMessages={task.messages} initialDraft={task.draft} initialDraftImages={task.draftImages} onDraftChange={(draft, draftImages) => setTasks(items => items.map(item => item.id === task.id && (item.draft !== draft || item.draftImages !== draftImages) ? { ...item, draft, draftImages } : item))} profile={activeProfile} profiles={settings?.profiles} onBusyChange={busy => setBusyTasks(items => busy ? [...items.filter(id => id !== task.id), task.id] : items.filter(id => id !== task.id))} onOpenSettings={() => setSettingsSection('models')} settingsDisabled={isChatBusy} sendWithCtrlEnter={preferences.sendWithCtrlEnter} onMessagesChange={messages => setTasks(items => items.map(item => item.id === task.id ? { ...item, messages, updatedAt: Date.now(), title: messages.find(message => message.role === 'user')?.content.slice(0, 36) || (messages.some(message => message.images?.length) ? '图片对话' : '新建对话'), preview: messages.at(-1)?.content.slice(0, 90) ?? '开始一段新的对话' } : item))} /></div>)}
+        {tasks.map(task => <div className="task-chat" key={task.id} hidden={task.id !== currentTask?.id}><ModelChat active={task.id === currentTask?.id && settingsSection === null} conversationId={task.id} compressionThreshold={preferences.compressionThreshold} initialCompaction={task.compaction} onCompactionChange={compaction => setTasks(items => items.map(item => item.id === task.id ? { ...item, compaction } : item))} customPrompt={preferences.customPrompt} project={task.project} providers={settings?.providers} initialMessages={task.messages} initialDraft={task.draft} initialDraftImages={task.draftImages} onDraftChange={(draft, draftImages) => setTasks(items => items.map(item => item.id === task.id && (item.draft !== draft || item.draftImages !== draftImages) ? { ...item, draft, draftImages } : item))} profile={activeProfile} profiles={settings?.profiles} onBusyChange={busy => setBusyTasks(items => busy ? [...items.filter(id => id !== task.id), task.id] : items.filter(id => id !== task.id))} onOpenSettings={() => setSettingsSection('models')} settingsDisabled={isChatBusy} sendWithCtrlEnter={preferences.sendWithCtrlEnter} onMessagesChange={messages => setTasks(items => items.map(item => item.id === task.id ? { ...item, messages, updatedAt: Date.now(), title: messages.find(message => message.role === 'user')?.content.slice(0, 36) || (messages.some(message => message.images?.length) ? '附件对话' : '新建对话'), preview: messages.at(-1)?.content.slice(0, 90) ?? '开始一段新的对话' } : item))} /></div>)}
         {error && <p role="alert" className="error">{error}</p>}
         {settingsError && <p role="alert" className="error">{settingsError}<Button onClick={loadSettings}>重新读取设置</Button></p>}
 
       </main>
       {toolsOpen && <ToolSidebar
         project={project}
-        isBusy={isBusy}
+        isBusy={isBusy || isChatBusy}
         activeTool={tool}
         checkpoints={checkpoints}
         changes={changes}
         diff={diff}
-        theme={preferences.theme}
+        theme={resolvedTheme}
         inlineDiff={preferences.inlineDiff}
         onToolChange={setTool}
         onClose={() => setToolsOpen(false)}
         onCaptureCheckpoint={captureCheckpoint}
+        onRollbackCheckpoint={rollbackCheckpoint}
         onSelectDiff={filePath => { void runAction(async () => updateProjectSnapshot({ diff: await window.piAgenda.getDiff(checkpoints.at(-2)!.hash, checkpoints.at(-1)!.hash, filePath) })) }}
       />}
     </div>
@@ -122,7 +131,4 @@ export default function App(): React.JSX.Element {
     />}
   </div>
 }
-
-
-
 

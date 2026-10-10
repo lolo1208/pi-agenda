@@ -1,4 +1,5 @@
-import { readdir, rm } from 'node:fs/promises'
+import { readdir, rm, readFile, writeFile, mkdir, lstat } from 'node:fs/promises'
+import { projectToolPath } from '../models/pi-tools'
 import path from 'node:path'
 import type { SimpleGit } from 'simple-git'
 import { openSnapshotStorage, removeSnapshotStorage } from './snapshot-storage'
@@ -29,7 +30,7 @@ export class ShadowGitManager {
   createCheckpoint(label: string): Promise<Checkpoint> {
     return this.serialized(async () => {
       if (!label.trim() || label.length > 200) throw new Error('快照名称须为 1–200 个字符')
-      // Only staging is cleared, never the user's working tree.
+      // 仅清空快照暂存区，不修改项目工作目录。
       for (const item of await readdir(this.staging)) await rm(path.join(this.staging, item), { recursive: true, force: true })
       await copyProjectFiles(this.root, this.staging)
       await this.git.raw(['add', '--all', '--force', '--', '.'])
@@ -69,5 +70,32 @@ export class ShadowGitManager {
       before: change.status === 'A' ? '' : await this.git.show([`${base}:${file}`]),
       after: change.status === 'D' ? '' : await this.git.show([`${current}:${file}`])
     }))
+  }
+
+  /** 保存回滚前快照；只恢复本轮改动，并拒绝覆盖本轮之后的手动修改。 */
+  async rollback(base: string, current: string): Promise<Checkpoint> {
+    const changes = await this.getChanges(base, current)
+    if (!changes.length) throw new Error('此轮没有需要回滚的文件改动')
+    const safety = await this.createCheckpoint('回滚前保护快照')
+    const subsequent = await this.getChanges(current, safety.hash)
+    if (subsequent.some(file => changes.some(change => change.path === file.path))) throw new Error('本轮文件已有后续改动，已保留保护快照；请先查看差异，避免覆盖手动修改')
+    await this.serialized(async () => {
+      // 先验证所有路径，再恢复暂存区；Git 始终指向影子仓库。
+      const targets = await Promise.all(changes.map(file => projectToolPath(this.root, file.path)))
+      await this.git.raw(['restore', `--source=${base}`, '--worktree', '--', '.'])
+      const contents = await Promise.all(changes.map(file => file.status === 'A' ? null : readFile(path.join(this.staging, file.path))))
+      for (let index = 0; index < changes.length; index++) {
+        const target = targets[index]
+        if (contents[index] === null) {
+          try { if (!(await lstat(target)).isFile()) throw new Error('回滚目标不是普通文件') }
+          catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
+          await rm(target, { force: true })
+        } else {
+          await mkdir(path.dirname(target), { recursive: true })
+          await writeFile(target, contents[index]!)
+        }
+      }
+    })
+    return this.createCheckpoint('代理改动已回滚')
   }
 }

@@ -1,4 +1,5 @@
-import { MAX_MESSAGE_IMAGES, MAX_IMAGE_BYTES, MAX_CONVERSATION_IMAGE_BYTES, PROVIDER_PRESETS, type ChatImage, type ChatMessage, type ModelProfile, type SaveModelProfile } from '../../shared/models'
+import { MAX_MESSAGE_ATTACHMENTS, MAX_ATTACHMENT_BYTES, MAX_CONVERSATION_ATTACHMENT_BYTES, PROVIDER_PRESETS, type ChatImage, type ChatMessage, type ModelProfile, type SaveModelProfile } from '../../shared/models'
+import { ATTACHMENT_DATA_URL } from '../../shared/attachments'
 
 export class ModelError extends Error {}
 export function asRecord(value: unknown): Record<string, unknown> {
@@ -39,6 +40,7 @@ export function parseProfile(value: unknown): ModelProfile {
   if (item.enabled !== undefined && typeof item.enabled !== 'boolean') throw new ModelError('模型启用状态无效')
   if (item.thinking !== undefined && item.thinking !== null && typeof item.thinking !== 'boolean') throw new ModelError('推理模式无效')
   const contextTokens = item.contextTokens === undefined || item.contextTokens === null ? null : numberInRange(item.contextTokens, 1, 2097152, '上下文上限', true)
+  if (item.provider === 'chatgpt' && (item.baseUrl !== 'https://chatgpt.com/backend-api' || item.protocol !== 'openai-compatible' || item.temperature !== null)) throw new ModelError('ChatGPT 订阅使用固定服务地址，Temperature 由服务决定')
   if (contextTokens !== null && typeof item.maxTokens === 'number' && item.maxTokens > contextTokens) throw new ModelError('输出 Token 上限不能超过上下文上限')
   return {
     id: profileId(item.id), name: requiredString(item.name, '配置名称', 80),
@@ -70,20 +72,22 @@ export function parseMessages(value: unknown): ChatMessage[] {
     if (item.role !== 'user' && item.role !== 'assistant') throw new ModelError('无效消息角色')
     let images: ChatImage[] | undefined
     if (item.images !== undefined) {
-      if (item.role !== 'user' || !Array.isArray(item.images) || item.images.length > MAX_MESSAGE_IMAGES) throw new ModelError(`每条用户消息最多包含 ${MAX_MESSAGE_IMAGES} 张图片`)
+      if (item.role !== 'user' || !Array.isArray(item.images) || item.images.length > MAX_MESSAGE_ATTACHMENTS) throw new ModelError(`每条用户消息最多包含 ${MAX_MESSAGE_ATTACHMENTS} 个附件`)
       images = item.images.map(value => {
         const image = asRecord(value)
         const id = profileId(image.id)
-        const name = requiredString(image.name, '图片名称', 255)
-        if (typeof image.dataUrl !== 'string' || image.dataUrl.length > Math.ceil(MAX_IMAGE_BYTES / 3) * 4 + 64) throw new ModelError('每张图片不能超过 5 MiB')
-        const match = /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/]+={0,2})$/.exec(image.dataUrl)
-        if (!match || match[2].length % 4 !== 0) throw new ModelError('图片须为 PNG、JPEG 或 WebP 格式')
+        const name = requiredString(image.name, '附件名称', 255)
+        if (typeof image.dataUrl !== 'string' || image.dataUrl.length > Math.ceil(MAX_ATTACHMENT_BYTES / 3) * 4 + 256) throw new ModelError('每个附件不能超过 32 MiB')
+        const match = ATTACHMENT_DATA_URL.exec(image.dataUrl)
+        if (!match || match[2].length % 4 !== 0) throw new ModelError('附件编码无效，请重新选择文件')
         const bytes = Buffer.from(match[2], 'base64')
-        const valid = match[1] === 'png' ? bytes.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))
-          : match[1] === 'jpeg' ? bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff
-          : bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP'
-        if (!valid || bytes.toString('base64') !== match[2]) throw new ModelError('图片内容或格式无效，请重新选择图片')
-        if (bytes.length > MAX_IMAGE_BYTES) throw new ModelError('每张图片不能超过 5 MiB')
+        const mime = match[1].toLowerCase()
+        const valid = mime === 'image/png' ? bytes.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))
+          : mime === 'image/jpeg' ? bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff
+          : mime === 'image/webp' ? bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP'
+          : mime === 'image/gif' ? /^GIF8[79]a$/.test(bytes.toString('ascii', 0, 6)) : true
+        if (!valid || bytes.toString('base64') !== match[2]) throw new ModelError('附件内容或编码无效，请重新选择文件')
+        if (bytes.length > MAX_ATTACHMENT_BYTES) throw new ModelError('每个附件不能超过 32 MiB')
         imageBytes += bytes.length
         return { id, name, dataUrl: image.dataUrl }
       })
@@ -95,7 +99,7 @@ export function parseMessages(value: unknown): ChatMessage[] {
     return { role: item.role, content, ...(images?.length ? { images } : {}) } as ChatMessage
   })
   if (length > 128000) throw new ModelError('对话过长，请清空对话后重试')
-  if (imageBytes > MAX_CONVERSATION_IMAGE_BYTES) throw new ModelError('对话图片总量超过 32 MiB，请新建对话后重试')
+  if (imageBytes > MAX_CONVERSATION_ATTACHMENT_BYTES) throw new ModelError('对话附件总量超过 128 MiB，请新建对话后重试')
   if (messages.at(-1)?.role !== 'user') throw new ModelError('最后一条消息必须为用户输入')
   return messages
 }

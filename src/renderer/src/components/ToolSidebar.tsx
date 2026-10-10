@@ -15,11 +15,12 @@ interface ToolSidebarProps {
   checkpoints: Checkpoint[]
   changes: ChangedFile[]
   diff: FileDiff | null
-  theme: Preferences['theme']
+  theme: 'light' | 'dark'
   inlineDiff: boolean
   onToolChange: (tool: ToolId) => void
   onClose: () => void
   onCaptureCheckpoint: () => void
+  onRollbackCheckpoint: () => void
   onSelectDiff: (filePath: string) => void
 }
 
@@ -46,7 +47,7 @@ function PlaceholderTool({ tool }: { tool: Exclude<ToolId, 'snapshots'> }): Reac
   </div>
 }
 
-export function ToolSidebar({ project, isBusy, activeTool, checkpoints, changes, diff, theme, inlineDiff, onToolChange, onClose, onCaptureCheckpoint, onSelectDiff }: ToolSidebarProps): React.JSX.Element {
+export function ToolSidebar({ project, isBusy, activeTool, checkpoints, changes, diff, theme, inlineDiff, onToolChange, onClose, onCaptureCheckpoint, onRollbackCheckpoint, onSelectDiff }: ToolSidebarProps): React.JSX.Element {
   return <section className="tool-sidebar" aria-label="侧栏工具">
     <header>
       <span>侧栏工具</span>
@@ -60,7 +61,8 @@ export function ToolSidebar({ project, isBusy, activeTool, checkpoints, changes,
         <h3>项目快照</h3>
         <p className="hint">{project ?? '打开项目后，创建基准快照。'}</p>
         <Button disabled={!project || isBusy} onClick={onCaptureCheckpoint}><Camera size={16} />{isBusy ? '处理中…' : checkpoints.length ? '捕获当前改动' : '创建基准快照'}</Button>
-        <p className="hint">连续两次快照可比较改动，当前暂不支持回滚。</p>
+        <Button disabled={!project || isBusy || !changes.length || checkpoints.length < 2} onClick={onRollbackCheckpoint}>回滚最近改动</Button>
+        <p className="hint">修改前后自动保存快照。回滚会先保存当前状态；有后续手动修改时会停止回滚。</p>
         <details>
           <summary>快照记录 · {checkpoints.length}</summary>
           {checkpoints.map(checkpoint => <div className="checkpoint" key={checkpoint.hash}><span>{checkpoint.label}</span><code>{checkpoint.hash.slice(0, 8)}</code></div>)}

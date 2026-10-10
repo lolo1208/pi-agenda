@@ -4,7 +4,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
-import { Moon, RotateCcw, Sun } from 'lucide-react'
+import { ArrowRightToLine, Monitor, Moon, RotateCcw, Sun } from 'lucide-react'
 import type { Preferences } from '../../preferences'
 import { useRef, useState } from 'react'
 import { MAX_CUSTOM_PROMPT_LENGTH, PROVIDER_PRESETS, type ModelSettings } from '../../../../shared/models'
@@ -15,6 +15,9 @@ interface PreferencesSectionProps {
   onPreferences: (preferences: Preferences) => void
 }
 
+const CUSTOM_PROMPT_EXAMPLE = '默认使用简体中文，包括对话、文档、代码注释和日志；必要的技术术语与标识符保留原文。'
+const CUSTOM_PROMPT_PLACEHOLDER = `例如：${CUSTOM_PROMPT_EXAMPLE}`
+
 export function GeneralSettingsSection({ preferences, onPreferences, isMac, settings, onModelSettingsChange, onBusyChange }: PreferencesSectionProps & {
   isMac: boolean
   settings: ModelSettings | null
@@ -24,6 +27,8 @@ export function GeneralSettingsSection({ preferences, onPreferences, isMac, sett
   const [saving, setSaving] = useState(false)
   const savingRef = useRef(false)
   const [error, setError] = useState('')
+  const [promptFocused, setPromptFocused] = useState(false)
+  const showPromptSuggestion = promptFocused && preferences.customPrompt === ''
   const usableProfiles = settings?.profiles.filter(item => item.enabled !== false && item.available !== false) ?? []
   const changeDefault = async (id: string): Promise<void> => {
     if (savingRef.current || id === settings?.activeProfileId) return
@@ -62,10 +67,36 @@ export function GeneralSettingsSection({ preferences, onPreferences, isMac, sett
         </div>
       </div>
     </section>
+    <section className="settings-card compression-setting">
+      <Label htmlFor="compression-threshold">上下文压缩阈值</Label>
+      <p id="compression-description" className="hint">发送消息前，上下文占用达到此比例时自动压缩历史消息。修改后从下一次发送起生效。</p>
+      <div className="compression-slider-row">
+        <div className="compression-slider-track">
+          <input id="compression-threshold" type="range" min={60} max={95} step={1} value={preferences.compressionThreshold} aria-valuetext={`${preferences.compressionThreshold}%`} aria-describedby="compression-description compression-help" onChange={event => onPreferences({ ...preferences, compressionThreshold: Number(event.target.value) })} />
+          <div className="compression-slider-labels" aria-hidden="true"><span>60%</span><span>95%</span></div>
+        </div>
+        <output htmlFor="compression-threshold">{preferences.compressionThreshold}%</output>
+      </div>
+      <p id="compression-help" className="hint">调低会更早压缩，为回复保留更多余量；调高会更晚压缩。默认 90%。需配置模型上下文上限；完整聊天记录仍保存在本地。</p>
+    </section>
     <section className="settings-card custom-prompt-setting">
       <Label htmlFor="custom-prompt">自定义提示词</Label>
       <p id="custom-prompt-description" className="hint">每次发送消息时都会附带这些指令，对所有模型和会话生效。留空则不附加。</p>
-      <Textarea id="custom-prompt" aria-describedby="custom-prompt-description" rows={5} maxLength={MAX_CUSTOM_PROMPT_LENGTH} value={preferences.customPrompt} placeholder="例如：请使用简体中文回答，先给出结论，再说明原因。" onChange={event => onPreferences({ ...preferences, customPrompt: event.target.value })} />
+      <div className="custom-prompt-input" data-suggestion-visible={showPromptSuggestion}>
+        <Textarea id="custom-prompt" aria-describedby={showPromptSuggestion ? 'custom-prompt-description custom-prompt-shortcut' : 'custom-prompt-description'} rows={5} maxLength={MAX_CUSTOM_PROMPT_LENGTH} value={preferences.customPrompt} placeholder={CUSTOM_PROMPT_PLACEHOLDER}
+          onFocus={() => setPromptFocused(true)} onBlur={() => setPromptFocused(false)}
+          onChange={event => onPreferences({ ...preferences, customPrompt: event.target.value })}
+          onKeyDown={event => {
+            if (event.key === 'Tab' && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey && !event.nativeEvent.isComposing && preferences.customPrompt === '') {
+              event.preventDefault()
+              onPreferences({ ...preferences, customPrompt: CUSTOM_PROMPT_EXAMPLE })
+            }
+          }} />
+        {showPromptSuggestion && <>
+          <div className="custom-prompt-placeholder" aria-hidden="true">{CUSTOM_PROMPT_PLACEHOLDER} <kbd><ArrowRightToLine size={12} />Tab</kbd></div>
+          <span id="custom-prompt-shortcut" className="sr-only">按 Tab 填入示例提示词。</span>
+        </>}
+      </div>
     </section>
     <p className="hint">设置自动保存在此设备。</p>
   </>
@@ -76,12 +107,12 @@ export function AppearanceSettingsSection({ preferences, onPreferences }: Prefer
     <h2>外观</h2>
     <p className="section-description">让工作台保持舒适、清晰。</p>
     <section className="settings-card">
-      <h3>主题</h3>
-      <p className="hint">同时应用于任务列表、对话、设置和代码对比。</p>
+      <h3>颜色主题</h3>
+      <p className="hint">同时应用于任务列表、对话、设置和代码对比。选择跟随系统后，会根据系统外观自动切换。</p>
       <div className="theme-options">
-        {(['light', 'dark'] as const).map(theme => <Button key={theme} className={`theme-option ${theme}`} aria-pressed={preferences.theme === theme} onClick={() => onPreferences({ ...preferences, theme })}>
+        {(['light', 'dark', 'system'] as const).map(theme => <Button key={theme} className={`theme-option ${theme}`} aria-pressed={preferences.theme === theme} onClick={() => onPreferences({ ...preferences, theme })}>
           <span className="theme-preview"><i /><span><b /><b /><b /></span></span>
-          <span>{theme === 'light' ? <Sun size={16} /> : <Moon size={16} />}{theme === 'light' ? '明色' : '暗色'}<span className="theme-check">{preferences.theme === theme ? '已选择' : ''}</span></span>
+          <span>{theme === 'light' ? <Sun size={16} /> : theme === 'dark' ? <Moon size={16} /> : <Monitor size={16} />}{theme === 'light' ? '浅色' : theme === 'dark' ? '深色' : '跟随系统'}<span className="theme-check">{preferences.theme === theme ? '已选择' : ''}</span></span>
         </Button>)}
       </div>
     </section>

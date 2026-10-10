@@ -89,12 +89,26 @@
 .custom-prompt-setting > label { display: block; font-weight: 500; }
 .custom-prompt-setting > .hint { margin: 8px 0 14px; line-height: 1.7; }
 .custom-prompt-setting textarea { resize: vertical; min-height: 120px; max-height: 400px; }
+.custom-prompt-input { position: relative; }
+.custom-prompt-input textarea, .custom-prompt-placeholder { font-size: 14px; line-height: 1.5; }
+.custom-prompt-input[data-suggestion-visible="true"] textarea::placeholder { color: transparent; }
+.custom-prompt-placeholder { position: absolute; inset: 1px 1px auto; padding: 8px 12px; color: var(--muted); overflow-wrap: anywhere; pointer-events: none; }
+.custom-prompt-placeholder kbd { display: inline-flex; align-items: center; gap: 4px; vertical-align: baseline; white-space: nowrap; padding: 0 4px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text); font-family: inherit; font-size: 11px; line-height: 17px; }
 
 .settings-divider {
   background: var(--border);
   height: 1px;
   margin: 18px 0;
 }
+
+.compression-setting > label { font-weight: 500; }
+.compression-setting > .hint { margin: 10px 0; line-height: 1.7; }
+.compression-slider-row { display: flex; align-items: center; gap: 16px; margin: 14px 0; }
+.compression-slider-track { flex: 1; min-width: 0; }
+.compression-slider-track input { width: 100%; accent-color: var(--text); cursor: pointer; }
+.compression-slider-track input:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.compression-slider-labels { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; margin-top: 4px; }
+.compression-slider-row output { border: 1px solid var(--border); border-radius: 18px; min-width: 56px; padding: 4px 10px; text-align: center; font-size: 13px; }
 
 .shortcut-setting {
   justify-content: space-between;
@@ -122,15 +136,17 @@
 }
 
 .theme-options {
-  gap: 18px;
+  gap: 14px;
   margin-top: 20px;
   display: flex;
+  flex-wrap: wrap;
 }
 
 .theme-option {
   text-align: left;
   border-radius: 10px;
-  width: 220px;
+  width: min(220px, 100%);
+  flex: 1 1 180px;
   padding: 8px;
   display: block;
 }
@@ -207,6 +223,23 @@
 
 .dark .theme-preview b:last-child {
   background: #202122;
+}
+
+.system .theme-preview {
+  background: linear-gradient(90deg, #f2f2ee 50%, #121314 50%);
+}
+
+.system .theme-preview i {
+  background: linear-gradient(90deg, #e5e6e1 50%, #191a1b 50%);
+  border-color: #8b8d89;
+}
+
+.system .theme-preview b {
+  background: linear-gradient(90deg, #dfe1da 50%, #333536 50%);
+}
+
+.system .theme-preview b:last-child {
+  background: linear-gradient(90deg, #fdfdfa 50%, #202122 50%);
 }
 
 .font-settings {
@@ -445,3 +478,6 @@
 @media (prefers-reduced-motion: reduce) {
   .provider-workspace *, .provider-dialog * { transition: none !important; animation: none !important; }
 }
+.chatgpt-auth-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 12px 0; }
+.chatgpt-authorization { min-width: 0; }
+.chatgpt-authorization .error, .chatgpt-authorization .success { overflow-wrap: anywhere; }

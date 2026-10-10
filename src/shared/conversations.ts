@@ -7,8 +7,10 @@ export interface Conversation {
   project: string | null
   updatedAt?: number
   messages?: ChatMessage[]
+  compaction?: import('./context').ContextCompaction
   draft?: string
   draftImages?: ChatImage[]
+  agentSnapshots?: import('./models').AgentSnapshot[]
 }
 
 export interface ConversationState {

@@ -4,7 +4,7 @@ import tailwindcss from '@tailwindcss/vite'
 import { fileURLToPath } from 'node:url'
 
 export default defineConfig({
-  main: { plugins: [externalizeDepsPlugin()] },
+  main: { plugins: [externalizeDepsPlugin()], build: { rollupOptions: { output: { format: 'es', entryFileNames: 'index.mjs' } } } },
   preload: { plugins: [externalizeDepsPlugin()] },
   renderer: { resolve: { alias: { '@': fileURLToPath(new URL('./src/renderer/src', import.meta.url)) } }, plugins: [react(), tailwindcss(), {
     name: 'development-refresh-csp',

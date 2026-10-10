@@ -20,6 +20,7 @@ interface ModelProfileFieldsProps {
 const capabilityLabels: Record<string, string> = { completion: '文本生成', vision: '图片输入', tools: '工具调用', thinking: '推理', embedding: '向量嵌入' }
 export function ModelProfileFields({ profile, savedProfile, settings, modelInfo, infoLoading, apiKey, removeKey, onFieldChange, onApiKeyChange, onRemoveKeyChange }: ModelProfileFieldsProps): React.JSX.Element {
   const local = profile.provider === 'ollama'
+  const subscription = profile.provider === 'chatgpt'
   return <div className="model-configuration-grid">
     <div className="model-configuration-fields">
       <h4>模型参数</h4>
@@ -27,12 +28,13 @@ export function ModelProfileFields({ profile, savedProfile, settings, modelInfo,
       <Label>上下文上限（tokens）<Input type="number" min="1" max={Math.min(modelInfo?.maxContextTokens ?? 2097152, 2097152)} step="1" value={profile.contextTokens ?? ''} placeholder="使用服务默认值" onChange={event => onFieldChange('contextTokens', event.target.value === '' ? null : Number(event.target.value))} /></Label>
       <p className="hint">{local ? '留空使用 Ollama 默认值；此设置会应用到该模型的每次请求。上下文包含输入与输出。' : '按模型独立保存；上下文参数将在供应商支持后应用到请求。'}</p>
       {profile.contextTokens != null && modelInfo?.maxContextTokens != null && profile.contextTokens > modelInfo.maxContextTokens && <p className="error">设置超过模型支持的最大上下文。</p>}
-      <Label>输出 Token 上限<Input type="number" min="1" max={Math.min(profile.contextTokens ?? 131072, 131072)} value={profile.maxTokens} onChange={event => onFieldChange('maxTokens', Number(event.target.value))} /></Label>
-      <Label>Temperature（留空由服务决定）<Input type="number" min="0" max={profile.protocol === 'anthropic' ? 1 : 2} step="0.1" value={profile.temperature ?? ''} onChange={event => onFieldChange('temperature', event.target.value === '' ? null : Number(event.target.value))} /></Label>
+      <Label>{subscription ? '回复预留 Token' : '输出 Token 上限'}<Input type="number" min="1" max={Math.min(profile.contextTokens ?? 131072, 131072)} value={profile.maxTokens} onChange={event => onFieldChange('maxTokens', Number(event.target.value))} /></Label>
+      {subscription && <p className="hint">用于本地上下文预算；订阅接口的实际输出长度由服务决定。</p>}
+      {!subscription && <Label>Temperature（留空由服务决定）<Input type="number" min="0" max={profile.protocol === 'anthropic' ? 1 : 2} step="0.1" value={profile.temperature ?? ''} onChange={event => onFieldChange('temperature', event.target.value === '' ? null : Number(event.target.value))} /></Label>}
       <Label>超时（秒）<Input type="number" min="5" max="300" value={profile.timeoutSeconds} onChange={event => onFieldChange('timeoutSeconds', Number(event.target.value))} /></Label>
-      {local && (modelInfo?.capabilities.includes('thinking') || profile.thinking != null) && <Label>推理模式<Select value={profile.thinking == null ? 'default' : profile.thinking ? 'on' : 'off'} onValueChange={value => onFieldChange('thinking', value === 'default' ? null : value === 'on')}><SelectTrigger aria-label="推理模式"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="default">使用模型默认值</SelectItem><SelectItem value="on">开启推理</SelectItem><SelectItem value="off">关闭推理</SelectItem></SelectContent></Select></Label>}
+      {(local || subscription) && (modelInfo?.capabilities.includes('thinking') || profile.thinking != null) && <Label>推理模式<Select value={profile.thinking == null ? 'default' : profile.thinking ? 'on' : 'off'} onValueChange={value => onFieldChange('thinking', value === 'default' ? null : value === 'on')}><SelectTrigger aria-label="推理模式"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="default">使用模型默认值</SelectItem><SelectItem value="on">开启推理</SelectItem><SelectItem value="off">关闭推理</SelectItem></SelectContent></Select></Label>}
       <Button type="button" variant="ghost" size="sm" className="model-reset" onClick={() => { onFieldChange('contextTokens', null); onFieldChange('temperature', null); onFieldChange('thinking', null); onFieldChange('maxTokens', 2048); onFieldChange('timeoutSeconds', local ? 120 : 60) }}>恢复默认参数</Button>
-      {!local && <details className="provider-advanced"><summary>连接与认证</summary>
+      {!local && !subscription && <details className="provider-advanced"><summary>连接与认证</summary>
         <Label>Base URL<Input type="url" value={profile.baseUrl} onChange={event => onFieldChange('baseUrl', event.target.value)} /></Label>
         <Label>模型 ID<Input value={profile.model} maxLength={200} onChange={event => onFieldChange('model', event.target.value)} /></Label>
         {!settings.encryptionAvailable && <p className="error" role="status">系统安全存储不可用，暂时不能保存或读取 API Key。</p>}

@@ -44,7 +44,7 @@ export class ModelSettingsStore {
         if (!Array.isArray(raw.providers) || raw.providers.length > 20) throw new Error()
         for (const value of raw.providers) {
           const entry = asRecord(value)
-          if (entry.provider !== 'ollama' || !Array.isArray(entry.models) || entry.models.length > 200) throw new Error()
+          if (!['ollama', 'chatgpt'].includes(String(entry.provider)) || !Array.isArray(entry.models) || entry.models.length > 200) throw new Error()
           const models: ModelDescriptor[] = entry.models.map(value => {
             const model = asRecord(value)
             if (!Array.isArray(model.capabilities) || model.capabilities.some(item => typeof item !== 'string')) throw new Error()
@@ -53,7 +53,8 @@ export class ModelSettingsStore {
               sizeBytes: typeof model.sizeBytes === 'number' ? model.sizeBytes : undefined, parameterSize: typeof model.parameterSize === 'string' ? model.parameterSize : undefined,
               quantization: typeof model.quantization === 'string' ? model.quantization : undefined }
           })
-          providers.push({ provider: 'ollama', baseUrl: normalizeOllamaUrl(entry.baseUrl), models })
+          if (entry.provider === 'chatgpt' && entry.baseUrl !== 'https://chatgpt.com/backend-api') throw new Error()
+          providers.push({ provider: entry.provider as 'ollama' | 'chatgpt', baseUrl: entry.provider === 'ollama' ? normalizeOllamaUrl(entry.baseUrl) : 'https://chatgpt.com/backend-api', models })
         }
       }
       const settings = { version: 1 as const, profiles, activeProfileId, providers }
@@ -106,9 +107,26 @@ export class ModelSettingsStore {
 
   list(): Promise<ModelSettings> { return this.serialized(async () => this.view(await this.read())) }
 
+  syncChatgpt(models: ModelDescriptor[]): Promise<ModelSettings> {
+    return this.serialized(async () => {
+      const settings = await this.read()
+      for (const model of models) {
+        if (settings.profiles.some(item => item.profile.provider === 'chatgpt' && item.profile.model === model.id)) continue
+        settings.profiles.push({ profile: { id: randomUUID(), name: model.id, provider: 'chatgpt', protocol: 'openai-compatible', baseUrl: 'https://chatgpt.com/backend-api', model: model.id,
+          temperature: null, contextTokens: null, enabled: true, thinking: true, maxTokens: 2048, tokenParameter: 'max_completion_tokens', timeoutSeconds: 120 } })
+      }
+      if (settings.profiles.length > 200) throw new ModelError('最多保存 200 个模型配置，请先删除不用的配置')
+      settings.providers = [...(settings.providers ?? []).filter(item => item.provider !== 'chatgpt'), { provider: 'chatgpt', baseUrl: 'https://chatgpt.com/backend-api', models }]
+      this.reconcileActive(settings)
+      await this.write(settings)
+      return this.view(settings)
+    })
+  }
+
   save(input: unknown): Promise<ModelSettings> {
     return this.serialized(async () => {
       const { profile, credential } = parseSaveProfile(input)
+      if (profile.provider === 'chatgpt' && credential.action === 'replace') throw new ModelError('ChatGPT 订阅请通过浏览器授权，无需 API Key')
       const settings = await this.read()
       const existing = settings.profiles.find(item => item.profile.id === profile.id)
       if (!existing && settings.profiles.length >= 200) throw new ModelError('最多保存 200 个模型配置')
@@ -169,7 +187,8 @@ export class ModelSettingsStore {
         catch { throw new ModelError('API Key 解密失败，请在设置中重新输入密钥') }
       }
       if (!apiKey && ['openai', 'anthropic', 'deepseek'].includes(entry.profile.provider)) throw new ModelError('请先保存该服务的 API Key')
-      return { profile: entry.profile, apiKey }
+      const descriptor = settings.providers?.find(item => item.provider === entry.profile.provider && item.baseUrl === entry.profile.baseUrl)?.models.find(item => item.id === entry.profile.model)
+      return { profile: { ...entry.profile, contextTokens: entry.profile.contextTokens ?? descriptor?.maxContextTokens }, apiKey }
     })
   }
 }

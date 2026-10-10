@@ -1,5 +1,6 @@
 import type { ChatMessage, ModelProfile, ModelReply, ModelRateLimit } from '../../shared/models'
 import { asRecord, ModelError, normalizeOllamaUrl } from './model-validation'
+import { modelMessages, useFileResponses } from './model-attachments'
 
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 const tokenCount = (value: unknown): number | undefined => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined
@@ -22,26 +23,22 @@ export class ModelClient {
     const startedAt = performance.now()
     const isAnthropic = profile.protocol === 'anthropic'
     const isOllama = profile.provider === 'ollama'
+    const isResponses = useFileResponses(profile, messages)
     const headers: Record<string, string> = { 'Content-Type': 'application/json', Accept: 'application/json' }
     if (isAnthropic) {
       headers['anthropic-version'] = '2023-06-01'
       if (apiKey) headers['x-api-key'] = apiKey
     } else if (apiKey) headers.Authorization = `Bearer ${apiKey}`
-    const requestMessages = messages.map(message => {
-      if (!message.images?.length) return { role: message.role, content: message.content }
-      if (isOllama) return { role: message.role, content: message.content, images: message.images.map(image => image.dataUrl.split(',')[1]) }
-      const imageBlocks = message.images.map(image => isAnthropic
-        ? { type: 'image', source: { type: 'base64', media_type: image.dataUrl.slice(5, image.dataUrl.indexOf(';')), data: image.dataUrl.split(',')[1] } }
-        : { type: 'image_url', image_url: { url: image.dataUrl } })
-      return { role: message.role, content: [...imageBlocks, ...(message.content ? [{ type: 'text', text: message.content }] : [])] }
-    })
+    const requestMessages = modelMessages(profile, messages, isResponses)
     const body: Record<string, unknown> = {
-      model: profile.model, messages: requestMessages, stream: false,
-      [isAnthropic ? 'max_tokens' : profile.tokenParameter]: profile.maxTokens
+      model: profile.model, [isResponses ? 'input' : 'messages']: requestMessages, stream: false,
+      [isResponses ? 'max_output_tokens' : isAnthropic ? 'max_tokens' : profile.tokenParameter]: profile.maxTokens,
+      ...(isResponses ? { store: false } : {})
     }
     const instruction = customPrompt.trim()
     if (instruction) {
-      if (isAnthropic) body.system = instruction
+      if (isResponses) body.instructions = instruction
+      else if (isAnthropic) body.system = instruction
       else body.messages = [{ role: 'system', content: instruction }, ...requestMessages]
     }
     if (profile.temperature !== null) body.temperature = profile.temperature
@@ -56,7 +53,8 @@ export class ModelClient {
     }
     let response: Response
     try {
-      const endpoint = isOllama ? `${normalizeOllamaUrl(profile.baseUrl)}/api/chat` : `${profile.baseUrl}/${isAnthropic ? 'messages' : 'chat/completions'}`
+      signal.throwIfAborted()
+      const endpoint = isOllama ? `${normalizeOllamaUrl(profile.baseUrl)}/api/chat` : `${profile.baseUrl}/${isResponses ? 'responses' : isAnthropic ? 'messages' : 'chat/completions'}`
       response = await this.fetchRequest(endpoint, {
         method: 'POST', headers, body: JSON.stringify(body), signal, redirect: 'error'
       })
@@ -67,12 +65,12 @@ export class ModelClient {
     if (!response.ok) {
       await response.body?.cancel().catch(() => undefined)
       const hints: Record<number, string> = {
-        400: '请求参数不受支持，请检查模型、Token 参数与 Temperature',
+        400: messages.some(message => message.images?.length) ? '当前模型或接口不支持所附文件或请求参数，请检查模型的文件格式支持，或移除附件后重试' : '请求参数不受支持，请检查模型、Token 参数与 Temperature',
         401: '认证失败，请检查 API Key', 403: '没有访问权限，请检查密钥和模型授权',
         404: '接口或模型不存在，请检查 Base URL 和模型 ID',
         429: '请求过于频繁或额度不足，请检查服务额度后重试'
       }
-      // Never echo provider error bodies: gateways can reflect headers or credentials.
+      // 不回显服务错误正文，避免网关把请求头或密钥带入错误消息。
       throw new ModelError(`模型服务返回 HTTP ${response.status}：${hints[response.status] ?? '服务暂时不可用，请稍后重试'}`)
     }
     try {
@@ -92,7 +90,13 @@ export class ModelClient {
       const result = asRecord(JSON.parse(Buffer.concat(chunks).toString('utf8')))
       let text: string
       let truncated: boolean
-      if (isOllama) {
+      if (isResponses) {
+        if (!Array.isArray(result.output)) throw new Error()
+        text = result.output.map(asRecord).filter(item => item.type === 'message' && Array.isArray(item.content))
+          .flatMap(item => (item.content as unknown[]).map(asRecord))
+          .filter(block => block.type === 'output_text' && typeof block.text === 'string').map(block => block.text).join('\n')
+        truncated = result.status === 'incomplete' && asRecord(result.incomplete_details ?? {}).reason === 'max_output_tokens'
+      } else if (isOllama) {
         const message = asRecord(result.message)
         if (typeof message.content !== 'string') throw new Error()
         text = message.content
@@ -112,8 +116,8 @@ export class ModelClient {
       if (!text.trim()) throw new ModelError(isOllama ? '模型未返回正文，请提高输出 Token 上限，或在模型配置中关闭推理模式后重试' : '模型未返回文本，请检查模型能力或提高输出 Token 上限')
       if (apiKey) text = text.split(apiKey).join('[已隐藏密钥]')
       const usageRecord = result.usage && typeof result.usage === 'object' && !Array.isArray(result.usage) ? result.usage as Record<string, unknown> : {}
-      const inputTokens = tokenCount(isOllama ? result.prompt_eval_count : isAnthropic ? usageRecord.input_tokens : usageRecord.prompt_tokens)
-      const outputTokens = tokenCount(isOllama ? result.eval_count : isAnthropic ? usageRecord.output_tokens : usageRecord.completion_tokens)
+      const inputTokens = tokenCount(isOllama ? result.prompt_eval_count : isAnthropic || isResponses ? usageRecord.input_tokens : usageRecord.prompt_tokens)
+      const outputTokens = tokenCount(isOllama ? result.eval_count : isAnthropic || isResponses ? usageRecord.output_tokens : usageRecord.completion_tokens)
       const cacheRead = isAnthropic ? tokenCount(usageRecord.cache_read_input_tokens) ?? 0 : 0
       const cacheWrite = isAnthropic ? tokenCount(usageRecord.cache_creation_input_tokens) ?? 0 : 0
       const rateLimits = profile.provider === 'openai' ? readRateLimits(response.headers) : []

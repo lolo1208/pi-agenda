@@ -9,6 +9,7 @@ import { PROVIDER_PRESETS, type ModelDescriptor, type ModelProfile, type ModelPr
 import { ModelProfileFields } from './components/ModelProfileFields'
 import { ModelProfileActions } from './components/ModelProfileActions'
 import { unwrapModelResult } from './model-result'
+import { ChatgptAuthorization } from './components/ChatgptAuthorization'
 
 function newProfile(provider: ProviderId): ModelProfile {
   const preset = PROVIDER_PRESETS.find(item => item.id === provider)!
@@ -46,10 +47,11 @@ export default function ModelSettingsPanel({ settings, onChange, onClose, onBusy
   const currentProvider = selected && providers.includes(selected) ? selected : providers[0] ?? null
   const models = settings.profiles.filter(item => item.provider === currentProvider)
   const filteredModels = models.filter(item => `${item.name} ${item.model}`.toLowerCase().includes(query.trim().toLowerCase()))
-  const options = (['openai', 'ollama'] as const).filter(provider => `${providerName(provider)} ${provider === 'openai' ? '订阅 ChatGPT' : '本地'}`.toLowerCase().includes(providerQuery.trim().toLowerCase()))
-  const subscription = profile.provider === 'openai' && !editing
+  const options = (['chatgpt', 'ollama'] as const).filter(provider => `${providerName(provider)} ${provider === 'chatgpt' ? '订阅 OpenAI ChatGPT' : '本地'}`.toLowerCase().includes(providerQuery.trim().toLowerCase()))
+  const subscription = profile.provider === 'chatgpt' && !editing
   const connectingOllama = dialog === 'configure' && profile.provider === 'ollama' && !editing
   useEffect(() => {
+    if (dialog === 'configure' && editing && profile.provider === 'chatgpt') { setModelInfo(settings.providers?.find(item => item.provider === 'chatgpt')?.models.find(item => item.id === profile.model) ?? null); setInfoError(''); setInfoLoading(false); return }
     if (dialog !== 'configure' || !editing || profile.provider !== 'ollama') { setModelInfo(null); setInfoError(''); setInfoLoading(false); return }
     let disposed = false
     setModelInfo(ollamaConnection?.baseUrl === profile.baseUrl.replace(/\/v1\/?$/, '') ? ollamaConnection.models.find(item => item.id === profile.model) ?? null : null)
@@ -58,7 +60,7 @@ export default function ModelSettingsPanel({ settings, onChange, onClose, onBusy
       if (!disposed) setInfoError(e instanceof Error ? e.message : '模型信息读取失败，请重试')
     }).finally(() => { if (!disposed) setInfoLoading(false) })
     return () => { disposed = true }
-  }, [dialog, editing, profile.id, profile.baseUrl, profile.model, infoRevision, ollamaConnection])
+  }, [dialog, editing, profile.id, profile.baseUrl, profile.model, infoRevision, ollamaConnection, settings.providers])
   const update = <K extends keyof ModelProfile>(field: K, value: ModelProfile[K]): void => {
     setProfile(current => ({ ...current, [field]: value })); setNotice(''); setDeletePending(false)
   }
@@ -123,12 +125,12 @@ export default function ModelSettingsPanel({ settings, onChange, onClose, onBusy
       </aside>
       <div className="provider-detail">
         {currentProvider ? <>
-          <header className="provider-detail-heading"><ProviderIcon provider={currentProvider} /><div><h3>{providerName(currentProvider)}</h3><p>{currentProvider === 'ollama' ? '本地服务 · Ollama' : currentProvider === 'openai' ? '已有 API 配置 · 订阅账号尚未接入' : '已有配置'}</p></div><span className="provider-badge">已配置</span></header>
-          <div className="provider-connection-summary"><span>连接方式</span><strong>{currentProvider === 'ollama' ? currentOllamaUrl : 'API 连接'}</strong>{currentProvider === 'ollama' && <Button size="sm" variant="ghost" disabled={isBusy} onClick={() => configure('ollama')}>配置连接</Button>}<p>{currentProvider === 'ollama' ? '读取本地已安装的模型。每个模型的上下文与生成参数独立保存。' : '此处显示已保存的配置，添加 OpenAI 时使用订阅账号入口。'}</p></div>
+          <header className="provider-detail-heading"><ProviderIcon provider={currentProvider} /><div><h3>{providerName(currentProvider)}</h3><p>{currentProvider === 'ollama' ? '本地服务 · Ollama' : currentProvider === 'chatgpt' ? 'ChatGPT 订阅账号' : 'API 配置'}</p></div><span className="provider-badge">已配置</span></header>
+          <div className="provider-connection-summary"><span>连接方式</span><strong>{currentProvider === 'ollama' ? currentOllamaUrl : currentProvider === 'chatgpt' ? '浏览器授权' : 'API 连接'}</strong>{currentProvider === 'ollama' && <Button size="sm" variant="ghost" disabled={isBusy} onClick={() => configure('ollama')}>配置连接</Button>}<p>每个模型的上下文与生成参数独立保存。</p>{currentProvider === 'chatgpt' && !dialog && <ChatgptAuthorization onChange={onChange} />}</div>
           <div className="provider-model-toolbar"><div><h4>模型 <span>{models.length}</span></h4><p>启用需要的模型，默认模型可在通用设置中选择。</p></div>{currentProvider === 'ollama' && <Button size="sm" variant="outline" disabled={isBusy} onClick={() => connectOllama(currentOllamaUrl)}><RefreshCw size={14} />刷新模型</Button>}</div>
           <div className="search-field provider-model-search"><Search size={15} /><Input aria-label="搜索模型" placeholder="搜索模型名称或 ID" value={query} onChange={event => setQuery(event.target.value)} /></div>
           <ul className="provider-model-list">{filteredModels.map(item => <li key={item.id}>
-            <ProviderIcon provider={item.provider} /><div className="provider-model-name" title={item.name}><strong>{item.name}{item.available === false ? ' · 本地未找到' : item.enabled === false ? ' · 已停用' : ''}</strong></div>
+            <ProviderIcon provider={item.provider} /><div className="provider-model-name" title={item.name}><strong>{item.name}{item.available === false ? ' · 当前不可用' : item.enabled === false ? ' · 已停用' : ''}</strong></div>
             <div className="provider-model-actions"><Button size="icon" variant="ghost" disabled={isBusy} aria-label={`配置 ${item.name}`} title="模型高级设置" onClick={() => configure(item.provider, item)}><SlidersHorizontal size={16} /></Button>
               <Switch aria-label={`启用 ${item.name}`} checked={item.enabled !== false} disabled={isBusy || item.available === false} onCheckedChange={() => toggleModel(item)} /></div>
           </li>)}</ul>
@@ -146,9 +148,9 @@ export default function ModelSettingsPanel({ settings, onChange, onClose, onBusy
           <Dialog.Description className="provider-dialog-description">{dialog === 'choose' ? '选择要连接的账号或本地服务。' : subscription ? '通过 ChatGPT 订阅账号使用 OpenAI 模型。' : connectingOllama ? '连接本机运行的 Ollama，自动获取已安装的模型。' : `${providerName(profile.provider)} · 此处设置仅用于当前模型。`}</Dialog.Description>
           {dialog === 'choose' ? <>
             <div className="search-field"><Search size={15} /><Input aria-label="搜索供应商" placeholder="搜索供应商…" value={providerQuery} onChange={event => setProviderQuery(event.target.value)} /></div>
-            <div className="provider-options">{options.map(provider => <Button variant="ghost" key={provider} onClick={() => configure(provider)}><ProviderIcon provider={provider} /><span><strong>{providerName(provider)}</strong><small>{provider === 'openai' ? 'ChatGPT 订阅账号' : '本地运行，连接 Ollama 服务'}</small></span><ChevronRight size={17} /></Button>)}</div>
+            <div className="provider-options">{options.map(provider => <Button variant="ghost" key={provider} onClick={() => configure(provider)}><ProviderIcon provider={provider} /><span><strong>{providerName(provider)}</strong><small>{provider === 'chatgpt' ? '浏览器授权 · 支持复制链接' : '本地运行，连接 Ollama 服务'}</small></span><ChevronRight size={17} /></Button>)}</div>
             {!options.length && <p className="provider-no-results">没有匹配的供应商。目前支持 OpenAI 和 Ollama。</p>}
-          </> : subscription ? <div className="provider-subscription"><div className="provider-detail-heading"><ProviderIcon provider="openai" /><div><h3>OpenAI</h3><p>ChatGPT 订阅账号</p></div></div><Button disabled>登录订阅账号</Button><p className="hint">订阅登录功能待接入，当前暂不可登录。接入后将在此显示账号信息与可用模型。</p></div> : connectingOllama ? <fieldset disabled={isBusy}>
+          </> : subscription ? <div className="provider-subscription"><ChatgptAuthorization onChange={next => { onChange(next); setSelected('chatgpt') }} /></div> : connectingOllama ? <fieldset disabled={isBusy}>
             <Label>本地服务地址<Input type="url" value={ollamaUrl} onChange={event => setOllamaUrl(event.target.value)} placeholder="http://localhost:11434" /></Label><p className="hint">请先启动 Ollama。本步骤只读取模型列表，不会下载或运行模型。</p><Button onClick={() => connectOllama(ollamaUrl, true)} disabled={!ollamaUrl.trim()}>连接并获取模型</Button>
           </fieldset> : <fieldset disabled={isBusy}>
             <ModelProfileFields profile={profile} savedProfile={saved} settings={settings} modelInfo={modelInfo} infoLoading={infoLoading} apiKey={apiKey} removeKey={removeKey} onFieldChange={update} onApiKeyChange={setApiKey} onRemoveKeyChange={remove => { setRemoveKey(remove); setApiKey('') }} />

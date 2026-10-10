@@ -52,6 +52,14 @@ export function useProjectWorkspace() {
     void window.piAgenda.loadConversations().then(state => {
       if (!active) return
       setTasks(state.tasks)
+      const restored: Record<string, ProjectSnapshotState> = {}
+      for (const task of state.tasks) for (const round of task.agentSnapshots ?? []) {
+        const existing = restored[round.project] ?? emptySnapshotState
+        const checkpoints = [...existing.checkpoints, round.before, round.after].filter((checkpoint, index, items) => items.findIndex(item => item.hash === checkpoint.hash) === index)
+          .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+        restored[round.project] = { ...existing, checkpoints }
+      }
+      setSnapshotsByProject(restored)
       setSelectedId(state.selectedId)
       setLoaded(true)
       const root = (state.tasks.find(task => task.id === state.selectedId) ?? state.tasks[0])?.project
@@ -66,6 +74,20 @@ export function useProjectWorkspace() {
     return () => { active = false }
   }, [])
 
+  useEffect(() => window.piAgenda.onAgentEvent?.(event => {
+    if (event.type !== 'snapshot' || !event.snapshot) return
+    const round = event.snapshot
+    setTasks(items => items.map(task => task.id === event.conversationId ? { ...task, agentSnapshots: [...task.agentSnapshots ?? [], round] } : task))
+    setSnapshotsByProject(current => ({ ...current, [round.project]: {
+      checkpoints: [...current[round.project]?.checkpoints ?? [], round.before, round.after], changes: [], diff: null
+    } }))
+    void window.piAgenda.getChanges(round.before.hash, round.after.hash, round.project).then(changes => {
+      setSnapshotsByProject(current => current[round.project]?.checkpoints.at(-1)?.hash === round.after.hash ? {
+        ...current, [round.project]: { ...current[round.project], changes }
+      } : current)
+    }).catch(() => setError('代理快照已保存，文件差异读取失败，请重新选择项目后重试'))
+  }), [])
+
   useEffect(() => {
     if (!loaded) return
     void window.piAgenda.saveConversations({ version: 1, tasks, selectedId }).catch(() => {
@@ -77,6 +99,17 @@ export function useProjectWorkspace() {
   const snapshotKey = currentTask?.project ?? project ?? 'unlinked'
   const projectSnapshot = snapshotsByProject[snapshotKey] ?? emptySnapshotState
   const isChatBusy = busyTasks.length > 0
+
+  const beforeHash = projectSnapshot.checkpoints.at(-2)?.hash
+  const afterHash = projectSnapshot.checkpoints.at(-1)?.hash
+  useEffect(() => {
+    if (!beforeHash || !afterHash || snapshotKey === 'unlinked' || !window.piAgenda.getChanges) return
+    let active = true
+    void window.piAgenda.getChanges(beforeHash, afterHash, snapshotKey).then(changes => {
+      if (active) setSnapshotsByProject(current => ({ ...current, [snapshotKey]: { ...current[snapshotKey], changes } }))
+    }).catch(() => { if (active) setError('快照差异读取失败，请检查项目目录和快照数据') })
+    return () => { active = false }
+  }, [snapshotKey, beforeHash, afterHash])
 
   const updateProjectSnapshot = (update: Partial<ProjectSnapshotState>): void => {
     setSnapshotsByProject(current => ({ ...current, [snapshotKey]: { ...(current[snapshotKey] ?? emptySnapshotState), ...update } }))
@@ -220,6 +253,15 @@ export function useProjectWorkspace() {
     })
   }
 
+  const rollbackCheckpoint = (): void => {
+    const before = projectSnapshot.checkpoints.at(-2), after = projectSnapshot.checkpoints.at(-1)
+    if (!before || !after || isChatBusy || isBusy) return
+    void runAction(async () => {
+      const restored = await window.piAgenda.rollbackCheckpoint(before.hash, after.hash)
+      updateProjectSnapshot({ checkpoints: [...projectSnapshot.checkpoints, restored], changes: [], diff: null })
+    })
+  }
+
   return {
     project,
     savedProjects,
@@ -251,5 +293,6 @@ export function useProjectWorkspace() {
     removeTask,
     removeProject,
     captureCheckpoint,
+    rollbackCheckpoint,
   }
 }
