@@ -15,6 +15,8 @@ export interface ModelProfile {
   contextTokens?: number | null
   enabled?: boolean
   thinking?: boolean | null
+  thinkingLevel?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null
+  ollamaThinkingLevel?: string | null
 }
 export interface ModelDescriptor {
   id: string
@@ -23,9 +25,47 @@ export interface ModelDescriptor {
   quantization?: string
   capabilities: string[]
   maxContextTokens: number | null
+  thinking?: { values: (boolean | string)[]; default?: boolean | string }
+}
+export function parseThinkingControls(value: unknown): ModelDescriptor['thinking'] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const controls = value as Record<string, unknown>
+  if (!Array.isArray(controls.values)) return undefined
+  const values = [...new Set(controls.values.filter((item): item is boolean | string => typeof item === 'boolean' || (typeof item === 'string' && item.length > 0 && item.length <= 80)))].slice(0, 20)
+  const defaultValue = controls.default
+  return { values, ...(values.includes(defaultValue as boolean | string) ? { default: defaultValue as boolean | string } : {}) }
+}
+export const THINKING_LEVEL_LABELS: Record<string, string> = { off: '关闭', minimal: '极低', low: '低', medium: '中', high: '高', xhigh: '超高', max: '最高' }
+/** 把推理档位转成界面短标签，模型列表概览与配置面板共用。 */
+export function thinkingLabel(value: boolean | string | null | undefined): string | null {
+  if (value == null) return null
+  if (typeof value === 'boolean') return value ? '开启' : '关闭'
+  return THINKING_LEVEL_LABELS[value] ?? value
+}
+export function selectedModelThinking(profile: ModelProfile, controls: ModelDescriptor['thinking']): boolean | string | null {
+  const values = controls?.values ?? []
+  const selected = profile.provider === 'chatgpt' ? profile.thinkingLevel ?? (profile.thinking === false ? 'off' : null) : profile.ollamaThinkingLevel ?? profile.thinking
+  if (selected != null && values.includes(selected)) return selected
+  if (values.includes('low')) return 'low'
+  if (values.includes(true)) return true
+  if (controls?.default != null && values.includes(controls.default)) return controls.default
+  return values.find(value => value !== false && value !== 'off') ?? values[0] ?? null
 }
 export interface ModelProviderConnection { provider: ProviderId; baseUrl: string; models: ModelDescriptor[] }
 export interface ModelProfileView extends ModelProfile { hasApiKey: boolean; available?: boolean }
+/** 按供应商与服务地址查找界面使用的模型描述符；Ollama 地址可能带或不带 /v1。 */
+export function findModelDescriptor(providers: ModelProviderConnection[] | undefined, profile: Pick<ModelProfile, 'provider' | 'baseUrl' | 'model'>): ModelDescriptor | undefined {
+  if (!providers?.length) return undefined
+  const normalize = (url: string): string => url.replace(/\/v1\/?$/, '').replace(/\/+$/, '')
+  return providers.find(item => item.provider === profile.provider && normalize(item.baseUrl) === normalize(profile.baseUrl))?.models.find(item => item.id === profile.model)
+}
+/** 把 Token 数压成界面短标签，例如 128K、1.05M；无数据时返回 null。 */
+export function tokenCountLabel(value: number | null | undefined): string | null {
+  if (!value || value <= 0) return null
+  if (value >= 1_000_000) return `${Number((value / 1_000_000).toFixed(2))}M`
+  if (value >= 1000) return `${Number((value / 1000).toFixed(value >= 100_000 ? 0 : 1))}K`
+  return String(value)
+}
 export interface ModelSettings {
   profiles: ModelProfileView[]
   activeProfileId: string | null
@@ -46,7 +86,10 @@ export const MAX_CONVERSATION_ATTACHMENT_BYTES = 128 * 1024 * 1024
 export interface ChatAttachment { id: string; name: string; dataUrl: string }
 /** 沿用图片附件的类型与存储字段，兼容已有会话；现在可包含任意文件。 */
 export type ChatImage = ChatAttachment
-export interface ChatMessage { role: 'user' | 'assistant'; content: string; images?: ChatImage[] }
+export interface ChatExecution { model: string; provider?: ProviderId; elapsedMs?: number; roundId?: string }
+export interface ChatWorkItem { id: string; kind: 'thinking' | 'tool'; name?: string; args?: Record<string, unknown>; content: string; isError?: boolean; completed?: boolean }
+export interface ChatCall { elapsedMs?: number; work: ChatWorkItem[] }
+export interface ChatMessage { role: 'user' | 'assistant'; content: string; images?: ChatImage[]; execution?: ChatExecution; call?: ChatCall; snapshotHash?: string }
 export interface ModelUsage { inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheWriteTokens?: number }
 export interface ModelRateLimit { kind: 'requests' | 'tokens'; limit: number; remaining: number; reset?: string }
 export interface ChatgptAuthStatus { state: 'signed-out' | 'authorizing' | 'signed-in'; url?: string; manualInput?: boolean; error?: string; catalogSource?: 'account' | 'sdk' }
@@ -54,12 +97,36 @@ export interface SubscriptionWindow { seconds: number; usedPercent: number; rese
 export interface ResetCredits { availableCount: number; earliestExpiresAt?: number | null }
 export interface ChatgptUsage { windows: SubscriptionWindow[]; fetchedAt: number; plan?: string; error?: string; resetCredits?: ResetCredits; resetCreditsError?: string }
 export interface ModelReply { text: string; elapsedMs: number; model: string; truncated: boolean; usage?: ModelUsage; roundUsage?: ModelUsage; rateLimits?: ModelRateLimit[]; compaction?: import('./context').ContextCompaction; messages?: ChatMessage[] }
-export interface AgentRequestOptions { conversationId: string; project?: string | null }
-export interface AgentSnapshot { project: string; before: import('./api').Checkpoint; after: import('./api').Checkpoint }
+export type PermissionMode = 'default' | 'auto' | 'full'
+export const PERMISSION_MODES: PermissionMode[] = ['default', 'auto', 'full']
+export interface ToolApproval {
+  id: string
+  toolCallId: string
+  tool: string
+  args: Record<string, unknown>
+  cwd: string
+  reason: string
+}
+export interface ToolApprovalPreview { before: string; after: string; path: string }
+export type IntentMode = 'plan' | 'execute'
+export interface PlanQuestion { id: string; header: string; question: string; options: { label: string; description?: string; recommended?: boolean }[] }
+/** 自定义回答入口由界面统一提供，避免与模型生成的兜底选项重复。 */
+export function isCustomPlanOption(label: string): boolean {
+  return /^(?:其他|其它|other|其他选项|自定义(?:回答)?|(?:填写|输入)自己的回答)(?:\s*[（(].*[）)])?$/i.test(label.trim())
+}
+export interface PlanInteraction { id: string; kind: 'questions' | 'review'; questions?: PlanQuestion[]; title?: string; content?: string }
+export interface PlanResponse { answers?: Record<string, string>; decision?: 'approve' | 'revise'; feedback?: string }
+export interface AgentRequestOptions { conversationId: string; project?: string | null; intentMode?: IntentMode }
+export interface AgentSnapshot { project: string; before: import('./api').Checkpoint; after: import('./api').Checkpoint; messageIndex?: number; undone?: boolean }
 export interface AgentEvent {
   requestId: string
   conversationId: string
-  type: 'text' | 'status' | 'transcript' | 'snapshot'
+  type: 'text' | 'status' | 'transcript' | 'snapshot' | 'approval' | 'approval-end' | 'plan-interaction' | 'plan-interaction-end' | 'intent-mode'
+  interaction?: PlanInteraction
+  interactionId?: string
+  intentMode?: IntentMode
+  approval?: ToolApproval
+  approvalId?: string
   text?: string
   resetText?: boolean
   messages?: ChatMessage[]

@@ -7,6 +7,18 @@ export interface SnapshotStorage {
   root: string
   staging: string
   git: SimpleGit
+  serialized<T>(operation: () => Promise<T>): Promise<T>
+}
+
+// 同一影子仓库的初始化和文件操作共用队列，跨管理器实例也不会争用 Git 锁。
+const storageQueues = new Map<string, Promise<unknown>>()
+function serializeStorage<T>(metadata: string, operation: () => Promise<T>): Promise<T> {
+  const key = canonicalPath(metadata)
+  const result = (storageQueues.get(key) ?? Promise.resolve()).then(operation)
+  const settled = result.then(() => undefined, () => undefined)
+  storageQueues.set(key, settled)
+  void settled.then(() => { if (storageQueues.get(key) === settled) storageQueues.delete(key) })
+  return result
 }
 
 async function ensureSafeDirectory(directory: string): Promise<void> {
@@ -84,19 +96,21 @@ export async function openSnapshotStorage(project: string, dataRoot: string): Pr
   await ensureSafeDirectory(path.join(base, 'projects'))
 
   const metadata = projectStoragePath(root, base)
-  await migrateLegacyProjectStorage(metadata, base)
-  await ensureSafeDirectory(metadata)
+  return serializeStorage(metadata, async () => {
+    await migrateLegacyProjectStorage(metadata, base)
+    await ensureSafeDirectory(metadata)
 
-  const repository = path.join(metadata, 'shadow-git')
-  const staging = path.join(metadata, 'staging')
-  await ensureSafeDirectory(repository)
-  await ensureSafeDirectory(staging)
+    const repository = path.join(metadata, 'shadow-git')
+    const staging = path.join(metadata, 'staging')
+    await ensureSafeDirectory(repository)
+    await ensureSafeDirectory(staging)
 
-  const git = createSnapshotGit(root, repository, staging)
-  await git.raw(['init', '--quiet'])
-  // info/attributes takes precedence over copied project .gitattributes.
-  await writeFile(path.join(repository, 'info', 'attributes'), '* -text -filter -ident -working-tree-encoding\n')
-  return { root, staging, git }
+    const git = createSnapshotGit(root, repository, staging)
+    await git.raw(['init', '--quiet'])
+    // 影子仓库属性优先于项目复制过来的 .gitattributes。
+    await writeFile(path.join(repository, 'info', 'attributes'), '* -text -filter -ident -working-tree-encoding\n')
+    return { root, staging, git, serialized: <T>(operation: () => Promise<T>) => serializeStorage(metadata, operation) }
+  })
 }
 
 async function removeStorageDirectory(target: string, errorMessage: string): Promise<void> {
@@ -145,7 +159,9 @@ export async function removeSnapshotStorage(project: string, dataRoot: string): 
   }
 
   const target = projectStoragePath(root, base)
-  await removeStorageDirectory(target, 'Pi Agenda 项目数据目录不能是符号链接或联接点')
-  await removeLegacyProjectStorage(target, base)
+  await serializeStorage(target, async () => {
+    await removeStorageDirectory(target, 'Pi Agenda 项目数据目录不能是符号链接或联接点')
+    await removeLegacyProjectStorage(target, base)
+  })
   return root
 }

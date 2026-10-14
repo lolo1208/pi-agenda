@@ -11,7 +11,7 @@ export const SelectValue = React.forwardRef<React.ElementRef<typeof SelectPrimit
 SelectValue.displayName = SelectPrimitive.Value.displayName
 
 export const SelectTrigger = React.forwardRef<React.ElementRef<typeof SelectPrimitive.Trigger>, React.ComponentPropsWithoutRef<typeof SelectPrimitive.Trigger>>(({ className, children, ...props }, ref) => (
-  <SelectPrimitive.Trigger ref={ref} data-slot="select-trigger" className={cn('flex h-9 w-full items-center justify-between gap-2 rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-left text-sm shadow-xs focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/20 disabled:cursor-not-allowed disabled:opacity-50 [&>span]:line-clamp-1', className)} {...props}>
+  <SelectPrimitive.Trigger ref={ref} data-slot="select-trigger" className={cn('flex h-9 w-full items-center justify-between gap-2 rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-left text-sm shadow-xs focus:border-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/20 disabled:cursor-not-allowed disabled:opacity-50 [&>span]:line-clamp-1', className)} {...props}>
     {children}<SelectPrimitive.Icon asChild><ChevronDown className="ml-auto shrink-0" size={16} /></SelectPrimitive.Icon>
   </SelectPrimitive.Trigger>
 ))

@@ -69,7 +69,9 @@ docs/
 | `pnpm electron:install` | 显式下载并校验 Electron 运行时；dev/preview 自动先执行 |
 | `pnpm rebuild esbuild` | 重建 esbuild 构建依赖 |
 
-`pack:dir` 避免与 pnpm 内置 `pack` 混淆。输出 `out/` 和 `release/` 不提交。Windows 可用 `pnpm.cmd`。
+`pack:dir` 避免与 pnpm 内置 `pack` 混淆。编译输出 `out/`、打包工作目录 `build-work/` 和最终发行目录 `release/` 不提交，也不进入项目快照。Windows 可用 `pnpm.cmd`。
+
+Windows 安装包与便携版首次打包时才自动下载固定版本的 NSIS，并校验 SHA-256；工具保存在 `build-work/tools/nsis-x64-3.13.7507.353/`，后续校验并复用，缺失或损坏时重新下载。首次准备工具还会下载并校验官方 7-Zip `26.04`，借助 electron-builder 的解压工具解出完整 7-Zip，再解出 NSIS；无需系统安装这些工具，也不执行下载的安装程序。仓库仅保留 `scripts/nsis-x64-manifest.json` 的版本与校验信息，`scripts/vendor/` 旧工具目录已忽略，无需提交。macOS 开发和打包不准备这些 Windows 工具。首次下载失败时，检查 GitHub Releases 的网络访问或 `HTTP_PROXY` / `HTTPS_PROXY`（也支持小写形式），然后重新运行打包命令；缓存就绪后可离线复用。
 
 ### Electron uninstall 启动错误
 
@@ -79,6 +81,14 @@ docs/
 
 安装脚本复用 Electron 官方安装器，检测到已有 `HTTP_PROXY` / `HTTPS_PROXY`（含小写形式）时启用其代理支持，不写入或输出代理地址。下载超过 5 分钟会停止并提示重试；本机没有配置代理时保持默认直连。
 
+## 本地测试与临时文件
+
+本地测试代码和配置统一放在 `tests/`，Git 忽略整个目录；`pnpm test` 使用 `tests/vitest.config.ts`，测试仍以项目根目录为工作目录。测试脚本的编译产物、日志和手动探测数据放在 `tests/.artifacts/`，不要写到根目录。已有 Electron 冒烟脚本写入 `out/` 的截图与测试数据也属于忽略的构建产物。
+
+`node tests/appcontainer-probe.cjs` 在 `tests/.artifacts/` 下创建独立探测目录，并在结束时清理；运行时位置按脚本所在目录解析，不依赖启动命令的当前目录。历史的根目录冒烟编译产物与日志已归档到 `tests/.artifacts/legacy-smoke/`。
+
 ## 交付与文档维护
+
+发行脚本在压缩前使用包内 Electron 加载 `app.asar` 中的主进程依赖；加载失败会停止导出，避免发布无法启动的程序。`patches/app-builder-lib@26.15.3.patch` 兼容 pnpm 新版 JSON 配置输出，确保打包工具正确识别 hoisted 布局并收集嵌套依赖的对应版本。补丁由 `pnpm-workspace.yaml` 注册，离线安装也会自动应用；升级 electron-builder 时须重新检查补丁和 `tests/packaged-dependencies.test.ts`。
 
 说明行为变化、验证结果和未解决问题；编译通过不等于跨平台验收通过。需求更新规格，边界/数据格式更新架构，进度更新路线，验证追加验收记录。存储、应用 ID 或目录更名须说明兼容与迁移子响。

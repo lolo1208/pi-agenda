@@ -2,6 +2,20 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { IPC_CHANNELS, type PiAgendaApi } from '../shared/api'
 
 const api: PiAgendaApi = {
+  performFileAction: (project, path, action) => ipcRenderer.invoke(IPC_CHANNELS.fileAction, project, path, action),
+  getSandboxStatus: () => ipcRenderer.invoke(IPC_CHANNELS.sandboxStatus),
+  ensureSandbox: () => ipcRenderer.invoke(IPC_CHANNELS.sandboxEnsure),
+  startSandbox: action => ipcRenderer.invoke(IPC_CHANNELS.sandboxStart, action),
+  stopSandbox: () => ipcRenderer.invoke(IPC_CHANNELS.sandboxStop),
+  onSandboxState: callback => {
+    const listener = (_event: Electron.IpcRendererEvent, state: import('../shared/sandbox').SandboxState): void => callback(state)
+    ipcRenderer.on(IPC_CHANNELS.sandboxState, listener)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.sandboxState, listener)
+  },
+  respondPlanInteraction: (requestId, conversationId, interactionId, response) => ipcRenderer.invoke(IPC_CHANNELS.planInteraction, requestId, conversationId, interactionId, response),
+  getToolApprovalPreview: (requestId, conversationId, approvalId) => ipcRenderer.invoke(IPC_CHANNELS.toolApprovalPreview, requestId, conversationId, approvalId),
+  setPermissionMode: (id, mode) => ipcRenderer.invoke(IPC_CHANNELS.permissionMode, id, mode),
+  respondToolApproval: (requestId, conversationId, approvalId, allow) => ipcRenderer.invoke(IPC_CHANNELS.toolApproval, requestId, conversationId, approvalId, allow),
   getChatgptAuth: () => ipcRenderer.invoke(IPC_CHANNELS.chatgptStatus),
   startChatgptAuth: () => ipcRenderer.invoke(IPC_CHANNELS.chatgptStart),
   openChatgptAuth: () => ipcRenderer.invoke(IPC_CHANNELS.chatgptOpen),
@@ -10,20 +24,24 @@ const api: PiAgendaApi = {
   cancelChatgptAuth: () => ipcRenderer.invoke(IPC_CHANNELS.chatgptCancel),
   logoutChatgpt: () => ipcRenderer.invoke(IPC_CHANNELS.chatgptLogout),
   refreshChatgptModels: () => ipcRenderer.invoke(IPC_CHANNELS.chatgptModels),
+  getChatgptModelInfo: model => ipcRenderer.invoke(IPC_CHANNELS.chatgptInfo, model),
   getChatgptUsage: () => ipcRenderer.invoke(IPC_CHANNELS.chatgptUsage),
   loadConversations: () => ipcRenderer.invoke(IPC_CHANNELS.conversationsLoad),
   saveConversations: state => ipcRenderer.invoke(IPC_CHANNELS.conversationsSave, state),
   selectProject: () => ipcRenderer.invoke(IPC_CHANNELS.selectProject),
+  pickProjectDirectory: () => ipcRenderer.invoke(IPC_CHANNELS.projectPick),
   openProject: path => ipcRenderer.invoke(IPC_CHANNELS.projectOpen, path),
+  rebindProject: (previous, next) => ipcRenderer.invoke(IPC_CHANNELS.projectRebind, previous, next),
   openProjectDirectory: path => ipcRenderer.invoke(IPC_CHANNELS.projectDirectory, path),
   removeProject: path => ipcRenderer.invoke(IPC_CHANNELS.projectRemove, path),
   createCheckpoint: label => ipcRenderer.invoke(IPC_CHANNELS.checkpoint, label),
   getChanges: (base, current, project) => ipcRenderer.invoke(IPC_CHANNELS.changes, base, current, project),
-  getDiff: (base, current, path) => ipcRenderer.invoke(IPC_CHANNELS.diff, base, current, path),
-  rollbackCheckpoint: (base, current) => ipcRenderer.invoke(IPC_CHANNELS.rollback, base, current),
+  getDiff: (base, current, path, project) => ipcRenderer.invoke(IPC_CHANNELS.diff, base, current, path, project),
+  rollbackCheckpoint: (base, current, project) => ipcRenderer.invoke(IPC_CHANNELS.rollback, base, current, project),
+  restoreCheckpoint: (target, project) => ipcRenderer.invoke(IPC_CHANNELS.restore, target, project),
+  getMatchingCheckpoints: (hashes, project) => ipcRenderer.invoke(IPC_CHANNELS.matches, hashes, project),
   getModelSettings: () => ipcRenderer.invoke(IPC_CHANNELS.modelSettings),
   saveModelProfile: input => ipcRenderer.invoke(IPC_CHANNELS.modelSave, input),
-  deleteModelProfile: id => ipcRenderer.invoke(IPC_CHANNELS.modelDelete, id),
   setActiveModel: id => ipcRenderer.invoke(IPC_CHANNELS.modelActivate, id),
   testModel: (id, requestId) => ipcRenderer.invoke(IPC_CHANNELS.modelTest, id, requestId),
   chatWithModel: (id, requestId, messages, customPrompt, context, agent) => ipcRenderer.invoke(IPC_CHANNELS.modelChat, id, requestId, messages, customPrompt, context, agent),

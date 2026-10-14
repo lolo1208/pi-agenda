@@ -8,15 +8,18 @@
   "scripts": {
     "dev": "pnpm electron:install && electron-vite dev",
     "icons:generate": "node scripts/generate-icons.cjs",
+    "sandbox:prepare": "node scripts/prepare-sandbox-runtime.cjs",
+    "sandbox:build-appcontainer": "node scripts/build-appcontainer.cjs",
     "electron:install": "node scripts/install-electron.cjs",
     "typecheck": "tsc --noEmit",
     "build": "pnpm typecheck && electron-vite build",
     "preview": "pnpm electron:install && electron-vite preview",
-    "test": "vitest run",
-    "dist:win": "pnpm build && electron-builder --win",
-    "dist:mac": "pnpm build && electron-builder --mac",
+    "test": "vitest run --config tests/vitest.config.ts",
+    "dist:win": "pnpm build && node scripts/export-release.cjs win",
+    "dist:win:portable": "pnpm build && node scripts/export-release.cjs win-portable",
+    "dist:mac": "pnpm build && node scripts/export-release.cjs mac",
     "check": "pnpm typecheck && pnpm test && pnpm build",
-    "pack:dir": "pnpm build && electron-builder --dir"
+    "pack:dir": "pnpm build && node scripts/export-release.cjs dir"
   },
   "dependencies": {
     "@earendil-works/pi-ai": "1.1.0",
@@ -31,6 +34,7 @@
     "clsx": "^2.1.1",
     "cn": "^0.4.0",
     "lucide-react": "^0.468.0",
+    "marked": "18.0.11",
     "monaco-editor": "^0.52.2",
     "radix-ui": "^1.6.7",
     "react": "^19.0.0",
@@ -60,22 +64,45 @@
     "appId": "dev.piagenda.desktop",
     "productName": "Pi Agenda · 行动派",
     "directories": {
-      "output": "release",
+      "output": "build-work",
       "buildResources": "resources/icons"
     },
     "files": [
-      "out/**/*",
+      "out/main/**/*",
+      "out/preload/**/*",
+      "out/renderer/**/*",
       "package.json"
     ],
     "asar": true,
     "extraResources": [
-      { "from": "resources/icons", "to": "icons", "filter": ["icon.png", "icon.ico"] }
+      {
+        "from": "resources/icons",
+        "to": "icons",
+        "filter": [
+          "icon.png",
+          "icon.ico"
+        ]
+      }
     ],
     "win": {
+      "extraResources": [
+        { "from": "resources/sandbox-runtime", "to": "sandbox-runtime", "filter": ["**/*"] }
+      ],
       "icon": "resources/icons/icon.ico",
       "target": [
-        "nsis"
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
       ]
+    },
+    "nsis": {
+      "artifactName": "pi-agenda-setup.exe"
+    },
+    "portable": {
+      "artifactName": "pi-agenda-portable.exe"
     },
     "mac": {
       "icon": "resources/icons/icon.icns",

@@ -1,4 +1,4 @@
-import type { ModelDescriptor } from '../../shared/models'
+import { parseThinkingControls, type ModelDescriptor } from '../../shared/models'
 import { asRecord, ModelError, normalizeOllamaUrl, requiredString } from './model-validation'
 
 /** 读取有大小和超时限制的 JSON，避免模型元数据拖住主进程。 */
@@ -23,12 +23,19 @@ function descriptor(id: string, data: Record<string, unknown>): ModelDescriptor 
   const info = data.model_info && typeof data.model_info === 'object' ? asRecord(data.model_info) : {}
   const architecture = info['general.architecture']
   const context = (typeof architecture === 'string' ? info[`${architecture}.context_length`] : undefined) ?? details.context_length ?? Object.entries(info).find(([key]) => key.endsWith('.context_length'))?.[1]
+  const capabilities = Array.isArray(data.capabilities) ? data.capabilities.filter((item): item is string => typeof item === 'string').slice(0, 30) : []
+  // 旧版 Ollama 仅返回能力标记；普通推理模型使用布尔开关，GPT-OSS 使用命名强度。
+  const family = architecture ?? details.family
+  const thinking = parseThinkingControls(data.thinking) ?? (capabilities.includes('thinking')
+    ? family === 'gptoss' || family === 'gpt-oss' ? { values: ['low', 'medium', 'high'], default: 'medium' } : { values: [true, false], default: true }
+    : undefined)
   return {
-    id, capabilities: Array.isArray(data.capabilities) ? data.capabilities.filter((item): item is string => typeof item === 'string').slice(0, 30) : [],
+    id, capabilities,
     maxContextTokens: typeof context === 'number' && Number.isSafeInteger(context) && context > 0 ? context : null,
     sizeBytes: typeof data.size === 'number' && data.size >= 0 ? data.size : undefined,
     parameterSize: typeof details.parameter_size === 'string' ? details.parameter_size.slice(0, 80) : undefined,
-    quantization: typeof details.quantization_level === 'string' ? details.quantization_level.slice(0, 80) : undefined
+    quantization: typeof details.quantization_level === 'string' ? details.quantization_level.slice(0, 80) : undefined,
+    ...(thinking ? { thinking } : {})
   }
 }
 export class OllamaClient {

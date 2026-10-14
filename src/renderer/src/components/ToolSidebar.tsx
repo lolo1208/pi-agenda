@@ -76,7 +76,7 @@ export function ToolSidebar({ project, isBusy, activeTool, checkpoints, changes,
       {diff && <div className="diff">
         <header title={diff.path}>{diff.path}</header>
         {diff.binary ? <p className="empty">二进制文件不支持文本对比</p> : <Suspense fallback={<p className="hint">正在加载代码对比…</p>}>
-          <DiffEditor theme={theme === 'dark' ? 'pi-dark' : 'pi-light'} original={diff.before} modified={diff.after} options={{ readOnly: true, originalEditable: false, renderSideBySide: !inlineDiff, automaticLayout: true, minimap: { enabled: false }, fontSize: 13, scrollBeyondLastLine: false }} />
+          <DiffEditor theme={theme === 'dark' ? 'pi-dark' : 'pi-light'} original={diff.before} modified={diff.after} options={{ readOnly: true, originalEditable: false, renderSideBySide: !inlineDiff, automaticLayout: true, minimap: { enabled: false }, fontSize: 13, scrollBeyondLastLine: false, scrollbar: { verticalScrollbarSize: 6, horizontalScrollbarSize: 6, verticalHasArrows: false, horizontalHasArrows: false, useShadows: false }, overviewRulerLanes: 0, hideCursorInOverviewRuler: true }} />
         </Suspense>}
       </div>}
     </div> : <PlaceholderTool tool={activeTool} />}

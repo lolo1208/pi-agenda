@@ -39,6 +39,8 @@ export function parseProfile(value: unknown): ModelProfile {
   if (item.tokenParameter !== 'max_tokens' && item.tokenParameter !== 'max_completion_tokens') throw new ModelError('无效的 Token 参数')
   if (item.enabled !== undefined && typeof item.enabled !== 'boolean') throw new ModelError('模型启用状态无效')
   if (item.thinking !== undefined && item.thinking !== null && typeof item.thinking !== 'boolean') throw new ModelError('推理模式无效')
+  if (item.thinkingLevel != null && (typeof item.thinkingLevel !== 'string' || !['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].includes(item.thinkingLevel))) throw new ModelError('推理强度无效')
+  if (item.ollamaThinkingLevel != null && (typeof item.ollamaThinkingLevel !== 'string' || !item.ollamaThinkingLevel.trim() || item.ollamaThinkingLevel.length > 80)) throw new ModelError('Ollama 推理档位无效')
   const contextTokens = item.contextTokens === undefined || item.contextTokens === null ? null : numberInRange(item.contextTokens, 1, 2097152, '上下文上限', true)
   if (item.provider === 'chatgpt' && (item.baseUrl !== 'https://chatgpt.com/backend-api' || item.protocol !== 'openai-compatible' || item.temperature !== null)) throw new ModelError('ChatGPT 订阅使用固定服务地址，Temperature 由服务决定')
   if (contextTokens !== null && typeof item.maxTokens === 'number' && item.maxTokens > contextTokens) throw new ModelError('输出 Token 上限不能超过上下文上限')
@@ -48,6 +50,8 @@ export function parseProfile(value: unknown): ModelProfile {
     baseUrl: item.provider === 'ollama' ? normalizeOllamaUrl(item.baseUrl) : normalizeBaseUrl(item.baseUrl), model: requiredString(item.model, '模型 ID', 200),
     contextTokens, enabled: item.enabled === undefined ? true : item.enabled,
     thinking: item.thinking ?? null,
+    thinkingLevel: item.thinkingLevel as ModelProfile['thinkingLevel'] ?? null,
+    ollamaThinkingLevel: item.ollamaThinkingLevel as string ?? null,
     temperature: item.temperature === null ? null : numberInRange(item.temperature, 0, item.protocol === 'anthropic' ? 1 : 2, 'Temperature'),
     maxTokens: numberInRange(item.maxTokens, 1, 131072, '输出 Token 上限', true),
     tokenParameter: item.tokenParameter,

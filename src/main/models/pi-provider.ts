@@ -61,5 +61,5 @@ export async function createPiProvider(profile: ModelProfile, apiKey: string, at
     }), apiKey, () => controller.abort())
     }
   })
-  return { runtime, model: runtime.getModel(provider, profile.model)! }
+  return { runtime, model: runtime.getModel(provider, profile.model)!, thinkingLevel: profile.thinking === true || profile.ollamaThinkingLevel != null ? 'medium' as const : 'off' as const }
 }

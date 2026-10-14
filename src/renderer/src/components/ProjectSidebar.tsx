@@ -7,9 +7,12 @@ import { TaskProjectGroup } from './TaskProjectGroup'
 
 interface ProjectSidebarProps {
   groups: Map<string, Task[]>
+  busyProjectRoots: Set<string>
+  projectNames: Map<string, string>
   hasMatchingTasks: boolean
   currentTaskId?: string
   busyTaskIds: string[]
+  waitingTaskIds: string[]
   query: string
   searchOpen: boolean
   collapsedProjects: string[]
@@ -22,14 +25,16 @@ interface ProjectSidebarProps {
   onCloseSearch: () => void
   onToggleProject: (root: string) => void
   onPendingProjectRemovalChange: (root: string | null) => void
+  onEditProject: (root: string) => void
   onRemoveProject: (root: string) => void
   onSelectTask: (task: Task) => void
+  onEditTask: (task: Task) => void
   onRemoveTask: (task: Task) => void
   onCreateProjectTask: (root: string) => void
   onOpenSettings: () => void
 }
 
-export function ProjectSidebar({ groups, hasMatchingTasks, currentTaskId, busyTaskIds, query, searchOpen, collapsedProjects, pendingProjectRemoval, isBusy, isChatBusy, onStartTask, onToggleSearch, onQueryChange, onCloseSearch, onToggleProject, onPendingProjectRemovalChange, onRemoveProject, onSelectTask, onRemoveTask, onCreateProjectTask, onOpenSettings }: ProjectSidebarProps): React.JSX.Element {
+export function ProjectSidebar({ groups, busyProjectRoots, projectNames, hasMatchingTasks, currentTaskId, busyTaskIds, waitingTaskIds, query, searchOpen, collapsedProjects, pendingProjectRemoval, isBusy, isChatBusy, onStartTask, onToggleSearch, onQueryChange, onCloseSearch, onToggleProject, onPendingProjectRemovalChange, onEditProject, onRemoveProject, onSelectTask, onEditTask, onRemoveTask, onCreateProjectTask, onOpenSettings }: ProjectSidebarProps): React.JSX.Element {
   const [now, setNow] = useState(Date.now)
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 30_000)
@@ -52,16 +57,21 @@ export function ProjectSidebar({ groups, hasMatchingTasks, currentTaskId, busyTa
         tasks={tasks}
         currentTaskId={currentTaskId}
         busyTaskIds={busyTaskIds}
+        waitingTaskIds={waitingTaskIds}
+        projectBusy={busyProjectRoots.has(root)}
         now={now}
         creationDisabled={isBusy}
         collapsed={collapsedProjects.includes(root)}
         canRemoveProjects={root !== '未关联项目'}
+        projectName={projectNames.get(root) ?? root}
         removalDisabled={isBusy || isChatBusy}
         isRemovalPending={pendingProjectRemoval === root}
         onToggleCollapsed={() => onToggleProject(root)}
         onRemovalPendingChange={open => onPendingProjectRemovalChange(open ? root : null)}
+        onEditProject={() => onEditProject(root)}
         onRemoveProject={() => onRemoveProject(root)}
         onSelectTask={onSelectTask}
+        onEditTask={onEditTask}
         onRemoveTask={onRemoveTask}
         onCreateTask={() => onCreateProjectTask(root)}
       />)}

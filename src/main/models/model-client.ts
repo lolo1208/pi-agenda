@@ -49,7 +49,7 @@ export class ModelClient {
       if (profile.contextTokens != null) options.num_ctx = profile.contextTokens
       if (profile.temperature !== null) options.temperature = profile.temperature
       body.options = options
-      if (profile.thinking != null) body.think = profile.thinking
+      if (profile.ollamaThinkingLevel != null || profile.thinking != null) body.think = profile.ollamaThinkingLevel ?? profile.thinking
     }
     let response: Response
     try {

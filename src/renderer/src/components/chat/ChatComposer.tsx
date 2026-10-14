@@ -1,17 +1,29 @@
-import { useId, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { ArrowUp, Plus, Sparkles, Square } from 'lucide-react'
-import { MAX_ATTACHMENT_BYTES, MAX_MESSAGE_ATTACHMENTS, type ChatImage, type ModelProfileView } from '../../../../shared/models'
+import { ArrowUp, Check, Plus, Square } from 'lucide-react'
+import { MessageQueue, type MessageQueueProps } from './MessageQueue'
+import { IntentModePicker } from './IntentModePicker'
+import { PermissionModePicker } from './PermissionModePicker'
+import type { PermissionMode, IntentMode } from '../../../../shared/models'
+import { MAX_ATTACHMENT_BYTES, MAX_MESSAGE_ATTACHMENTS, type ChatImage, type ModelProfileView, type ModelProviderConnection } from '../../../../shared/models'
 import { attachmentMime } from '../../../../shared/attachments'
 import { ChatImages } from './ChatImages'
 import { ConversationModelPicker } from './ConversationModelPicker'
 
-interface ChatComposerProps {
+interface ChatComposerProps extends MessageQueueProps {
+  onCancelEdit?: () => void
+  intentMode?: IntentMode
+  onIntentChange?(mode: IntentMode): void
+  permissionMode?: PermissionMode
+  onPermissionChange?: (mode: PermissionMode) => Promise<void>
   profile: ModelProfileView | undefined
   profiles?: ModelProfileView[]
+  providers?: ModelProviderConnection[]
   onSelectModel?: (id: string) => void
+  /** 快捷面板内修改当前模型的推理档位。 */
+  onThinkingChange?: (profile: ModelProfileView, value: boolean | string | null) => Promise<void> | void
   prompt: string
   images: ChatImage[]
   isBusy: boolean
@@ -25,7 +37,7 @@ interface ChatComposerProps {
   onCancel: () => void
 }
 
-export function ChatComposer({ profile, profiles, onSelectModel, prompt, images, isBusy, hasMessages, settingsDisabled, sendWithCtrlEnter, onPromptChange, onImagesChange, onOpenSettings, onSend, onCancel }: ChatComposerProps): React.JSX.Element {
+export function ChatComposer({ queue = [], editingId, queuePaused, onResumeQueue, onEditQueued, onDeleteQueued, onReorderQueued, onCancelEdit, intentMode = 'execute', onIntentChange, permissionMode = 'default', onPermissionChange, profile, profiles, providers, onSelectModel, onThinkingChange, prompt, images, isBusy, hasMessages, settingsDisabled, sendWithCtrlEnter, onPromptChange, onImagesChange, onOpenSettings, onSend, onCancel }: ChatComposerProps): React.JSX.Element {
   const promptId = useId()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -55,8 +67,10 @@ export function ChatComposer({ profile, profiles, onSelectModel, prompt, images,
     return () => observer?.disconnect()
   }, [prompt, images.length])
 
+  useEffect(() => { if (editingId) textareaRef.current?.focus() }, [editingId])
+
   const addImages = async (files: File[]): Promise<void> => {
-    if (isBusy || readingRef.current || !files.length) return
+    if (readingRef.current || !files.length) return
     setImageError('')
     if (images.length + files.length > MAX_MESSAGE_ATTACHMENTS) { setImageError(`最多添加 ${MAX_MESSAGE_ATTACHMENTS} 个附件。`); return }
     if (files.some(file => file.size > MAX_ATTACHMENT_BYTES)) { setImageError('每个附件不能超过 32 MiB。'); return }
@@ -78,34 +92,43 @@ export function ChatComposer({ profile, profiles, onSelectModel, prompt, images,
     finally { readingRef.current = false; setReading(false) }
   }
 
-  return <form className="composer" onSubmit={event => { event.preventDefault(); if (!readingRef.current) onSend() }} onDragOver={event => {
+  return <form className="composer" onClick={event => {
+    const target = event.target
+    if (!(target instanceof HTMLElement) || !event.currentTarget.contains(target)) return
+    if (target.closest('button, a, input, textarea, select, label, [role="button"], [role="combobox"], [role="menuitem"], [contenteditable="true"], [tabindex], .chat-image')) return
+    textareaRef.current?.focus({ preventScroll: true })
+  }} onSubmit={event => { event.preventDefault(); if (!readingRef.current && !settingsDisabled) onSend() }} onDragOver={event => {
     if (event.dataTransfer.types.includes('Files')) event.preventDefault()
   }} onDrop={event => {
     if (!event.dataTransfer.files.length) return
     event.preventDefault(); void addImages(Array.from(event.dataTransfer.files))
   }}>
-    {images.length > 0 && <ChatImages images={images} disabled={isBusy || reading} onRemove={id => onImagesChange(images.filter(image => image.id !== id))} />}
+    <MessageQueue queue={queue} editingId={editingId} queuePaused={queuePaused} onResumeQueue={onResumeQueue} onEditQueued={reading ? undefined : onEditQueued} onDeleteQueued={reading ? undefined : onDeleteQueued} onReorderQueued={onReorderQueued} />
+    {editingId && <div className="queue-edit-status"><span>正在编辑队列消息，保存后继续执行</span><Button type="button" variant="ghost" size="sm" disabled={reading} onClick={onCancelEdit}>取消编辑</Button></div>}
+    {images.length > 0 && <ChatImages images={images} disabled={reading} onRemove={id => onImagesChange(images.filter(image => image.id !== id))} />}
     {imageError && <p className="composer-image-error" role="alert">{imageError}</p>}
     <input ref={fileRef} type="file" multiple hidden aria-label="选择文件附件" onChange={event => {
       void addImages(Array.from(event.target.files ?? [])); event.target.value = ''
     }} />
     <Label className="sr-only" htmlFor={promptId}>消息</Label>
-    <Textarea ref={textareaRef} rows={1} id={promptId} aria-label="消息" value={prompt} maxLength={32000} disabled={isBusy} placeholder={hasMessages ? '继续聊一聊…' : '描述你想完成的任务…'} onChange={event => onPromptChange(event.target.value)} onPaste={event => {
+    <Textarea ref={textareaRef} rows={1} id={promptId} aria-label="消息" value={prompt} maxLength={32000} placeholder={hasMessages ? '继续聊一聊…' : '描述你想完成的任务…'} onChange={event => onPromptChange(event.target.value)} onPaste={event => {
       const files = Array.from(event.clipboardData.items).filter(item => item.kind === 'file').map(item => item.getAsFile()).filter((file): file is File => Boolean(file))
       if (files.length) { event.preventDefault(); void addImages(files) }
     }} onKeyDown={event => {
       if (event.key !== 'Enter' || event.nativeEvent.isComposing) return
       const shouldSend = sendWithCtrlEnter ? (isMac ? event.metaKey : event.ctrlKey) : !event.shiftKey
-      if (shouldSend) { event.preventDefault(); if (!readingRef.current) onSend() }
+      if (shouldSend) { event.preventDefault(); if (!readingRef.current && !settingsDisabled) onSend() }
     }} />
     <div className="composer-actions">
       <div className="composer-tools">
-        <Button type="button" className="attach-image-button" aria-label="添加附件" title="添加文件，也可粘贴或拖入" disabled={isBusy || reading || images.length >= MAX_MESSAGE_ATTACHMENTS} onClick={() => fileRef.current?.click()}><Plus size={17} /></Button>
-        <span className="composer-mode"><Sparkles size={14} />{reading ? '正在添加附件…' : '对话'}</span>
+        <Button type="button" className="attach-image-button" aria-label="添加附件" title="添加文件，也可粘贴或拖入" disabled={reading || images.length >= MAX_MESSAGE_ATTACHMENTS} onClick={() => fileRef.current?.click()}><Plus size={17} /></Button>
+        <IntentModePicker mode={intentMode} onChange={onIntentChange} disabled={isBusy || settingsDisabled} />
+        {reading ? <span className="composer-mode">正在添加附件…</span> : <PermissionModePicker mode={permissionMode} disabled={isBusy || settingsDisabled || !onPermissionChange} onChange={onPermissionChange ?? (async () => {})} />}
       </div>
       <div>
-        <ConversationModelPicker profile={profile} profiles={profiles ?? (profile ? [profile] : [])} disabled={isBusy || settingsDisabled} onSelect={onSelectModel ?? (() => undefined)} onOpenSettings={onOpenSettings} />
-        {isBusy ? <Button type="button" className="send-button" aria-label="取消请求" onClick={onCancel}><Square size={14} /></Button> : <Button type="submit" className="send-button" aria-label="发送消息" title={`发送消息（${sendWithCtrlEnter ? sendShortcut : 'Enter'}）`} disabled={!profile || settingsDisabled || reading || (!prompt.trim() && !images.length)}><ArrowUp size={19} /></Button>}
+        <ConversationModelPicker profile={profile} profiles={profiles ?? (profile ? [profile] : [])} providers={providers} disabled={isBusy || settingsDisabled} onSelect={onSelectModel ?? (() => undefined)} onThinkingChange={onThinkingChange} onOpenSettings={onOpenSettings} />
+        {isBusy && <Button type="button" className="send-button" aria-label="取消请求" onClick={onCancel}><Square size={14} /></Button>}
+        <Button type="submit" className={`send-button${editingId ? ' queue-save-button' : ''}`} aria-label={editingId ? '保存队列消息' : '发送消息'} title={`${editingId ? '保存队列消息' : isBusy ? '加入队列' : '发送消息'}（${sendWithCtrlEnter ? sendShortcut : 'Enter'}）`} disabled={!profile || settingsDisabled || reading || (!prompt.trim() && !images.length)}>{editingId ? <><Check size={15} />保存</> : <ArrowUp size={19} />}</Button>
       </div>
     </div>
   </form>

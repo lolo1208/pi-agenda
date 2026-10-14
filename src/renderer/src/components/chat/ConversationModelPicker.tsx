@@ -1,64 +1,108 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { Popover } from 'radix-ui'
-import { Check, ChevronDown, Cpu, LayoutGrid, Plus, Search, Server } from 'lucide-react'
+import { ChevronDown, ChevronRight, Eye, Search, Settings2 } from 'lucide-react'
+import { ModelIcon } from './ModelIcon'
 import { Button } from '@/components/ui/button'
-import { PROVIDER_PRESETS, type ModelProfileView, type ProviderId } from '../../../../shared/models'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import { findModelDescriptor, PROVIDER_PRESETS, selectedModelThinking, thinkingLabel, tokenCountLabel, type ModelProfileView, type ModelProviderConnection } from '../../../../shared/models'
 
 interface Props {
   profile?: ModelProfileView
   profiles: ModelProfileView[]
+  /** 供应商目录，用于显示上下文与推理档位；缺失时相关标记隐藏。 */
+  providers?: ModelProviderConnection[]
   disabled?: boolean
   onSelect(id: string): void
+  /** 快捷修改当前模型的推理档位；由上层负责持久化并回传新的设置。 */
+  onThinkingChange?(profile: ModelProfileView, value: boolean | string | null): Promise<void> | void
   onOpenSettings(): void
 }
 
-export function ConversationModelPicker({ profile, profiles, disabled, onSelect, onOpenSettings }: Props): React.JSX.Element {
+export function ConversationModelPicker({ profile, profiles, providers, disabled, onSelect, onThinkingChange, onOpenSettings }: Props): React.JSX.Element {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
-  const [provider, setProvider] = useState<ProviderId | null>(null)
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({})
+  const groupId = useId()
+  const [thinkingSaving, setThinkingSaving] = useState(false)
   const enabledProfiles = profiles.filter(item => item.enabled !== false)
-  const providers = PROVIDER_PRESETS.filter(item => enabledProfiles.some(model => model.provider === item.id))
   const search = query.trim().toLocaleLowerCase()
-  const filtered = enabledProfiles.filter(item => (search || !provider || item.provider === provider)
-    && `${item.name} ${item.model} ${PROVIDER_PRESETS.find(preset => preset.id === item.provider)?.label ?? ''}`.toLocaleLowerCase().includes(search))
+  const filtered = enabledProfiles.filter(item => `${item.name} ${item.model} ${PROVIDER_PRESETS.find(preset => preset.id === item.provider)?.label ?? ''}`.toLocaleLowerCase().includes(search))
+  const groups = PROVIDER_PRESETS.map(preset => ({ preset, models: filtered.filter(model => model.provider === preset.id) })).filter(group => group.models.length > 0)
   const close = (): void => setOpen(false)
+  const descriptor = profile ? findModelDescriptor(providers, profile) : undefined
+  const thinkingOptions = (descriptor?.thinking?.values ?? []).map(value => ({ key: `${typeof value === 'boolean' ? 'boolean' : 'level'}:${value}`, label: thinkingLabel(value) ?? String(value), raw: value }))
+  const configuredThinking = profile ? selectedModelThinking(profile, descriptor?.thinking) : null
+  const selectedThinkingKey = thinkingOptions.find(option => option.raw === configuredThinking)?.key
+  const showThinking = thinkingOptions.some(option => option.raw !== false && option.raw !== 'off')
+  const configuredThinkingLabel = thinkingLabel(configuredThinking)
+
+  const changeThinking = async (value: boolean | string | null): Promise<void> => {
+    if (!profile || !onThinkingChange || thinkingSaving) return
+    setThinkingSaving(true)
+    try { await onThinkingChange(profile, value) }
+    finally { setThinkingSaving(false) }
+  }
 
   return <Popover.Root open={open && !disabled} onOpenChange={next => {
     setOpen(next)
-    if (next) { setQuery(''); setProvider(providers.find(item => item.id === profile?.provider)?.id ?? null) }
+    if (next) setQuery('')
   }}>
     <Popover.Trigger asChild>
-      <Button type="button" className="model-picker" disabled={disabled} aria-label={`切换模型：${profile?.model || '选择模型'}`} title="切换本次会话的模型">
-        {profile?.provider === 'ollama' ? <Server size={14} /> : <Cpu size={14} />}<span>{profile?.model || '选择模型'}</span><ChevronDown size={14} />
+      <Button type="button" className="model-picker" disabled={disabled} aria-label={`切换模型：${profile?.model || '选择模型'}`} title="切换本次会话的模型，并可在此设置推理强度">
+        <ModelIcon model={profile?.model} provider={profile?.provider} size={14} /><span>{profile?.model || '选择模型'}</span>
+        {showThinking && configuredThinkingLabel && <span className="model-picker-thinking">· {configuredThinkingLabel}</span>}
+        <ChevronDown size={14} />
       </Button>
     </Popover.Trigger>
     <Popover.Portal>
       <Popover.Content className="conversation-model-picker" side="top" align="end" sideOffset={10} collisionPadding={12} aria-label="本次会话模型" onOpenAutoFocus={event => event.preventDefault()}>
-        <div className="conversation-model-search"><Search size={16} aria-hidden="true" /><input aria-label="搜索会话模型" placeholder="搜索模型…" value={query} onChange={event => setQuery(event.target.value)} /></div>
-        <div className="conversation-model-body">
-          <nav className="conversation-model-providers" aria-label="模型供应商">
-            <Button type="button" variant="ghost" aria-label="全部模型" title="全部模型" aria-pressed={!provider} onClick={() => { setProvider(null); setQuery('') }}><LayoutGrid size={17} /></Button>
-            {providers.map(item => <Button key={item.id} type="button" variant="ghost" title={item.label} aria-label={`${item.label} 模型`} aria-pressed={provider === item.id} onClick={() => { setProvider(item.id); setQuery('') }}>
-              {item.id === 'ollama' ? <Server size={17} /> : <Cpu size={17} />}
-            </Button>)}
-          </nav>
-          <div className="conversation-model-list">
-            {providers.map(item => {
-              const models = filtered.filter(model => model.provider === item.id)
-              if (!models.length) return null
-              return <section key={item.id} aria-label={item.label}>
-                <h2>{item.label}</h2>
-                {models.map(model => <Button type="button" variant="ghost" className="conversation-model-option" key={model.id} aria-label={`使用 ${model.name}`} aria-pressed={model.id === profile?.id} disabled={model.available === false} onClick={() => { onSelect(model.id); close() }}>
-                  {item.id === 'ollama' ? <Server size={16} /> : <Cpu size={16} />}
-                  <span className="conversation-model-details"><strong>{model.name}{model.available === false ? ' · 本地未找到' : ''}</strong></span>
-                  {model.id === profile?.id && <Check size={16} aria-hidden="true" />}
-                </Button>)}
-              </section>
-            })}
-            {!filtered.length && <p className="conversation-model-empty">{enabledProfiles.length ? '没有找到匹配的模型，请尝试其他名称。' : profiles.length ? '暂无已启用的模型，请先在模型设置中启用。' : '尚未配置模型，请先添加供应商。'}</p>}
-          </div>
+        <div className="conversation-model-search">
+          <Search size={16} aria-hidden="true" />
+          <input aria-label="搜索会话模型" placeholder="搜索模型" value={query} onChange={event => setQuery(event.target.value)} />
+          <Button type="button" variant="ghost" size="icon" className="conversation-model-config" aria-label="配置模型" title="打开模型设置" onClick={() => { close(); onOpenSettings() }}><Settings2 size={16} /></Button>
         </div>
-        <footer><Button type="button" variant="ghost" onClick={() => { close(); onOpenSettings() }}><Plus size={15} />配置模型</Button></footer>
+        <div className="conversation-model-list">
+          {groups.map(({ preset, models }) => {
+            const expanded = !collapsedGroups[preset.id]
+            const modelsId = `${groupId}-${preset.id}`
+            return <section key={preset.id} aria-label={preset.label}>
+              <h2><Button type="button" variant="ghost" className="conversation-model-group-toggle" aria-expanded={expanded} aria-controls={modelsId} onClick={() => setCollapsedGroups(current => ({ ...current, [preset.id]: !current[preset.id] }))}>
+                <span>{preset.label}</span>
+                {expanded ? <ChevronDown size={14} aria-hidden="true" /> : <ChevronRight size={14} aria-hidden="true" />}
+              </Button></h2>
+              <div id={modelsId} hidden={!expanded}>
+                {models.map(model => {
+                  const info = findModelDescriptor(providers, model)
+                  const context = tokenCountLabel(info?.maxContextTokens ?? model.contextTokens)
+                  const modelThinking = thinkingLabel(selectedModelThinking(model, info?.thinking))
+                  return <Button type="button" variant="ghost" className="conversation-model-option" key={model.id} aria-label={`使用 ${model.name}`} aria-current={model.id === profile?.id || undefined} disabled={model.available === false} onClick={() => onSelect(model.id)}>
+                    <ModelIcon model={model.model} provider={model.provider} size={16} />
+                    <span className={model.id === profile?.id ? 'conversation-model-name is-current' : 'conversation-model-name'}>{model.name}{model.available === false ? ' · 本地未找到' : ''}</span>
+                    <span className="conversation-model-meta">
+                      {modelThinking && <span title={`推理强度：${modelThinking}`}>{modelThinking}</span>}
+                      {info?.capabilities.includes('vision') && <span title="支持图片输入"><Eye size={13} aria-hidden="true" /></span>}
+                      {context && <span title={`上下文上限 ${info?.maxContextTokens ?? model.contextTokens} Token`}>{context}</span>}
+                    </span>
+                  </Button>
+                })}
+              </div>
+            </section>
+          })}
+          {!filtered.length && <p className="conversation-model-empty">{enabledProfiles.length ? '没有找到匹配的模型，请尝试其他名称。' : profiles.length ? '暂无已启用的模型，请先在模型设置中启用。' : '尚未配置模型，请先添加供应商。'}</p>}
+        </div>
+        <footer className="conversation-model-reasoning" aria-busy={thinkingSaving}>
+          {!profile ? <p className="conversation-model-reasoning-hint">请先选择一个模型。</p>
+            : showThinking ? <>
+              <div className="conversation-model-reasoning-head"><span>推理强度</span><strong>{profile.name}</strong></div>
+              <RadioGroup className="conversation-model-thinking" aria-label={`${profile.name} 推理强度`} value={selectedThinkingKey} disabled={thinkingSaving || !onThinkingChange} onValueChange={value => {
+                const raw = thinkingOptions.find(option => option.key === value)?.raw
+                if (raw !== undefined) void changeThinking(raw)
+              }}>
+                {thinkingOptions.map(option => <RadioGroupItem key={option.key} variant="segmented" className="conversation-model-thinking-option" value={option.key}>{option.label}</RadioGroupItem>)}
+              </RadioGroup>
+            </>
+            : <p className="conversation-model-reasoning-hint">{providers?.length ? `${profile.name} 未提供可调整的推理强度。` : `${profile.name} 的模型信息尚未读取，请在模型设置中刷新列表。`}</p>}
+        </footer>
       </Popover.Content>
     </Popover.Portal>
   </Popover.Root>

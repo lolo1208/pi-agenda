@@ -1,0 +1,95 @@
+.modal-overlay {
+  z-index: 40;
+  position: fixed;
+  inset: 0;
+  background: #0007;
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+  animation: .15s ease-out modal-fade-in;
+}
+
+.modal-panel {
+  z-index: 50;
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  border-radius: 16px;
+  width: min(520px, calc(100vw - 40px));
+  max-height: min(640px, calc(100dvh - var(--titlebar-height, 0px) - 40px));
+  padding: 22px;
+  overflow: auto;
+  box-shadow: 0 18px 55px #0003;
+}
+
+.modal-heading {
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 20px;
+  display: flex;
+}
+
+.modal-title {
+  font-size: calc(17rem / 14);
+  font-weight: 600;
+  margin: 0;
+}
+
+.modal-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: calc(28rem / 14);
+  height: calc(28rem / 14);
+  min-height: 0;
+  padding: 0;
+  flex: none;
+  border: 0;
+  background: none;
+  border-radius: 50%;
+  color: var(--muted);
+}
+
+.modal-close:not(:disabled):hover {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--accent);
+}
+
+.modal-title {
+  padding-right: 32px;
+}
+
+.modal-actions {
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+  display: flex;
+}
+
+.modal-bare {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0;
+  width: auto;
+  max-width: none;
+  max-height: none;
+  overflow: visible;
+}
+
+.modal-description {
+  color: var(--muted);
+  font-size: calc(13rem / 14);
+  line-height: 1.7;
+  margin: 0 0 18px;
+}
+
+@keyframes modal-fade-in {
+  from { opacity: 0 }
+  to { opacity: 1 }
+}

@@ -1,7 +1,7 @@
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import path from 'node:path'
-import type { ModelDescriptor, ModelProfile, ModelProviderConnection, ModelSettings } from '../../shared/models'
+import { parseThinkingControls, selectedModelThinking, type ModelDescriptor, type ModelProfile, type ModelProviderConnection, type ModelSettings } from '../../shared/models'
 import { asRecord, ModelError, normalizeOllamaUrl, parseProfile, parseSaveProfile, profileId, requiredString } from './model-validation'
 
 export interface CredentialCipher {
@@ -51,7 +51,8 @@ export class ModelSettingsStore {
             if (model.maxContextTokens !== null && (typeof model.maxContextTokens !== 'number' || !Number.isSafeInteger(model.maxContextTokens) || model.maxContextTokens <= 0)) throw new Error()
             return { id: requiredString(model.id, '模型名称', 200), capabilities: model.capabilities as string[], maxContextTokens: model.maxContextTokens as number | null,
               sizeBytes: typeof model.sizeBytes === 'number' ? model.sizeBytes : undefined, parameterSize: typeof model.parameterSize === 'string' ? model.parameterSize : undefined,
-              quantization: typeof model.quantization === 'string' ? model.quantization : undefined }
+              quantization: typeof model.quantization === 'string' ? model.quantization : undefined,
+              ...(parseThinkingControls(model.thinking) ? { thinking: parseThinkingControls(model.thinking) } : {}) }
           })
           if (entry.provider === 'chatgpt' && entry.baseUrl !== 'https://chatgpt.com/backend-api') throw new Error()
           providers.push({ provider: entry.provider as 'ollama' | 'chatgpt', baseUrl: entry.provider === 'ollama' ? normalizeOllamaUrl(entry.baseUrl) : 'https://chatgpt.com/backend-api', models })
@@ -96,7 +97,7 @@ export class ModelSettingsStore {
         settings.profiles.push({ profile: { id: randomUUID(), name: model.id, provider: 'ollama', protocol: 'openai-compatible', baseUrl: root,
           model: model.id, temperature: null, contextTokens: null, enabled: true, maxTokens: 2048, tokenParameter: 'max_tokens', timeoutSeconds: 120 } })
       }
-      if (settings.profiles.length > 200) throw new ModelError('最多保存 200 个模型配置，请先删除不用的配置')
+      if (settings.profiles.length > 200) throw new ModelError('最多保存 200 个模型配置')
       const connection: ModelProviderConnection = { provider: 'ollama', baseUrl: root, models }
       settings.providers = [...(settings.providers ?? []).filter(item => item.provider !== 'ollama'), connection]
       this.reconcileActive(settings)
@@ -107,15 +108,25 @@ export class ModelSettingsStore {
 
   list(): Promise<ModelSettings> { return this.serialized(async () => this.view(await this.read())) }
 
+  rememberOllamaInfo(baseUrl: unknown, descriptor: ModelDescriptor): Promise<void> {
+    return this.serialized(async () => {
+      const settings = await this.read()
+      const connection = settings.providers?.find(item => item.provider === 'ollama' && item.baseUrl === normalizeOllamaUrl(baseUrl))
+      if (!connection?.models.some(item => item.id === descriptor.id)) return
+      connection.models = connection.models.map(item => item.id === descriptor.id ? { ...item, ...descriptor } : item)
+      await this.write(settings)
+    })
+  }
+
   syncChatgpt(models: ModelDescriptor[]): Promise<ModelSettings> {
     return this.serialized(async () => {
       const settings = await this.read()
       for (const model of models) {
         if (settings.profiles.some(item => item.profile.provider === 'chatgpt' && item.profile.model === model.id)) continue
         settings.profiles.push({ profile: { id: randomUUID(), name: model.id, provider: 'chatgpt', protocol: 'openai-compatible', baseUrl: 'https://chatgpt.com/backend-api', model: model.id,
-          temperature: null, contextTokens: null, enabled: true, thinking: true, maxTokens: 2048, tokenParameter: 'max_completion_tokens', timeoutSeconds: 120 } })
+          temperature: null, contextTokens: null, enabled: true, thinking: null, maxTokens: 2048, tokenParameter: 'max_completion_tokens', timeoutSeconds: 120 } })
       }
-      if (settings.profiles.length > 200) throw new ModelError('最多保存 200 个模型配置，请先删除不用的配置')
+      if (settings.profiles.length > 200) throw new ModelError('最多保存 200 个模型配置')
       settings.providers = [...(settings.providers ?? []).filter(item => item.provider !== 'chatgpt'), { provider: 'chatgpt', baseUrl: 'https://chatgpt.com/backend-api', models }]
       this.reconcileActive(settings)
       await this.write(settings)
@@ -132,6 +143,8 @@ export class ModelSettingsStore {
       if (!existing && settings.profiles.length >= 200) throw new ModelError('最多保存 200 个模型配置')
       const descriptor = settings.providers?.find(item => item.provider === profile.provider && item.baseUrl === profile.baseUrl)?.models.find(item => item.id === profile.model)
       if (descriptor?.maxContextTokens && profile.contextTokens && profile.contextTokens > descriptor.maxContextTokens) throw new ModelError('上下文上限不能超过模型支持的最大上下文')
+      const selectedThinking = profile.provider === 'ollama' ? profile.ollamaThinkingLevel ?? profile.thinking : profile.thinkingLevel
+      if (descriptor?.thinking && selectedThinking != null && !descriptor.thinking.values.includes(selectedThinking)) throw new ModelError('当前模型不支持所选推理档位，请重新选择')
       let encryptedApiKey = existing?.encryptedApiKey
       if (credential.action === 'keep' && encryptedApiKey && (existing?.profile.baseUrl !== profile.baseUrl || existing.profile.protocol !== profile.protocol)) throw new ModelError('服务地址或协议已改变，请重新输入对应 API Key，或选择删除密钥后保存')
       if (credential.action === 'remove') encryptedApiKey = undefined
@@ -162,17 +175,6 @@ export class ModelSettingsStore {
     })
   }
 
-  delete(id: unknown): Promise<ModelSettings> {
-    return this.serialized(async () => {
-      const selectedId = profileId(id)
-      const settings = await this.read()
-      settings.profiles = settings.profiles.filter(item => item.profile.id !== selectedId)
-      this.reconcileActive(settings)
-      await this.write(settings)
-      return this.view(settings)
-    })
-  }
-
   getForRequest(id: unknown): Promise<{ profile: ModelProfile; apiKey: string }> {
     return this.serialized(async () => {
       const selectedId = profileId(id)
@@ -188,7 +190,13 @@ export class ModelSettingsStore {
       }
       if (!apiKey && ['openai', 'anthropic', 'deepseek'].includes(entry.profile.provider)) throw new ModelError('请先保存该服务的 API Key')
       const descriptor = settings.providers?.find(item => item.provider === entry.profile.provider && item.baseUrl === entry.profile.baseUrl)?.models.find(item => item.id === entry.profile.model)
-      return { profile: { ...entry.profile, contextTokens: entry.profile.contextTokens ?? descriptor?.maxContextTokens }, apiKey }
+      const profile = { ...entry.profile, contextTokens: entry.profile.contextTokens ?? descriptor?.maxContextTokens }
+      if (profile.provider === 'ollama' && descriptor?.thinking) {
+        const selected = selectedModelThinking(profile, descriptor.thinking)
+        profile.ollamaThinkingLevel = typeof selected === 'string' ? selected : null
+        profile.thinking = typeof selected === 'boolean' ? selected : null
+      }
+      return { profile, apiKey }
     })
   }
 }

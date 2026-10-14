@@ -1,5 +1,5 @@
 .window-shell {
-  --titlebar-height: 44px;
+  --titlebar-height: calc(44rem / 14);
   --task-sidebar-width: 260px;
   background: var(--bg);
   flex-direction: column;
@@ -47,12 +47,12 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: calc(12rem / 14);
 }
 
 .window-app-mark {
-  width: 16px;
-  height: 16px;
+  width: calc(16rem / 14);
+  height: calc(16rem / 14);
   flex-shrink: 0;
   object-fit: contain;
 }
@@ -61,18 +61,18 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: calc(12rem / 14);
   font-weight: 600;
 }
 
 .window-page-title {
   color: var(--text);
-  font-size: 12px;
+  font-size: calc(12rem / 14);
 }
 
 .window-project-title {
   color: var(--muted);
-  font-size: 11px;
+  font-size: calc(11rem / 14);
 }
 
 .window-controls {
@@ -86,7 +86,7 @@
   background: none;
   border: 0;
   border-radius: 0;
-  width: 46px;
+  width: calc(46rem / 14);
   height: 100%;
   padding: 0;
 }
@@ -135,7 +135,7 @@
   gap: 8px;
   min-width: 0;
   padding: 8px 12px;
-  font-size: 13px;
+  font-size: calc(13rem / 14);
 }
 
 .task-actions button span {
@@ -146,14 +146,14 @@
 .sidebar-bottom button {
   justify-content: flex-start;
   padding: 8px 12px;
-  font-size: 13px;
+  font-size: calc(13rem / 14);
 }
 
 .task-actions button, .sidebar-bottom button {
   background: transparent;
   border: 0;
   border-radius: 18px;
-  min-height: 36px;
+  min-height: calc(36rem / 14);
   font-weight: 400;
 }
 
@@ -184,40 +184,6 @@
   padding: 2px;
 }
 
-.task-list::-webkit-scrollbar {
-  width: 6px;
-}
-
-.task-list::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.task-list::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--muted) 32%, transparent);
-  border-radius: 999px;
-}
-
-.task-list::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in srgb, var(--muted) 48%, transparent);
-}
-
-.task-list::-webkit-scrollbar-button,
-.task-list::-webkit-scrollbar-button:single-button,
-.task-list::-webkit-scrollbar-button:vertical:decrement,
-.task-list::-webkit-scrollbar-button:vertical:increment,
-.task-list::-webkit-scrollbar-button:start:decrement,
-.task-list::-webkit-scrollbar-button:end:increment {
-  display: none;
-  width: 0;
-  height: 0;
-  min-width: 0;
-  min-height: 0;
-  -webkit-appearance: none;
-  appearance: none;
-  border: 0;
-  background: transparent;
-}
-
 .project-group {
   margin: 0 0 18px;
 }
@@ -225,9 +191,16 @@
 .project-heading-row {
   position: relative;
   align-items: center;
-  min-height: 30px;
+  min-height: calc(30rem / 14);
   margin-bottom: 2px;
   display: flex;
+  border-radius: 16px;
+}
+
+/* 与对话行（.task-row）悬停背景一致 */
+.project-heading-row:hover,
+.project-heading-row:focus-within {
+  background: color-mix(in srgb, var(--text) 7%, var(--bg));
 }
 
 .project-heading {
@@ -242,16 +215,15 @@
   gap: 8px;
   min-width: 0;
   padding: 5px 10px;
-  min-height: 30px;
-  height: 30px;
-  font-size: 13px;
+  min-height: calc(30rem / 14);
+  height: calc(30rem / 14);
+  font-size: calc(13rem / 14);
   font-weight: 400;
   display: flex;
 }
 
 .project-heading:hover {
   color: var(--text);
-  background: var(--hover);
 }
 
 .project-heading span {
@@ -263,36 +235,22 @@
 .project-folder {
   position: relative;
   display: inline-flex;
-  width: 15px;
-  height: 15px;
+  width: calc(15rem / 14);
+  height: calc(15rem / 14);
   flex: none;
 }
 
-.project-folder .project-chevron {
-  display: none;
-  position: absolute;
-  inset: 0;
-}
-
-.project-heading:hover .project-folder > svg:first-child,
-.project-heading:focus-visible .project-folder > svg:first-child {
-  visibility: hidden;
-}
-
-.project-heading:hover .project-chevron,
-.project-heading:focus-visible .project-chevron {
-  display: block;
-}
 
 .project-heading-row .project-create-button,
+.project-heading-row .project-edit-button,
 .project-heading-row .project-remove-button {
   position: absolute;
   right: 0;
   background: transparent;
   border: 0;
-  min-height: 26px;
-  width: 26px;
-  height: 26px;
+  min-height: calc(26rem / 14);
+  width: calc(26rem / 14);
+  height: calc(26rem / 14);
   padding: 0;
   flex: none;
   color: var(--task-muted);
@@ -301,24 +259,27 @@
 }
 
 .project-heading-row .project-create-button {
+  right: 56px;
+}
+
+.project-heading-row .project-edit-button {
   right: 28px;
 }
 
-.project-heading-row:hover .project-heading,
-.project-heading-row:focus-within .project-heading {
-  padding-right: 68px;
+.project-heading-row:hover .project-heading {
+  padding-right: 96px;
 }
 
 .project-heading-row:hover .project-create-button,
+.project-heading-row:hover .project-edit-button,
 .project-heading-row:hover .project-remove-button,
-.project-heading-row:focus-within .project-create-button,
-.project-heading-row:focus-within .project-remove-button,
 .project-heading-row .project-remove-button[data-state="open"] {
   opacity: 1;
   pointer-events: auto;
 }
 
-.project-heading-row .project-create-button:hover {
+.project-heading-row .project-create-button:hover,
+.project-heading-row .project-edit-button:not(:disabled):hover {
   background: var(--hover);
   color: var(--text);
 }
@@ -330,9 +291,10 @@
 
 @media (hover: none) {
   .project-heading-row .project-heading {
-    padding-right: 68px;
+    padding-right: 96px;
   }
   .project-heading-row .project-create-button,
+  .project-heading-row .project-edit-button,
   .project-heading-row .project-remove-button {
     opacity: 1;
     pointer-events: auto;
@@ -368,14 +330,14 @@
 }
 
 .alert-dialog-title {
-  font-size: 16px;
+  font-size: calc(16rem / 14);
   font-weight: 600;
 }
 
 .alert-dialog-description {
   overflow-wrap: anywhere;
   color: var(--muted);
-  font-size: 13px;
+  font-size: calc(13rem / 14);
   line-height: 1.7;
 }
 
@@ -390,7 +352,7 @@
   border: 1px solid var(--border);
   cursor: pointer;
   border-radius: 8px;
-  min-height: 34px;
+  min-height: calc(34rem / 14);
   padding: 7px 12px;
   transition: background-color .15s, color .15s;
 }
@@ -452,7 +414,7 @@ to {
 
 .task-row:hover .task-item,
 .task-row:focus-within .task-item {
-  padding-right: 38px;
+  padding-right: calc(66rem / 14);
 }
 
 .task-row:hover .task-time,
@@ -460,13 +422,14 @@ to {
   display: none;
 }
 
-.task-row .task-delete-button {
+.task-row .task-delete-button,
+.task-row .task-edit-button {
   position: absolute;
   top: 3px;
   right: 5px;
-  width: 26px;
-  height: 26px;
-  min-height: 26px;
+  width: calc(26rem / 14);
+  height: calc(26rem / 14);
+  min-height: calc(26rem / 14);
   padding: 0;
   border: 0;
   border-radius: 8px;
@@ -476,12 +439,24 @@ to {
   pointer-events: none;
 }
 
-.task-row.selected .task-delete-button {
+.task-row .task-edit-button {
+  right: calc(33rem / 14);
+}
+
+.task-row .task-edit-button:not(:disabled):hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.task-row.selected .task-delete-button,
+.task-row.selected .task-edit-button {
   color: var(--selected-text);
 }
 
 .task-row:hover .task-delete-button,
-.task-row:focus-within .task-delete-button {
+.task-row:hover .task-edit-button,
+.task-row:focus-within .task-delete-button,
+.task-row:focus-within .task-edit-button {
   opacity: 1;
   pointer-events: auto;
 }
@@ -491,20 +466,22 @@ to {
   color: var(--error);
 }
 
-.task-row .task-delete-button:disabled {
+.task-row .task-delete-button:disabled,
+.task-row .task-edit-button:disabled {
   background: transparent;
   opacity: .5;
 }
 
-.task-row:not(:hover):not(:focus-within) .task-delete-button:disabled {
+.task-row:not(:hover):not(:focus-within) .task-delete-button:disabled,
+.task-row:not(:hover):not(:focus-within) .task-edit-button:disabled {
   opacity: 0;
 }
 
 @media (hover: none) {
-  .task-row .task-item { padding-right: 38px; }
+  .task-row .task-item { padding-right: calc(66rem / 14); }
   .task-row .task-time { display: none; }
-  .task-row .task-delete-button { opacity: 1; pointer-events: auto; }
-  .task-row:not(:hover):not(:focus-within) .task-delete-button:disabled { opacity: .5; }
+  .task-row .task-delete-button, .task-row .task-edit-button { opacity: 1; pointer-events: auto; }
+  .task-row:not(:hover):not(:focus-within) .task-delete-button:disabled, .task-row:not(:hover):not(:focus-within) .task-edit-button:disabled { opacity: .5; }
 }
 
 .task-item {
@@ -516,11 +493,11 @@ to {
   justify-content: flex-start;
   gap: 8px;
   width: 100%;
-  min-height: 32px;
-  height: 32px;
+  min-height: calc(32rem / 14);
+  height: calc(32rem / 14);
   margin-bottom: 2px;
   padding: 0 10px 0 22px;
-  font-size: 13px;
+  font-size: calc(13rem / 14);
 }
 
 .project-task-item {
@@ -562,7 +539,7 @@ to {
 .task-time {
   white-space: nowrap;
   color: var(--task-muted);
-  font-size: 11px;
+  font-size: calc(11rem / 14);
   flex: none;
   font-variant-numeric: tabular-nums;
 }
@@ -575,12 +552,71 @@ to {
   color: color-mix(in srgb, var(--selected-text) 78%, var(--selected));
 }
 
-.task-running-status {
+.task-running-status,
+.task-input-status,
+.task-completed-status {
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(14rem / 14);
+  height: calc(14rem / 14);
   flex: none;
 }
 
+.task-input-status {
+  color: var(--accent);
+}
+
+.selected .task-input-status {
+  color: var(--selected-text);
+}
+
+.task-unread-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #22a65a;
+}
+
+.project-running-status {
+  position: absolute;
+  right: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(14rem / 14);
+  height: calc(14rem / 14);
+  color: var(--accent);
+  pointer-events: none;
+}
+
+.project-running .project-heading {
+  padding-right: 34px;
+}
+
+.project-running:hover .project-heading,
+.project-running:focus-within .project-heading {
+  padding-right: 122px;
+}
+
+.project-running .project-create-button { right: 82px; }
+.project-running .project-edit-button { right: 54px; }
+.project-running .project-remove-button { right: 26px; }
+
+.task-row.running .task-item {
+  padding-right: 10px;
+}
+
+.task-row.running .task-delete-button:disabled {
+  display: none;
+}
+
+@media (hover: none) {
+  .project-running .project-heading { padding-right: 122px; }
+}
+
 .task-spinner {
+  color: var(--accent);
   animation: task-spin 1s linear infinite;
 }
 
@@ -597,7 +633,7 @@ to {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .task-sidebar .ui-button, .task-sidebar .project-chevron {
+  .task-sidebar .ui-button {
     transition: none;
   }
   .task-spinner { animation: none; }
@@ -619,7 +655,7 @@ to {
 .sidebar-bottom small {
   color: var(--muted);
   margin-left: auto;
-  font-size: 11px;
+  font-size: calc(11rem / 14);
 }
 
 .search-field {
@@ -632,15 +668,18 @@ to {
   margin: 0 0 20px;
   padding: 0 11px;
   display: flex;
+  transition: border-color .15s, box-shadow .15s;
 }
 
 .search-field input {
   background: none;
   border: 0;
-  border-radius: 20px;
   width: 100%;
   padding: 7px 0;
-  font-size: 12px;
+  font-size: calc(12rem / 14);
+  /* 输入文字与光标用正文色，避免沿用搜索框的弱化色而导致光标隐没在占位文字里。 */
+  color: var(--text);
+  caret-color: var(--text);
 }
 
 .search-field input:focus-visible {
@@ -650,6 +689,7 @@ to {
 
 .search-field:has(input:focus-visible) {
   border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
 .no-task-state {
@@ -666,12 +706,12 @@ to {
 
 .no-task-state h1 {
   color: var(--text);
-  font-size: 22px;
+  font-size: calc(22rem / 14);
   font-weight: 500;
 }
 
 .no-task-state p {
-  font-size: 13px;
+  font-size: calc(13rem / 14);
   line-height: 1.8;
 }
 

@@ -1,4 +1,5 @@
 import type { ModelReply } from '../../../../shared/models'
+import { ModelIcon } from './ModelIcon'
 
 const tokens = (value: number): string => value >= 1000 ? `${Number((value / 1000).toFixed(1))}k` : value.toLocaleString('zh-CN')
 
@@ -17,7 +18,7 @@ export function LatestRound({ reply }: { reply?: ModelReply }): React.JSX.Elemen
       <div><dt>缓存</dt><dd>{cache ? <>读 {usage?.cacheReadTokens === undefined ? '—' : tokens(usage.cacheReadTokens)} · 写 {usage?.cacheWriteTokens === undefined ? '—' : tokens(usage.cacheWriteTokens)}<span className="subscription-fact-detail">命中 {hit}</span></> : '暂未提供'}</dd></div>
       <div><dt>耗时</dt><dd>{duration}</dd></div>
       <div><dt>速度</dt><dd>{usage && reply.elapsedMs > 0 ? `${Number((usage.outputTokens / (reply.elapsedMs / 1000)).toFixed(1))} tokens/秒` : '暂未提供'}</dd></div>
-      <div><dt>模型</dt><dd>{reply.model}</dd></div>
+      <div><dt>模型</dt><dd><span className="model-name-with-icon"><span aria-hidden="true"><ModelIcon model={reply.model} /></span><span>{reply.model}</span></span></dd></div>
     </dl> : <div className="subscription-reset">完成一次回复后显示</div>}
   </div>
 }

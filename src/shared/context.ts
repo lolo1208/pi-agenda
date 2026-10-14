@@ -1,9 +1,12 @@
 import type { ChatMessage, ModelUsage } from './models'
 import { attachmentKind, attachmentText } from './attachments'
 
-export const DEFAULT_COMPRESSION_THRESHOLD = 90
+export const DEFAULT_COMPRESSION_THRESHOLD = 80
 export function normalizeCompressionThreshold(value: unknown): number {
-  return typeof value === 'number' && Number.isFinite(value) ? Math.max(60, Math.min(95, Math.round(value))) : DEFAULT_COMPRESSION_THRESHOLD
+  if (typeof value !== 'number' || !Number.isFinite(value)) return DEFAULT_COMPRESSION_THRESHOLD
+  // 对齐到 5 的步长，避免历史数据落在拖动条步进之外。
+  const snapped = Math.round(value / 5) * 5
+  return Math.max(60, Math.min(95, snapped))
 }
 export interface ContextCompaction { summary: string; coveredMessages: number }
 export interface ContextOptions { threshold: number; usage?: ModelUsage }

@@ -1,0 +1,62 @@
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Modal } from '@/components/ui/modal'
+import { Textarea } from '@/components/ui/textarea'
+import { FolderOpen } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { MAX_CUSTOM_PROMPT_LENGTH } from '../../../shared/models'
+import { defaultProjectName, MAX_PROJECT_NAME_LENGTH } from '../project-meta'
+
+interface ProjectEditDialogProps {
+  root: string
+  name: string
+  directory: string
+  prompt: string
+  isBusy: boolean
+  error: string
+  onClose: () => void
+  onSave: (next: { name: string; directory: string; prompt: string }) => void
+}
+
+export function ProjectEditDialog({ root, name, directory, prompt, isBusy, error, onClose, onSave }: ProjectEditDialogProps): React.JSX.Element {
+  const [draftName, setDraftName] = useState(name || defaultProjectName(root))
+  const [draftDirectory, setDraftDirectory] = useState(directory)
+  const [draftPrompt, setDraftPrompt] = useState(prompt)
+  const promptRef = useRef<HTMLTextAreaElement>(null)
+  useEffect(() => {
+    const el = promptRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight}px`
+  }, [draftPrompt])
+  const chooseDirectory = (): void => {
+    void window.piAgenda.pickProjectDirectory?.().then(chosen => { if (chosen) setDraftDirectory(chosen) }).catch(() => undefined)
+  }
+  return <Modal open onOpenChange={open => { if (!open && !isBusy) onClose() }} title="项目信息" closeLabel="关闭项目信息" closeDisabled={isBusy} contentClassName="project-edit-dialog">
+    {error && <p role="alert" className="error">{error}</p>}
+    <div className="project-edit-fields">
+      <div className="project-edit-field">
+        <Label htmlFor="project-edit-name">项目名称</Label>
+          <Input id="project-edit-name" value={draftName} maxLength={MAX_PROJECT_NAME_LENGTH} disabled={isBusy} onChange={event => setDraftName(event.target.value)} />
+        </div>
+        <div className="project-edit-field">
+          <Label htmlFor="project-edit-directory">项目目录</Label>
+          <div className="project-edit-directory">
+            <Input id="project-edit-directory" value={draftDirectory} disabled={isBusy} onChange={event => setDraftDirectory(event.target.value)} />
+            <Button variant="outline" size="icon" aria-label="选择目录" title="选择目录" disabled={isBusy} onClick={chooseDirectory}><FolderOpen size={15} /></Button>
+          </div>
+          <p className="hint">修改目录后，此项目的对话会关联到新目录。</p>
+        </div>
+        <div className="project-edit-field">
+          <Label htmlFor="project-edit-prompt">项目提示词</Label>
+          <Textarea ref={promptRef} id="project-edit-prompt" rows={2} className="project-edit-prompt" maxLength={MAX_CUSTOM_PROMPT_LENGTH} value={draftPrompt} placeholder="为此项目添加的固定提示词，会随此项目的每次对话一起发送。" disabled={isBusy} onChange={event => setDraftPrompt(event.target.value)} />
+        </div>
+      </div>
+      <div className="project-edit-actions">
+        <Button disabled={isBusy} onClick={onClose}>取消</Button>
+        <Button className="project-edit-save" disabled={isBusy || !draftDirectory.trim()} onClick={() => onSave({ name: draftName, directory: draftDirectory.trim(), prompt: draftPrompt })}>保存</Button>
+      </div>
+      {isBusy && <p className="hint" role="status">正在保存项目信息…</p>}
+  </Modal>
+}

@@ -1,40 +1,6 @@
-.project-picker-backdrop {
-  z-index: 20;
-  -webkit-backdrop-filter: blur(3px);
-  backdrop-filter: blur(3px);
-  background: #11131866;
-  place-items: center;
-  padding: 20px;
-  display: grid;
-  position: fixed;
-  inset: var(--titlebar-height) 0 0;
-}
-
-.project-picker {
-  border: 1px solid var(--border);
-  background: var(--bg);
-  border-radius: 16px;
-  width: min(520px, 100%);
-  max-height: min(640px, 100%);
-  padding: 22px;
-  overflow: auto;
-  box-shadow: 0 18px 55px #0003;
-}
-
-.project-picker-heading {
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 20px;
-  display: flex;
-}
-
-.project-picker-heading h2 {
-  margin: 0 0 6px;
-}
-
-.project-picker-heading p, .project-picker-list small {
+.project-picker-list small {
   color: var(--muted);
-  font-size: 12px;
+  font-size: calc(12rem / 14);
   line-height: 1.7;
 }
 
@@ -63,4 +29,75 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   overflow: hidden;
+}
+
+.project-edit-dialog {
+  width: min(560px, calc(100vw - 40px));
+}
+
+.conversation-edit-dialog {
+  width: min(560px, calc(100vw - 40px));
+}
+
+.conversation-edit-fields {
+  display: grid;
+  gap: 16px;
+}
+
+.conversation-edit-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.conversation-edit-field .hint {
+  margin: 0;
+}
+
+.conversation-edit-field textarea {
+  max-height: 16rem;
+  resize: vertical;
+}
+
+.project-edit-fields {
+  gap: 16px;
+  display: grid;
+}
+
+.project-edit-field {
+  gap: 6px;
+  display: grid;
+}
+
+.project-edit-field .hint {
+  margin: 0;
+}
+
+.project-edit-prompt {
+  min-height: 0;
+  max-height: 9rem;
+  overflow-y: auto;
+  resize: none;
+}
+
+.project-edit-directory {
+  gap: 8px;
+  display: flex;
+  align-items: center;
+}
+
+.project-edit-directory > input {
+  flex: 1;
+  min-width: 0;
+}
+
+.project-edit-directory > button {
+  flex: none;
+}
+
+.project-edit-actions {
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+  display: flex;
 }

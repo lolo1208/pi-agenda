@@ -1,14 +1,16 @@
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Slider } from '@/components/ui/slider'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { ArrowRightToLine, Monitor, Moon, RotateCcw, Sun } from 'lucide-react'
-import type { Preferences } from '../../preferences'
-import { useRef, useState } from 'react'
+import type { Preferences, ThemePreference } from '../../preferences'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { MAX_CUSTOM_PROMPT_LENGTH, PROVIDER_PRESETS, type ModelSettings } from '../../../../shared/models'
 import { unwrapModelResult } from '../../model-result'
+import { ModelIcon } from '../chat/ModelIcon'
 
 interface PreferencesSectionProps {
   preferences: Preferences
@@ -24,6 +26,13 @@ export function GeneralSettingsSection({ preferences, onPreferences, isMac, sett
   onModelSettingsChange(settings: ModelSettings): void
   onBusyChange(busy: boolean): void
 }): React.JSX.Element {
+  const promptRef = useRef<HTMLTextAreaElement>(null)
+  useLayoutEffect(() => {
+    const el = promptRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, 400)}px`
+  }, [preferences.customPrompt])
   const [saving, setSaving] = useState(false)
   const savingRef = useRef(false)
   const [error, setError] = useState('')
@@ -40,50 +49,11 @@ export function GeneralSettingsSection({ preferences, onPreferences, isMac, sett
   return <>
     <h2>通用</h2>
     <p className="section-description">调整工作台的默认行为。</p>
-    <section className="settings-card">
-      <div className="setting-row">
-        <div><h3>默认模型</h3><p>新建会话时使用，可在会话中单独切换。</p></div>
-        <div className="settings-select-control settings-model-select"><Select value={usableProfiles.some(item => item.id === settings?.activeProfileId) ? settings!.activeProfileId! : ''} disabled={saving || !usableProfiles.length} onValueChange={id => { void changeDefault(id) }}>
-          <SelectTrigger aria-label="默认模型"><SelectValue placeholder={settings ? '请先在模型供应商中启用模型' : '正在读取模型…'} /></SelectTrigger>
-          <SelectContent>{usableProfiles.map(item => <SelectItem key={item.id} value={item.id}>{item.name} · {PROVIDER_PRESETS.find(provider => provider.id === item.provider)?.label ?? item.provider}</SelectItem>)}</SelectContent>
-        </Select></div>
-      </div>
-      {saving && <p className="hint" role="status">正在保存默认模型…</p>}
-      {error && <p className="error" role="alert">{error}</p>}
-      <div className="settings-divider" />
-      <div className="setting-row">
-        <div><h3>代码差异显示</h3><p>用于右侧快照中的文件对比。</p></div>
-        <div className="settings-select-control settings-diff-select"><Select value={preferences.inlineDiff ? 'inline' : 'split'} onValueChange={value => onPreferences({ ...preferences, inlineDiff: value === 'inline' })}>
-          <SelectTrigger aria-label="代码差异显示"><SelectValue /></SelectTrigger>
-          <SelectContent><SelectItem value="split">左右分栏</SelectItem><SelectItem value="inline">内联对比</SelectItem></SelectContent>
-        </Select></div>
-      </div>
-      <div className="settings-divider" />
-      <div className="shortcut-setting">
-        <span><b>使用 {isMac ? '⌘' : 'Ctrl'} + Enter 发送</b><small>开启时 Enter 换行；关闭时 Enter 发送，Shift + Enter 换行。</small></span>
-        <div className="flex shrink-0 items-center gap-2">
-          <Switch id="send-with-modifier" checked={preferences.sendWithCtrlEnter} onCheckedChange={sendWithCtrlEnter => onPreferences({ ...preferences, sendWithCtrlEnter })} />
-          <Label htmlFor="send-with-modifier" className="sr-only">启用修饰键加 Enter 发送</Label>
-        </div>
-      </div>
-    </section>
-    <section className="settings-card compression-setting">
-      <Label htmlFor="compression-threshold">上下文压缩阈值</Label>
-      <p id="compression-description" className="hint">发送消息前，上下文占用达到此比例时自动压缩历史消息。修改后从下一次发送起生效。</p>
-      <div className="compression-slider-row">
-        <div className="compression-slider-track">
-          <input id="compression-threshold" type="range" min={60} max={95} step={1} value={preferences.compressionThreshold} aria-valuetext={`${preferences.compressionThreshold}%`} aria-describedby="compression-description compression-help" onChange={event => onPreferences({ ...preferences, compressionThreshold: Number(event.target.value) })} />
-          <div className="compression-slider-labels" aria-hidden="true"><span>60%</span><span>95%</span></div>
-        </div>
-        <output htmlFor="compression-threshold">{preferences.compressionThreshold}%</output>
-      </div>
-      <p id="compression-help" className="hint">调低会更早压缩，为回复保留更多余量；调高会更晚压缩。默认 90%。需配置模型上下文上限；完整聊天记录仍保存在本地。</p>
-    </section>
     <section className="settings-card custom-prompt-setting">
-      <Label htmlFor="custom-prompt">自定义提示词</Label>
+      <Label htmlFor="custom-prompt">全局提示词</Label>
       <p id="custom-prompt-description" className="hint">每次发送消息时都会附带这些指令，对所有模型和会话生效。留空则不附加。</p>
       <div className="custom-prompt-input" data-suggestion-visible={showPromptSuggestion}>
-        <Textarea id="custom-prompt" aria-describedby={showPromptSuggestion ? 'custom-prompt-description custom-prompt-shortcut' : 'custom-prompt-description'} rows={5} maxLength={MAX_CUSTOM_PROMPT_LENGTH} value={preferences.customPrompt} placeholder={CUSTOM_PROMPT_PLACEHOLDER}
+        <Textarea ref={promptRef} id="custom-prompt" aria-describedby={showPromptSuggestion ? 'custom-prompt-description custom-prompt-shortcut' : 'custom-prompt-description'} rows={1} maxLength={MAX_CUSTOM_PROMPT_LENGTH} value={preferences.customPrompt} placeholder={CUSTOM_PROMPT_PLACEHOLDER}
           onFocus={() => setPromptFocused(true)} onBlur={() => setPromptFocused(false)}
           onChange={event => onPreferences({ ...preferences, customPrompt: event.target.value })}
           onKeyDown={event => {
@@ -98,44 +68,75 @@ export function GeneralSettingsSection({ preferences, onPreferences, isMac, sett
         </>}
       </div>
     </section>
+    <section className="settings-card">
+      <div className="setting-row">
+        <div><h3>默认模型</h3><p>新建会话时使用，可在会话中单独切换。</p></div>
+        <div className="settings-select-control settings-model-select"><Select value={usableProfiles.some(item => item.id === settings?.activeProfileId) ? settings!.activeProfileId! : ''} disabled={saving || !usableProfiles.length} onValueChange={id => { void changeDefault(id) }}>
+          <SelectTrigger aria-label="默认模型"><SelectValue placeholder={settings ? '请先在模型供应商中启用模型' : '正在读取模型…'} /></SelectTrigger>
+          <SelectContent>{usableProfiles.map(item => <SelectItem key={item.id} value={item.id} textValue={`${item.name} · ${PROVIDER_PRESETS.find(provider => provider.id === item.provider)?.label ?? item.provider}`}><span className="model-name-with-icon"><span aria-hidden="true"><ModelIcon model={item.model} provider={item.provider} /></span><span>{item.name} · {PROVIDER_PRESETS.find(provider => provider.id === item.provider)?.label ?? item.provider}</span></span></SelectItem>)}</SelectContent>
+        </Select></div>
+      </div>
+      {saving && <p className="hint" role="status">正在保存默认模型…</p>}
+      {error && <p className="error" role="alert">{error}</p>}
+      <div className="settings-divider" />
+      <div className="setting-row">
+        <div><h3>上下文压缩阈值</h3><p>上下文占用达到该比例时，发送前自动压缩历史消息，默认 90%。</p></div>
+        <div className="compression-slider-row">
+          <Slider id="compression-threshold" min={60} max={95} step={5} value={[preferences.compressionThreshold]} aria-label="上下文压缩阈值" onValueChange={values => onPreferences({ ...preferences, compressionThreshold: values[0] })} className="compression-slider" />
+          <output htmlFor="compression-threshold">{preferences.compressionThreshold}%</output>
+        </div>
+      </div>
+      <div className="settings-divider" />
+      <div className="shortcut-setting">
+        <span><b>使用 {isMac ? '⌘' : 'Ctrl'} + Enter 发送</b><small>开启时 Enter 换行；关闭时 Enter 发送，Shift + Enter 换行。</small></span>
+        <div className="flex shrink-0 items-center gap-2">
+          <Switch id="send-with-modifier" checked={preferences.sendWithCtrlEnter} onCheckedChange={sendWithCtrlEnter => onPreferences({ ...preferences, sendWithCtrlEnter })} />
+          <Label htmlFor="send-with-modifier" className="sr-only">启用修饰键加 Enter 发送</Label>
+        </div>
+      </div>
+    </section>
     <p className="hint">设置自动保存在此设备。</p>
   </>
 }
 
+const THEME_OPTIONS: { id: ThemePreference; label: string; icon: typeof Sun }[] = [
+  { id: 'light', label: '浅色', icon: Sun },
+  { id: 'dark', label: '深色', icon: Moon },
+  { id: 'system', label: '跟随系统', icon: Monitor }
+]
+const FONT_OPTIONS: { id: Preferences['font']; label: string }[] = [
+  { id: 'inter', label: 'Inter（默认）' },
+  { id: 'system', label: '系统默认' },
+  { id: 'segoe', label: 'Segoe UI' },
+  { id: 'yahei', label: 'Microsoft YaHei UI' }
+]
 export function AppearanceSettingsSection({ preferences, onPreferences }: PreferencesSectionProps): React.JSX.Element {
   return <>
     <h2>外观</h2>
     <p className="section-description">让工作台保持舒适、清晰。</p>
     <section className="settings-card">
-      <h3>颜色主题</h3>
-      <p className="hint">同时应用于任务列表、对话、设置和代码对比。选择跟随系统后，会根据系统外观自动切换。</p>
-      <div className="theme-options">
-        {(['light', 'dark', 'system'] as const).map(theme => <Button key={theme} className={`theme-option ${theme}`} aria-pressed={preferences.theme === theme} onClick={() => onPreferences({ ...preferences, theme })}>
-          <span className="theme-preview"><i /><span><b /><b /><b /></span></span>
-          <span>{theme === 'light' ? <Sun size={16} /> : theme === 'dark' ? <Moon size={16} /> : <Monitor size={16} />}{theme === 'light' ? '浅色' : theme === 'dark' ? '深色' : '跟随系统'}<span className="theme-check">{preferences.theme === theme ? '已选择' : ''}</span></span>
-        </Button>)}
+      <div className="setting-row">
+        <div><h3>颜色主题</h3><p>同时应用于任务列表、对话、设置和代码对比。选择跟随系统后，会根据系统外观自动切换。</p></div>
+        <RadioGroup className="theme-options" aria-label="颜色主题" value={preferences.theme} onValueChange={value => onPreferences({ ...preferences, theme: value as ThemePreference })}>
+          {THEME_OPTIONS.map(({ id, label, icon: Icon }) => <RadioGroupItem key={id} variant="segmented" className="theme-option" value={id}><Icon size={15} />{label}</RadioGroupItem>)}
+        </RadioGroup>
       </div>
     </section>
-    <section className="settings-card font-settings">
+    <section className="settings-card">
       <div className="setting-row">
         <div><h3>界面字体</h3><p>用于菜单、设置、对话正文等界面文字。</p></div>
-        <Button className="icon-button font-reset" title="恢复默认字体设置" aria-label="恢复默认字体设置" onClick={() => onPreferences({ ...preferences, font: 'inter', fontSize: 14 })}><RotateCcw size={15} /></Button>
-      </div>
-      <Label className="font-choice">字体
-        <Select value={preferences.font} onValueChange={value => onPreferences({ ...preferences, font: value as Preferences['font'] })}>
-          <SelectTrigger aria-label="界面字体"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="inter">Inter（默认）</SelectItem><SelectItem value="system">系统默认</SelectItem>
-            <SelectItem value="segoe">Segoe UI</SelectItem><SelectItem value="yahei">Microsoft YaHei UI</SelectItem>
-          </SelectContent>
-        </Select>
-      </Label>
-      <div className="font-preview">中文字体预览，清晰锐利 ABC xyz · a/b/c/d · a,b · 0123456789 !?&amp;<span>Inter（默认）</span></div>
-      <div className="font-size-row">
-        <Label htmlFor="font-size">字号</Label>
-        <Input id="font-size" aria-label="字号" type="range" min="12" max="20" step="1" value={preferences.fontSize} onChange={event => onPreferences({ ...preferences, fontSize: Number(event.target.value) })} />
-        <output htmlFor="font-size">{preferences.fontSize}</output>
-        <Button className="icon-button font-reset" title="恢复默认字号" aria-label="恢复默认字号" onClick={() => onPreferences({ ...preferences, fontSize: 14 })}><RotateCcw size={15} /></Button>
+        <div className="font-controls">
+          <Select value={preferences.font} onValueChange={value => onPreferences({ ...preferences, font: value as Preferences['font'] })}>
+            <SelectTrigger aria-label="界面字体" className="font-select"><SelectValue /></SelectTrigger>
+            <SelectContent>{FONT_OPTIONS.map(option => <SelectItem key={option.id} value={option.id}>{option.label}</SelectItem>)}</SelectContent>
+          </Select>
+          <div className="font-size-control">
+            <span className="font-size-label">字号</span>
+            <Slider min={12} max={20} step={1} value={[preferences.fontSize]} aria-label="字号" className="font-size-slider" onValueChange={values => onPreferences({ ...preferences, fontSize: values[0] })} />
+            <output>{preferences.fontSize}</output>
+          </div>
+          <Button variant="outline" size="icon" title="恢复默认字体设置" aria-label="恢复默认字体设置" onClick={() => onPreferences({ ...preferences, font: 'inter', fontSize: 14 })}><RotateCcw size={15} /></Button>
+        </div>
       </div>
     </section>
   </>

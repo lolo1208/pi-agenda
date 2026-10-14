@@ -15,7 +15,7 @@ Renderer → window.piAgenda → Preload → Main IPC → ShadowGitManager
                                              → AgentRuntime（待实现）
 ```
 
-现有目录：`src/shared` 定义 DTO/IPC；`src/main/snapshot` 管理快照；`src/preload` 提供桥接；`src/renderer` 提供工作台。Monaco 与 worker 打包进应用，不使用 CDN。
+现有目录：`src/shared` 定义 DTO/IPC；`src/main/snapshot` 管理快照；`src/preload` 提供桥接；`src/renderer` 提供工作台。Monaco 与 worker 打包进应用，不使用 CDN。Monaco 的内置英文提示由构建插件 `monaco-chinese-nls`（见 `electron.vite.config.ts`）接管：它把 `monaco-editor/esm/vs/nls.js` 指向 `src/renderer/src/lib/monaco-nls-zh.ts`，只替换界面会展示的少量文案，其余保持上游原文。
 
 ## 快照策略
 
@@ -23,7 +23,7 @@ Renderer → window.piAgenda → Preload → Main IPC → ShadowGitManager
 
 单个 Manager 串行执行操作。当前仅支持单窗口/单个 Manager 使用项目；下一阶段需进程级项目锁与配额。快照前必须暂停 Agent 工具写入。识别改名暂按删除和新增处理；二进制展示状态，不渲染文本。Diff 路径必须出现在指定提交间的改动列表中。
 
-原型排除任意层级的 `.git`、`.pi-agenda`、旧版 `.pi-console` 和 `.cherrypi`、`node_modules`、`dist`、`out`、`release`、`.aws`、`.ssh`，以及 `.env` 与 `.env.*`。不以此替代秘密扫描。拒绝符号链接/联接点和特殊文件；Git 不记录空目录，当前不保证 ACL、扩展属性、时间戳及完整权限元数据。复制不是文件系统原子快照，大文件限制和外部写入冲突检测待实现。
+原型排除任意层级的 `.git`、`.pi-agenda`、旧版 `.pi-console` 和 `.cherrypi`、`node_modules`、`dist`、`out`、`build-work`、`release`、旧版发行目录 `exports`、`.aws`、`.ssh`，以及 `.env` 与 `.env.*`。不以此替代秘密扫描。拒绝符号链接/联接点和特殊文件；Git 不记录空目录，当前不保证 ACL、扩展属性、时间戳及完整权限元数据。复制不是文件系统原子快照，大文件限制和外部写入冲突检测待实现。
 
 ## 后续数据模型与轮次
 

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { ChangedFile, Checkpoint, FileDiff } from '../../../shared/api'
 import type { Task } from '../app-types'
+import { readProjectMetaMap, writeProjectMetaMap, defaultProjectName, type ProjectMetaMap } from '../project-meta'
 
 interface ProjectSnapshotState {
   checkpoints: Checkpoint[]
@@ -33,6 +34,7 @@ function createTask(project: string): Task {
 export function useProjectWorkspace() {
   const [project, setProject] = useState<string | null>(null)
   const [savedProjects, setSavedProjects] = useState(readProjectList)
+  const [projectMeta, setProjectMeta] = useState<ProjectMetaMap>(readProjectMetaMap)
   const [snapshotsByProject, setSnapshotsByProject] = useState<Record<string, ProjectSnapshotState>>({})
   const [isBusy, setIsBusy] = useState(true)
   const [error, setError] = useState('')
@@ -115,25 +117,31 @@ export function useProjectWorkspace() {
     setSnapshotsByProject(current => ({ ...current, [snapshotKey]: { ...(current[snapshotKey] ?? emptySnapshotState), ...update } }))
   }
 
+  const persistProjects = (projects: string[]): void => {
+    try {
+      localStorage.setItem('pi-agenda.projects', JSON.stringify(projects))
+    } catch {
+      setError('项目列表未能保存到本地。')
+    }
+  }
+
   const rememberProject = (root: string): void => {
     setSavedProjects(current => {
       const next = [root, ...current.filter(item => item !== root)]
-      try {
-        localStorage.setItem('pi-agenda.projects', JSON.stringify(next))
-      } catch {
-        setError('项目列表未能保存到本地。')
-      }
+      persistProjects(next)
       return next
     })
   }
 
-  const runAction = async (action: () => Promise<void>): Promise<void> => {
+  const runAction = async (action: () => Promise<void>): Promise<boolean> => {
     setIsBusy(true)
     setError('')
     try {
       await action()
+      return true
     } catch (error) {
       setError(error instanceof Error ? error.message : String(error))
+      return false
     } finally {
       setIsBusy(false)
     }
@@ -143,6 +151,8 @@ export function useProjectWorkspace() {
     const task = createTask(root)
     setTasks(items => [task, ...items])
     setSelectedId(task.id)
+    // 新建对话时自动展开所属项目
+    setCollapsedProjects(items => items.includes(root) ? items.filter(item => item !== root) : items)
     setQuery('')
     setError('')
   }
@@ -213,11 +223,7 @@ export function useProjectWorkspace() {
       await window.piAgenda.removeProject(root)
       const remainingProjects = readProjectList().filter(item => item !== root)
       setSavedProjects(remainingProjects)
-      try {
-        localStorage.setItem('pi-agenda.projects', JSON.stringify(remainingProjects))
-      } catch {
-        setError('项目列表未能保存到本地。')
-      }
+      persistProjects(remainingProjects)
 
       const remainingTasks = tasks.filter(item => item.project !== root)
       setTasks(current => current.filter(item => item.project !== root))
@@ -244,6 +250,50 @@ export function useProjectWorkspace() {
     })
   }
 
+  const saveProjectEdit = (root: string, next: { name: string; directory: string; prompt: string }): Promise<boolean> => {
+    if (!loaded || isBusy) return Promise.resolve(false)
+    return runAction(async () => {
+      let target = root
+      const directory = next.directory.trim()
+      if (directory && directory !== root) {
+        target = await window.piAgenda.rebindProject(root, directory)
+        if (project && project !== root) await window.piAgenda.openProject(project)
+      }
+      const projects = readProjectList().map(item => item === root ? target : item)
+      setSavedProjects(projects)
+      persistProjects(projects)
+
+      const name = next.name.trim()
+      const prompt = next.prompt.trim()
+      const fallbackName = defaultProjectName(root)
+      setProjectMeta(current => {
+        const updated: ProjectMetaMap = { ...current }
+        if (target !== root) delete updated[root]
+        const meta = { ...(updated[target] ?? {}) }
+        if (name && name !== fallbackName) meta.name = name
+        else delete meta.name
+        if (prompt) meta.prompt = prompt
+        else delete meta.prompt
+        if (meta.name || meta.prompt) updated[target] = meta
+        else delete updated[target]
+        if (!writeProjectMetaMap(updated)) setError('项目信息未能保存到本地，重启后将丢失。')
+        return updated
+      })
+
+      if (target !== root) {
+        setTasks(items => items.map(item => item.project === root ? { ...item, project: target } : item))
+        setSnapshotsByProject(current => {
+          if (!current[root]) return current
+          const nextSnapshots = { ...current, [target]: current[root] }
+          delete nextSnapshots[root]
+          return nextSnapshots
+        })
+        setCollapsedProjects(items => items.map(item => item === root ? target : item))
+      }
+      if (project === root) setProject(target)
+    })
+  }
+
   const captureCheckpoint = (): void => {
     void runAction(async () => {
       const next = await window.piAgenda.createCheckpoint(`手动快照 ${projectSnapshot.checkpoints.length + 1}`)
@@ -265,6 +315,7 @@ export function useProjectWorkspace() {
   return {
     project,
     savedProjects,
+    projectMeta,
     isBusy,
     error,
     setError,
@@ -289,6 +340,7 @@ export function useProjectWorkspace() {
     runAction,
     createProjectTask,
     chooseExistingProject,
+    saveProjectEdit,
     selectTask,
     removeTask,
     removeProject,

@@ -1,0 +1,7 @@
+# Windows 批处理检出时固定使用 CRLF；Shell 脚本固定使用 LF。
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.sh text eol=lf
+scripts/run-windows.ps1 text eol=crlf
+# 补丁固定 LF，确保 pnpm 锁文件中的补丁校验值跨平台一致。
+patches/*.patch text eol=lf

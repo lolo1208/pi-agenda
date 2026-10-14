@@ -1,0 +1,8 @@
+/* 菜单通过 Portal 呈现，在审查弹窗上层并自动避让窗口边缘。 */
+.file-context-menu { z-index: 60; min-width: 190px; max-width: calc(100vw - 16px); padding: 5px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); box-shadow: 0 2px 8px #0000001a; }
+.file-context-menu-item { display: flex; align-items: center; gap: 10px; min-height: 34px; padding: 6px 10px; border-radius: 4px; outline: none; cursor: default; user-select: none; font-size: calc(13rem / 14); }
+.file-context-menu-item[data-highlighted] { background: var(--hover); }
+.file-context-menu-item > svg { flex-shrink: 0; color: var(--muted); }
+.file-context-menu-item[data-disabled] { opacity: .45; pointer-events: none; }
+.file-context-menu-separator { height: 1px; margin: 4px 5px; background: var(--border); }
+.file-context-menu-error { padding: 8px 14px; color: var(--diff-del); font-size: calc(12rem / 14); overflow-wrap: anywhere; }

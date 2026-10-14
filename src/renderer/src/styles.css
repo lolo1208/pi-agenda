@@ -1,9 +1,21 @@
 @import 'tailwindcss';
+
+/* 让 Tailwind/shadcn 组件跟随设置中的界面字体。 */
+@theme {
+  --font-sans: var(--ui-font-family);
+  --font-mono: Consolas, "JetBrains Mono", monospace;
+}
 @import './styles/base.css';
 @import './styles/application-layout.css';
 @import './styles/conversation.css';
 @import './styles/conversation-model-picker.css';
 @import './styles/tools.css';
+@import './styles/modal.css';
+@import './styles/file-context-menu.css';
+@import './styles/plan.css';
+@import './styles/sandbox.css';
 @import './styles/settings.css';
 @import './styles/project-picker.css';
 @import './styles/responsive.css';
+
+/* 聚焦样式由各组件自行声明：shadcn 输入类组件使用主色边框 + 2px 主色光环，其余控件使用 base.css 的主色外框。 */

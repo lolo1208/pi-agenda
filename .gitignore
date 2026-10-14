@@ -1,6 +1,9 @@
 node_modules/
 out/
+build-work/
+scripts/vendor/
 release/
+exports/
 coverage/
 *.log
 .env*
@@ -8,19 +11,30 @@ coverage/
 
 # 脚本生成的图标（保留 resources/app-icon.png 原图）
 /resources/icons/
+/resources/sandbox-runtime/bin/
 /src/renderer/public/icons/
 
 # 本地测试代码与目录
 /tests/
-/vitest.config.ts
-
-# Test and build artifacts
 *.tsbuildinfo
 vitest.config.*.timestamp-*
+electron.vite.config.*.timestamp-*
 playwright-report/
 test-results/
+.tmp-preview/
 
-# Editor and operating system files
+# 本地缓存、临时目录与运行日志
+/.cache/
+/.pnpm-store/
+/.tmp/
+/tmp/
+/temp/
+/logs/
+/.pi-agenda-check-*/
+*.tmp
+*.temp
+
+# 编辑器与操作系统文件
 .DS_Store
 Thumbs.db
 Desktop.ini

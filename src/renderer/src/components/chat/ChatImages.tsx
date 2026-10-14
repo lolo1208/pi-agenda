@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { Dialog } from 'radix-ui'
 import { File, FileText, Music, Video, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Modal } from '@/components/ui/modal'
 import type { ChatImage } from '../../../../shared/models'
 import { attachmentKind, attachmentSize, attachmentText, formatAttachmentSize } from '../../../../shared/attachments'
 
@@ -30,19 +30,17 @@ export function ChatImages({ images, onRemove, disabled }: Props): React.JSX.Ele
         </div>
       })}
     </div>
-    <Dialog.Root open={Boolean(preview)} onOpenChange={open => { if (!open) setPreview(null) }}>
-      <Dialog.Portal>
-        <Dialog.Overlay className="image-preview-overlay" />
-        <Dialog.Content className={`image-preview-content${kind !== 'image' ? ' file-preview-content' : ''}`} aria-describedby={undefined}>
-          <Dialog.Title className={kind === 'image' ? 'sr-only' : 'file-preview-title'}>{kind === 'image' ? '图片' : '附件'}预览：{preview?.name}</Dialog.Title>
-          {preview && (unreadable.has(preview.id) ? <p role="alert">此文件无法预览，请检查文件格式或内容。</p>
-            : kind === 'image' ? <img src={preview.dataUrl} alt={preview.name} onError={() => markUnreadable(preview.id)} />
-            : kind === 'text' ? <pre className="file-preview-text">{attachmentText(preview)}</pre>
-            : kind === 'audio' ? <audio src={preview.dataUrl} controls aria-label={preview.name} onError={() => markUnreadable(preview.id)} />
-            : kind === 'video' ? <video src={preview.dataUrl} controls playsInline aria-label={preview.name} onError={() => markUnreadable(preview.id)} /> : null)}
-          <Dialog.Close asChild><Button type="button" className="image-preview-close" aria-label={kind === 'image' ? '关闭图片预览' : '关闭附件预览'}><X size={20} /></Button></Dialog.Close>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+    <Modal open={Boolean(preview)} onOpenChange={open => { if (!open) setPreview(null) }} title={`${kind === 'image' ? '图片' : '附件'}预览：${preview?.name}`}
+      bare closeOnBackdropClick contentClassName={`image-preview-content${kind !== 'image' ? ' file-preview-content' : ''}`} closeClassName="image-preview-close"
+      closeLabel={kind === 'image' ? '关闭图片预览' : '关闭附件预览'}>
+      {preview && (unreadable.has(preview.id) ? <p role="alert">此文件无法预览，请检查文件格式或内容。</p>
+        : kind === 'image' ? <img src={preview.dataUrl} alt={preview.name} onError={() => markUnreadable(preview.id)} />
+        : kind === 'text' ? <>
+          <p className="file-preview-title">{preview.name}</p>
+          <pre className="file-preview-text">{attachmentText(preview)}</pre>
+        </>
+        : kind === 'audio' ? <audio src={preview.dataUrl} controls aria-label={preview.name} onError={() => markUnreadable(preview.id)} />
+        : kind === 'video' ? <video src={preview.dataUrl} controls playsInline aria-label={preview.name} onError={() => markUnreadable(preview.id)} /> : null)}
+    </Modal>
   </>
 }

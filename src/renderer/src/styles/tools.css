@@ -1,3 +1,7 @@
+.monaco-scrollable-element > .scrollbar > .slider {
+  border-radius: 999px;
+}
+
 .tool-sidebar {
   background: var(--bg);
   border-left: 1px solid var(--border);
@@ -19,7 +23,7 @@
   border: 0;
   flex: 1;
   padding: 7px 9px;
-  font-size: 12px;
+  font-size: calc(12rem / 14);
 }
 
 .tool-tabs button[aria-pressed="true"] {
@@ -40,7 +44,7 @@
 
 .tool-placeholder p {
   max-width: 230px;
-  font-size: 12px;
+  font-size: calc(12rem / 14);
   line-height: 1.9;
 }
 
@@ -64,7 +68,7 @@
 
 .snapshot-summary details {
   margin: 18px 0;
-  font-size: 12px;
+  font-size: calc(12rem / 14);
 }
 
 .checkpoint {
@@ -107,5 +111,5 @@
 .empty {
   color: var(--muted);
   padding: 30px;
-  font-size: 13px;
+  font-size: calc(13rem / 14);
 }

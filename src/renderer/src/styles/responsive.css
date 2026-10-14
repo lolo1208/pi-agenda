@@ -80,11 +80,11 @@
 }
 
 .window-app-name {
-  font-size: 11px;
+  font-size: calc(11rem / 14);
 }
 
 .window-controls button {
-  width: 36px;
+  width: calc(36rem / 14);
 }
 
 .app, .app.tools-open {
@@ -98,11 +98,16 @@
 .task-actions button {
   gap: 3px;
   padding: 8px 2px;
-  font-size: 10px;
+  font-size: calc(10rem / 14);
 }
 
 .chat-scroll {
   padding: 0 16px;
+}
+
+/* 窄屏留给气泡的横向空间更少，放宽占比保持可读行数 */
+.chat-message.user {
+  max-width: 92%;
 }
 
 .composer-wrap {
@@ -127,7 +132,7 @@
 }
 
 .chat-welcome h1 {
-  font-size: 20px;
+  font-size: calc(20rem / 14);
 }
 
 .settings-layout {
@@ -145,7 +150,7 @@
 }
 
 .settings-back span {
-  font-size: 20px;
+  font-size: calc(20rem / 14);
 }
 
 .settings-nav .search-field {
@@ -161,7 +166,7 @@
 
 .settings-nav nav button {
   padding: 8px;
-  font-size: 12px;
+  font-size: calc(12rem / 14);
 }
 
 .settings-content {
@@ -170,19 +175,6 @@
 
 .form-grid {
   grid-template-columns: 1fr;
-}
-
-.theme-options {
-  gap: 12px;
-}
-
-.theme-option {
-  width: calc(50% - 6px);
-  flex: 1 1 140px;
-}
-
-.theme-check {
-  display: none;
 }
 
 .model-settings fieldset, .settings-card {

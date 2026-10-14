@@ -15,7 +15,7 @@ export function ollamaFetch(profile: ModelProfile, fetchRequest: typeof fetch): 
     })
     const response = await fetchRequest(`${normalizeOllamaUrl(profile.baseUrl)}/api/chat`, {
       ...init, redirect: 'error', body: JSON.stringify({ model: profile.model, messages, stream: true, ...(request.tools?.length ? { tools: request.tools } : {}),
-        ...(profile.thinking != null ? { think: profile.thinking } : {}), options: { num_predict: profile.maxTokens,
+        ...(profile.ollamaThinkingLevel != null || profile.thinking != null ? { think: profile.ollamaThinkingLevel ?? profile.thinking } : {}), options: { num_predict: profile.maxTokens,
           ...(profile.contextTokens != null ? { num_ctx: profile.contextTokens } : {}), ...(profile.temperature !== null ? { temperature: profile.temperature } : {}) } })
     })
     if (!response.ok || !response.body) return response

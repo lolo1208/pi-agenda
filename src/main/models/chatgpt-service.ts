@@ -1,8 +1,9 @@
 import { ModelRuntime } from '@earendil-works/pi-coding-agent'
+import { getSupportedThinkingLevels } from '@earendil-works/pi-ai'
 import type { Api, Model, AuthPrompt, CredentialStore, SimpleStreamOptions, TranscriptContext } from '@earendil-works/pi-ai'
-import type { ChatgptAuthStatus, ChatgptUsage, ModelDescriptor, ModelProfile, ResetCredits, SubscriptionWindow } from '../../shared/models'
+import { selectedModelThinking, type ChatgptAuthStatus, type ChatgptUsage, type ModelDescriptor, type ModelProfile, type ResetCredits, type SubscriptionWindow } from '../../shared/models'
 import type { ModelSettingsStore } from './model-settings-store'
-import { ModelError } from './model-validation'
+import { ModelError, requiredString } from './model-validation'
 import { safePiStream } from './pi-stream'
 import type { PiAttachments } from './pi-attachments'
 import { exchangeChatgptToken, loginChatgpt } from './chatgpt-oauth'
@@ -11,6 +12,20 @@ const providerId = 'openai-codex'
 const root = 'https://chatgpt.com/backend-api'
 const record = (value: unknown): Record<string, unknown> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
 const resetCount = (value: unknown): number | undefined => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : undefined
+const thinkingLevels = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
+type ThinkingLevel = typeof thinkingLevels[number]
+type SubscriptionModel = Model<Api> & { defaultThinkingLevel?: ThinkingLevel }
+function parseThinkingLevel(value: unknown): ThinkingLevel | undefined {
+  const level = value === 'none' ? 'off' : value
+  return thinkingLevels.includes(level as ThinkingLevel) ? level as ThinkingLevel : undefined
+}
+function actualThinkingLevels(model: Model<Api>): ThinkingLevel[] {
+  if (!model.reasoning) return []
+  return [...new Set(getSupportedThinkingLevels(model).flatMap(level => {
+    const actual = parseThinkingLevel(model.thinkingLevelMap?.[level] ?? level)
+    return actual ? [actual] : []
+  }))]
+}
 
 export function parseResetCredits(value: unknown, now = Date.now()): ResetCredits | undefined {
   const body = record(value), availableCount = resetCount(body.available_count)
@@ -43,7 +58,7 @@ export class ChatgptService {
   private runtimePromise?: Promise<ModelRuntime>
   private login?: { controller: AbortController; done: Promise<void>; url?: string; input?: (value: string) => void }
   private error?: string
-  private models: readonly Model<Api>[] = []
+  private models: readonly SubscriptionModel[] = []
   private catalogSource?: 'account' | 'sdk'
   private usageCache?: ChatgptUsage
   private usagePending?: Promise<ChatgptUsage>
@@ -138,18 +153,26 @@ export class ChatgptService {
     const runtime = await this.runtime()
     await this.headers()
     const fallback = runtime.getModels(providerId)
-    let models: Model<Api>[]
+    let models: SubscriptionModel[]
     try {
       const body = record(await this.get('/codex/models?client_version=1.1.0'))
       if (!Array.isArray(body.models) || !body.models.length || body.models.length > 200) throw new Error()
       models = body.models.flatMap(value => {
         const item = record(value), id = item.slug ?? item.id
         if (typeof id !== 'string' || !id.trim() || id.length > 200 || item.visibility === 'hide' || item.visibility === 'hidden') return []
-        const base = fallback.find(model => model.id === id) ?? fallback.find(model => model.id === 'gpt-6.1-sol') ?? fallback[0]
+        const known = fallback.find(model => model.id === id)
+        const base = known ?? fallback[0]
         if (!base) return []
         const window = typeof item.context_window === 'number' && Number.isSafeInteger(item.context_window) && item.context_window > 0 && item.context_window <= 2097152 ? item.context_window : base.contextWindow
         const modalities = Array.isArray(item.input_modalities) ? item.input_modalities : base.input
-        return [{ ...base, id, name: typeof item.display_name === 'string' ? item.display_name : id, contextWindow: window, input: modalities.includes('image') ? ['text', 'image'] as const : ['text'] as const }]
+        const declared = Array.isArray(item.supported_reasoning_levels)
+          ? [...new Set(item.supported_reasoning_levels.flatMap(value => { const level = parseThinkingLevel(typeof value === 'string' ? value : record(value).effort); return level ? [level] : [] }))]
+          : known ? actualThinkingLevels(known) : []
+        const thinkingLevelMap = Object.fromEntries(thinkingLevels.map(level => [level, declared.includes(level) ? level === 'off' ? 'none' : level : null]))
+        const preferred = parseThinkingLevel(item.default_reasoning_level)
+        const defaultThinkingLevel = preferred && declared.includes(preferred) ? preferred : declared.includes('medium') ? 'medium' : declared[0]
+        return [{ ...base, id, name: typeof item.display_name === 'string' ? item.display_name : id, contextWindow: window, input: modalities.includes('image') ? ['text', 'image'] as const : ['text'] as const,
+          reasoning: declared.some(level => level !== 'off'), thinkingLevelMap, defaultThinkingLevel }]
       })
       if (!models.length) throw new Error()
       this.catalogSource = 'account'
@@ -161,8 +184,22 @@ export class ChatgptService {
     }
     if (generation !== this.accountGeneration) throw new ModelError('ChatGPT 账号已切换，请重新刷新模型')
     this.models = [...new Map(models.map(model => [model.id, model])).values()].sort((a, b) => (a.id === 'gpt-6.1-sol' ? -1 : b.id === 'gpt-6.1-sol' ? 1 : a.id.localeCompare(b.id)))
-    const descriptors: ModelDescriptor[] = this.models.map(model => ({ id: model.id, maxContextTokens: model.contextWindow, capabilities: ['completion', 'tools', ...(model.reasoning ? ['thinking'] : []), ...(model.input.includes('image') ? ['vision'] : [])] }))
+    const descriptors: ModelDescriptor[] = this.models.map(model => {
+      const values = actualThinkingLevels(model)
+      return { id: model.id, maxContextTokens: model.contextWindow, capabilities: ['completion', 'tools', ...(model.reasoning ? ['thinking'] : []), ...(model.input.includes('image') ? ['vision'] : [])],
+        thinking: { values, default: model.defaultThinkingLevel ?? (values.includes('medium') ? 'medium' : values[0]) } }
+    })
     return this.settings.syncChatgpt(descriptors)
+  }
+  async modelInfo(value: unknown): Promise<ModelDescriptor> {
+    const id = requiredString(value, '模型 ID', 200)
+    const cached = (await this.settings.list()).providers?.find(item => item.provider === 'chatgpt')?.models.find(item => item.id === id)
+    if (cached?.thinking != null) return cached
+    // 为升级前的目录补齐档位；目录网络不可用时，refreshModels 会使用同名 SDK 模型。
+    const settings = await this.refreshModels()
+    const descriptor = settings.providers?.find(item => item.provider === 'chatgpt')?.models.find(item => item.id === id)
+    if (!descriptor) throw new ModelError('订阅模型已不可用，请刷新模型列表后重新选择')
+    return descriptor
   }
   async usage(): Promise<ChatgptUsage> {
     if (!await this.credentials.read(providerId)) throw new ModelError('请先授权 ChatGPT 订阅账号')
@@ -186,9 +223,18 @@ export class ChatgptService {
     if (!await this.credentials.read(providerId)) throw new ModelError('请先在模型供应商中授权 ChatGPT 订阅账号')
     const runtime = await this.createRuntime()
     const original = runtime.getProvider(providerId)!
-    let model = this.models.find(model => model.id === profile.model) ?? runtime.getModel(providerId, profile.model)
+    let model: SubscriptionModel | undefined = this.models.find(model => model.id === profile.model) ?? runtime.getModel(providerId, profile.model)
     if (!model) { await this.refreshModels(); model = this.models.find(model => model.id === profile.model) }
     if (!model) throw new ModelError('订阅模型已不可用，请刷新模型列表后重新选择')
+    if (!this.models.some(item => item.id === profile.model)) {
+      const cached = (await this.settings.list()).providers?.find(item => item.provider === 'chatgpt')?.models.find(item => item.id === profile.model)?.thinking
+      if (cached) {
+        const levels = cached.values.flatMap(value => { const level = parseThinkingLevel(value); return level ? [level] : [] })
+        const preferred = parseThinkingLevel(cached.default)
+        model = { ...model, reasoning: levels.some(level => level !== 'off'), thinkingLevelMap: Object.fromEntries(thinkingLevels.map(level => [level, levels.includes(level) ? level === 'off' ? 'none' : level : null])),
+          defaultThinkingLevel: preferred && levels.includes(preferred) ? preferred : levels.includes('medium') ? 'medium' : levels[0] }
+      }
+    }
     const configured = { ...model, contextWindow: profile.contextTokens ?? model.contextWindow, maxTokens: profile.maxTokens }
     runtime.registerNativeProvider({ ...original, getModels: () => [configured], getAllModels: () => [configured],
       streamSimple: (target: Model<Api>, context: TranscriptContext, options?: SimpleStreamOptions) => {
@@ -201,6 +247,8 @@ export class ChatgptService {
         }), options?.apiKey ?? '', () => controller.abort())
       }
     })
-    return { runtime, model: runtime.getModel(providerId, profile.model)! }
+    const levels = actualThinkingLevels(configured)
+    const thinkingLevel = parseThinkingLevel(selectedModelThinking(profile, { values: levels, default: model.defaultThinkingLevel })) ?? 'off'
+    return { runtime, model: runtime.getModel(providerId, profile.model)!, thinkingLevel }
   }
 }
