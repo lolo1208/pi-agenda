@@ -1,10 +1,41 @@
-﻿import { DiffEditor, loader } from '@monaco-editor/react'
-import * as monaco from 'monaco-editor'
-import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker'
-self.MonacoEnvironment = { getWorker: () => new EditorWorker() }
-loader.config({ monaco })
-// 增删行底色与符号色取自审查弹窗的设计稿：新增 #f0fff4/#22863a、删除 #ffeef0/#b31d28（深色为对应暗色）。
-// 对比只区分新增与删除，因此同时关闭“移动代码”的描边，词级高亮由样式层置为透明。
-monaco.editor.defineTheme('pi-dark', { base: 'vs-dark', inherit: true, rules: [], colors: { 'editor.background': '#121314', 'editor.foreground': '#BBBEBF', 'editorLineNumber.foreground': '#858889', 'editor.lineHighlightBackground': '#242526', 'scrollbar.shadow': '#00000000', 'scrollbarSlider.background': '#96999a52', 'scrollbarSlider.hoverBackground': '#96999a7a', 'scrollbarSlider.activeBackground': '#96999a7a', 'diffEditor.insertedLineBackground': '#1a311f99', 'diffEditor.removedLineBackground': '#3b1e1e99', 'diffEditor.insertedTextBackground': '#3fb95033', 'diffEditor.removedTextBackground': '#f8514933', 'diffEditor.unchangedCodeBackground': '#00000000', 'diffEditor.border': '#2a2b2c', 'diffEditor.move.border': '#00000000', 'diffEditor.moveActive.border': '#00000000', 'editor.selectionBackground': '#3b5f8a99', 'editor.inactiveSelectionBackground': '#3b5f8a55' } })
-monaco.editor.defineTheme('pi-light', { base: 'vs', inherit: true, rules: [], colors: { 'editor.background': '#f2f2ee', 'editor.foreground': '#252728', 'scrollbar.shadow': '#00000000', 'scrollbarSlider.background': '#73777252', 'scrollbarSlider.hoverBackground': '#7377727a', 'scrollbarSlider.activeBackground': '#7377727a', 'diffEditor.insertedLineBackground': '#f0fff480', 'diffEditor.removedLineBackground': '#ffeef080', 'diffEditor.insertedTextBackground': '#22863a33', 'diffEditor.removedTextBackground': '#b31d2826', 'diffEditor.unchangedCodeBackground': '#00000000', 'diffEditor.border': '#dfe1da', 'diffEditor.move.border': '#00000000', 'diffEditor.moveActive.border': '#00000000', 'editor.selectionBackground': '#aed4fc', 'editor.inactiveSelectionBackground': '#aed4fc99' } })
-export default DiffEditor
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { DiffFile, disableCache } from '@git-diff-view/core'
+import { DiffModeEnum, DiffView } from '@git-diff-view/react'
+import '@git-diff-view/react/styles/diff-view.css'
+import { Button } from '@/components/ui/button'
+import { loadPreparedDiff } from './lib/diff-worker-client'
+import type { DiffSource, DiffStats, PreparedDiff } from './lib/diff-processing'
+
+disableCache()
+
+export interface CodeDiffProps extends DiffSource {
+  mode: 'unified' | 'split'
+  theme: 'light' | 'dark'
+  onStats?(stats: DiffStats): void
+}
+
+/** 使用库默认的行底色、增删符号、词级高亮和上下文展开控件。 */
+export default function CodeDiff({ path, before, after, hunks, mode, theme, onStats }: CodeDiffProps): React.JSX.Element {
+  const [result, setResult] = useState<PreparedDiff>()
+  const [error, setError] = useState('')
+  const [retry, setRetry] = useState(0)
+  const statsCallback = useRef(onStats)
+  statsCallback.current = onStats
+  useEffect(() => {
+    let active = true
+    setResult(undefined)
+    setError('')
+    void loadPreparedDiff({ path, before, after, hunks }, theme).then(value => {
+      if (!active) return
+      setResult(value)
+      statsCallback.current?.(value.stats)
+    }).catch(reason => { if (active) setError(reason instanceof Error ? reason.message : '文件对比加载失败') })
+    return () => { active = false }
+  }, [path, before, after, hunks, theme, retry])
+  const file = useMemo(() => result ? DiffFile.createInstance({}, result.bundle) : undefined, [result])
+  useEffect(() => () => { file?._destroy() }, [file])
+  if (error) return <div className="tool-approval-preview-state" role="alert">{error}<Button variant="outline" onClick={() => setRetry(value => value + 1)}>重试</Button></div>
+  if (!file) return <div className="tool-approval-preview-state" role="status">正在准备文件对比…</div>
+  if (result?.stats.added === 0 && result.stats.removed === 0) return <div className="tool-approval-preview-state">文件内容没有变化</div>
+  return <DiffView diffFile={file} diffViewMode={mode === 'split' ? DiffModeEnum.Split : DiffModeEnum.Unified} diffViewTheme={theme} diffViewHighlight diffViewFontSize={12} diffViewAddWidget={false} />
+}

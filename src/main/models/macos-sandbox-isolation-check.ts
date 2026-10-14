@@ -1,29 +1,30 @@
 import { SANDBOX_CHECKS } from '../../shared/sandbox'
 import { randomUUID } from 'node:crypto'
 import { createServer } from 'node:http'
-import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
-import os from 'node:os'
+import { mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { checkSandboxIsolation } from './sandbox-isolation-check'
 import { ModelError } from './model-validation'
+import { createSandboxCheckWorkspace } from './sandbox-check-workspace'
 
 export const shellLiteral = (value: string): string => "'" + value.replace(/'/g, "'\\''") + "'"
 
 /** macOS 探针使用系统 Bash 与工具，只操作本次创建的测试文件，不依赖开发 SDK。 */
-export const checkMacosSandboxIsolation: typeof checkSandboxIsolation = async (sandbox, project, dataDirectory, signal, check) => {
-  const folder = await realpath(await mkdtemp(path.join(project, '.pi-agenda-check-')))
-  const outside = await realpath(await mkdtemp(path.join(os.tmpdir(), 'pi-agenda-outside-check-')))
+export const checkMacosSandboxIsolation: typeof checkSandboxIsolation = async (sandbox, _project, dataDirectory, signal, check) => {
+  const workspace = await createSandboxCheckWorkspace()
+  const { project: folder, outside } = workspace
   const outsideFile = path.join(outside, 'outside.txt'), privateFile = path.join(dataDirectory, `isolation-check-${randomUUID()}.txt`)
   const token = randomUUID(), errorFile = path.join(folder, 'denied.txt')
   const run = async (command: string, marker: string): Promise<void> => {
     signal.throwIfAborted()
     let output = ''
-    const result = await sandbox.exec('set -e\n' + command, project, { signal, timeout: 25, onData: data => { output = (output + data.toString('utf8')).slice(-16000) } })
+    const result = await sandbox.exec('set -e\n' + command, folder, { signal, timeout: 25, onData: data => { output = (output + data.toString('utf8')).slice(-16000) } })
     if (result.exitCode !== 0 || !output.includes(marker)) throw new ModelError(`macOS 隔离测试未通过：${output.trim().slice(-1800) || '隔离进程未返回有效结果'}`)
   }
   const blockedCommand = (command: string, marker = 'ACCESS_BLOCKED'): string => `if (${command}) 2>${shellLiteral(errorFile)}; then printf 'UNEXPECTED_ACCESS\\n'; exit 23; fi; if ! /usr/bin/grep -Eq 'Operation not permitted|Permission denied' ${shellLiteral(errorFile)}; then /bin/cat ${shellLiteral(errorFile)}; exit 24; fi; printf '${marker}\\n'`
   const blocked = (command: string): Promise<void> => run(blockedCommand(command), 'ACCESS_BLOCKED')
   try {
+    await sandbox.prepare(folder, signal)
     await mkdir(dataDirectory, { recursive: true }); await writeFile(outsideFile, token); await writeFile(privateFile, token)
     await check('project', SANDBOX_CHECKS.project.label, async () => {
       const files = path.join(folder, 'files'), file = path.join(files, 'first.txt'), moved = path.join(files, 'moved.txt'), copy = path.join(files, 'copy.txt')
@@ -55,7 +56,6 @@ export const checkMacosSandboxIsolation: typeof checkSandboxIsolation = async (s
       } finally { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())) }
     })
   } finally {
-    await Promise.allSettled([folder, outside].map(async root => { if (await realpath(root) === root) await rm(root, { recursive: true, force: true }) }))
-    await rm(privateFile, { force: true })
+    await Promise.all([workspace.cleanup(), rm(privateFile, { force: true })])
   }
 }

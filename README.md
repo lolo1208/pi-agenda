@@ -2,7 +2,7 @@
 
 Pi Agenda 是面向 macOS 和 Windows 的本地桌面 AI 编程助手，基于 Electron、React 和 TypeScript 构建，让代码改动可查看、可追踪，并最终支持项目文件与对话上下文同步回滚。
 
-当前已实现项目选择、手动与代理修改快照、Monaco Diff，以及模型设置、加密凭证、连接测试、流式多轮对话和文件/终端工具执行审批。SQLite 与文件和对话同步回滚尚未实现。
+当前已实现项目选择、手动与代理修改快照、git-diff-view 文件对比，以及模型设置、加密凭证、连接测试、流式多轮对话和文件/终端工具执行审批。SQLite 与文件和对话同步回滚尚未实现。
 
 开发计划还包含自定义/导入 Skill，以及内置计划模式：每轮弹出选项，末项支持自定义输入；需求澄清完毕后完整展示，用户最终确认后才执行。两项功能均待开发，详见产品规格和开发路线。
 
@@ -86,10 +86,13 @@ bash scripts/run.sh
 | --- | --- | --- |
 | `pnpm dist:win` | `release/` | Windows 安装包 `pi-agenda-setup.exe` |
 | `pnpm dist:win:portable` | `release/` | 单文件免安装便携版 `pi-agenda-portable.exe` |
+| `pnpm dist:win:zip` | `release/` | 解压即用的 Windows ZIP 包 `pi-agenda-portable.zip` |
 | `pnpm dist:mac` | `release/` | macOS `.dmg` 发行包 |
 | `pnpm pack:dir` | `build-work/dir/` | 免安装目录版，需分发完整应用目录 |
 
 `release/` 是最终发行目录，根目录直接存放发行文件，不创建次级目录。`build-work/` 是打包工作目录，保留目录版、更新文件、调试配置等内容。两者均不提交到 Git，也不会进入项目快照。
+
+Windows 菜单编号 `5` 生成 ZIP 包，对应 `pnpm dist:win:zip`。完整解压 `pi-agenda-portable.zip` 后，双击其中的 `Pi Agenda · 行动派.exe` 即可启动，无需安装 Node.js、pnpm 或本程序。请保留解压目录中的全部文件；ZIP 打包不需要 NSIS。
 
 Windows 发行文件使用固定名称，不添加版本号或时间后缀。若同名文件正在运行或被占用，脚本提示关闭程序后重试，已生成的包保留在 `build-work/` 中。
 

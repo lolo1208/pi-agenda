@@ -1,10 +1,7 @@
-import { lazy, Suspense } from 'react'
 import { Button } from '@/components/ui/button'
 import { Camera, ChevronRight, Files, Globe, Terminal, X } from 'lucide-react'
+import { DiffView } from './chat/DiffView'
 import type { ChangedFile, Checkpoint, FileDiff } from '../../../shared/api'
-import type { Preferences } from '../preferences'
-
-const DiffEditor = lazy(() => import('../CodeDiff'))
 
 type ToolId = 'snapshots' | 'files' | 'terminal' | 'browser'
 
@@ -75,9 +72,7 @@ export function ToolSidebar({ project, isBusy, activeTool, checkpoints, changes,
       </div>
       {diff && <div className="diff">
         <header title={diff.path}>{diff.path}</header>
-        {diff.binary ? <p className="empty">二进制文件不支持文本对比</p> : <Suspense fallback={<p className="hint">正在加载代码对比…</p>}>
-          <DiffEditor theme={theme === 'dark' ? 'pi-dark' : 'pi-light'} original={diff.before} modified={diff.after} options={{ readOnly: true, originalEditable: false, renderSideBySide: !inlineDiff, automaticLayout: true, minimap: { enabled: false }, fontSize: 13, scrollBeyondLastLine: false, scrollbar: { verticalScrollbarSize: 6, horizontalScrollbarSize: 6, verticalHasArrows: false, horizontalHasArrows: false, useShadows: false }, overviewRulerLanes: 0, hideCursorInOverviewRuler: true }} />
-        </Suspense>}
+        {diff.binary ? <p className="empty">二进制文件不支持文本对比</p> : <DiffView path={diff.path} before={diff.before} after={diff.after} hunks={diff.hunks} mode={inlineDiff ? 'unified' : 'split'} theme={theme} />}
       </div>}
     </div> : <PlaceholderTool tool={activeTool} />}
   </section>

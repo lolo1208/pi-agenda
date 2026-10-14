@@ -1,5 +1,10 @@
 import type { ChatImage, ChatMessage } from './models'
 
+export interface QueuedMessage extends ChatMessage {
+  id: string
+  role: 'user'
+}
+
 export interface Conversation {
   id: string
   title: string
@@ -16,6 +21,9 @@ export interface Conversation {
   compaction?: import('./context').ContextCompaction
   draft?: string
   draftImages?: ChatImage[]
+  /** 待发送消息按数组顺序执行，文字和附件随会话保存。 */
+  queuedMessages?: QueuedMessage[]
+  queuePaused?: boolean
   /** 会话内用户指定的模型；为空时新会话回退到默认模型 */
   modelId?: string
   permissionMode?: import('./models').PermissionMode

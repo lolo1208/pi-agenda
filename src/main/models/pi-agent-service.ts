@@ -161,6 +161,8 @@ export class PiAgentService {
     const cwd = project ?? os.homedir()
     const mode = options ? this.permission(options.conversationId) : 'default'
     let planning = !isTest && options?.intentMode === 'plan'
+    let approvedPlan: { title: string; content: string } | undefined
+    let executionTransitionPending = false, executionToolCalls = 0
     let clarified = false, interactionVersion = 0
     const manager = options ? await this.manager(options.conversationId, cwd) : SessionManager.inMemory(cwd)
     const attachments = new PiAttachments(manager)
@@ -222,6 +224,7 @@ export class PiAgentService {
     const planningTools = (): string[] => ['read', 'ls', 'find', 'grep', 'stat', 'ask_user_question', ...(clarified ? ['submit_plan'] : [])]
     const guardedTools = projectTools.map(tool => ({ ...tool, execute: async (...args: Parameters<typeof tool.execute>) => {
       if (planning && !['read', 'ls', 'find', 'grep', 'stat'].includes(tool.name)) throw new ModelError('计划尚未批准，不能修改文件或执行终端命令。请先澄清需求并提交计划。')
+      if (!planning) executionToolCalls++
       return tool.execute(...args)
     } }))
     const interactions = planning && options ? planTools(
@@ -239,6 +242,8 @@ export class PiAgentService {
       (title, content) => {
         signal.throwIfAborted()
         manager.appendCustomEntry('pi-agenda-approved-plan', { title, content, approvedAt: new Date().toISOString(), requestId })
+        approvedPlan = { title, content }
+        executionTransitionPending = true
         planning = false
         session?.setActiveToolsByName(projectTools.map(tool => tool.name))
         publish({ type: 'intent-mode', intentMode: 'execute' })
@@ -263,6 +268,13 @@ export class PiAgentService {
       session = (await createAgentSession({ cwd, agentDir: path.join(this.dependencies.dataDirectory, 'agent-config'), modelRuntime: provider.runtime, model: provider.model, thinkingLevel: provider.thinkingLevel, sessionManager: manager, settingsManager, resourceLoader,
         tools: tools.map(tool => tool.name), customTools: tools })).session
       if (planning) session.setActiveToolsByName(planningTools())
+      // SDK 同一轮会保留开始时的系统提示词。批准后结束计划轮次，
+      // 再通过新轮次重新加载执行提示词，避免仅切换工具仍受计划指令限制。
+      const finishTurn = session.agent.finishTurn
+      session.agent.finishTurn = async (turn, turnSignal) => {
+        const decision = await finishTurn?.(turn, turnSignal)
+      return executionTransitionPending ? { action: 'end' } : decision || undefined
+      }
       signal.throwIfAborted()
       unsubscribe = session.subscribe(event => {
         if (event.type === 'turn_start') { modelStatus = '正在连接模型…'; refreshStatus() }
@@ -317,6 +329,26 @@ export class PiAgentService {
         await session.sendCustomMessage({ customType: 'pi-agenda-plan-control', display: false, content: clarified
           ? '本轮仍处于计划模式，尚未获得用户批准。不要以普通文字结束；若还需要澄清请调用 ask_user_question，否则必须调用 submit_plan 将完整计划提交到审阅窗口。'
           : '本轮尚未进行需求确认。现在必须调用 ask_user_question，针对用户任务提出具体方案、范围或验收选项，等待本轮用户回答。不得直接提交计划，也不要仅用文字提问。' }, { triggerTurn: true })
+      }
+      if (approvedPlan) {
+        signal.throwIfAborted()
+        executionTransitionPending = false
+        status('计划已批准，正在执行…')
+        // 隐藏消息直接 triggerTurn 不会刷新系统提示词。先排入下一轮，
+        // 再用空输入启动 prompt 的完整刷新流程；空输入不会显示在对话中。
+        await session.sendCustomMessage({ customType: 'pi-agenda-execution-control', display: false,
+          content: `用户已批准以下完整计划，并要求现在实施。需求确认与计划审阅已经结束。请使用项目工具完成计划中的实际工作和验证，再报告结果；不要只复述计划或确认收到。现有工具权限仍然适用。\n\n${approvedPlan.title}\n\n${approvedPlan.content}` }, { deliverAs: 'nextTurn' })
+        await session.prompt('', { expandPromptTemplates: false })
+        // 有项目的执行若只回复文字，有限纠正，不能把确认或复述当作实施完成。
+        for (let retry = 0; project && executionToolCalls === 0; retry++) {
+          signal.throwIfAborted()
+          const last = session.messages.filter((message): message is AssistantMessage => message.role === 'assistant').at(-1)
+          if (!last || ['error', 'aborted', 'length'].includes(last.stopReason)) break
+          if (retry >= 2) throw new ModelError('计划已批准，但模型未调用项目工具开始执行，请使用支持工具调用的模型后重试')
+          status('正在按批准计划开始实际工作…')
+          await session.sendCustomMessage({ customType: 'pi-agenda-execution-control', display: false,
+            content: '批准后的执行尚未开始：你还没有调用任何项目工具。请现在按已批准的计划调用工具完成实际工作和验证，不能仅确认、复述方案或声称完成。若无法执行，请明确说明具体阻碍。' }, { triggerTurn: true })
+        }
       }
       signal.throwIfAborted()
       const final = session.messages.filter((message): message is AssistantMessage => message.role === 'assistant').at(-1)

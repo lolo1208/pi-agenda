@@ -6,7 +6,7 @@
 
 当前会话由主进程保存到用户主目录的 `.pi-agenda/conversations.json`。会话列表、消息、图片、未发送草稿和选中会话在重启后恢复，不按时间或数量自动清理；只有用户确认删除对话或项目时才移除相应会话。写入采用临时文件加原子替换。读取失败时显示错误并禁止覆盖原文件，防止将未恢复的空列表保存为历史记录。
 
-Renderer（React 19、Tailwind、Monaco）只负责界面；Preload 暴露固定的类型化方法，不透传 IPC 或 Node API；Main 持有项目选择权、文件系统与影子 Git。开启 contextIsolation、sandbox、webSecurity，关闭 nodeIntegration，拒绝额外窗口、导航和权限请求，并验证 IPC 来源及参数。
+Renderer（React 19、Tailwind、git-diff-view）只负责界面；Preload 暴露固定的类型化方法，不透传 IPC 或 Node API；Main 持有项目选择权、文件系统与影子 Git。开启 contextIsolation、sandbox、webSecurity，关闭 nodeIntegration，拒绝额外窗口、导航和权限请求，并验证 IPC 来源及参数。
 
 ```text
 Renderer → window.piAgenda → Preload → Main IPC → ShadowGitManager
@@ -15,7 +15,9 @@ Renderer → window.piAgenda → Preload → Main IPC → ShadowGitManager
                                              → AgentRuntime（待实现）
 ```
 
-现有目录：`src/shared` 定义 DTO/IPC；`src/main/snapshot` 管理快照；`src/preload` 提供桥接；`src/renderer` 提供工作台。Monaco 与 worker 打包进应用，不使用 CDN。Monaco 的内置英文提示由构建插件 `monaco-chinese-nls`（见 `electron.vite.config.ts`）接管：它把 `monaco-editor/esm/vs/nls.js` 指向 `src/renderer/src/lib/monaco-nls-zh.ts`，只替换界面会展示的少量文案，其余保持上游原文。
+现有目录：`src/shared` 定义 DTO/IPC；`src/main/snapshot` 管理快照；`src/preload` 提供桥接；`src/renderer` 提供工作台。git-diff-view 与计算 Worker 打包进应用，不使用 CDN；对比区使用库默认的行底色、增删符号、词级高亮与上下文展开控件。
+
+快照改动列表和文件对比按项目存储路径与提交哈希缓存，跨管理器实例合并重复读取，并限制缓存大小；删除项目存储时清除相应缓存。`FileDiff.hunks` 携带含文件头的 Git 差异，前后全文并行读取并保留，供默认控件展开上下文。审批预览在 Worker 内生成差异；两类对比的高亮与视图数据也在 Worker 内准备，增删统计复用同一结果，统一/分栏切换无需重新计算。界面的准备结果缓存有容量上限，每个视图使用独立副本。
 
 ## 快照策略
 

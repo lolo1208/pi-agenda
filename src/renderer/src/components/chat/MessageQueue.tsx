@@ -1,9 +1,9 @@
 import { useRef, useState } from 'react'
 import { GripVertical, Pencil, Trash2, Paperclip } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import type { ChatMessage } from '../../../../shared/models'
+import type { QueuedMessage } from '../../../../shared/conversations'
 
-export interface QueuedMessage extends ChatMessage { id: string }
+export type { QueuedMessage } from '../../../../shared/conversations'
 export interface MessageQueueProps {
   queue?: QueuedMessage[]
   editingId?: string | null

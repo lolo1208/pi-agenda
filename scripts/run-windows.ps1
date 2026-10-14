@@ -11,6 +11,7 @@ $menuCommands = @{
   '2' = 'icons:generate'
   '3' = 'dist:win'
   '4' = 'dist:win:portable'
+  '5' = 'dist:win:zip'
 }
 
 while ($true) {
@@ -21,6 +22,7 @@ while ($true) {
   Write-Host '2. 生成程序图标'
   Write-Host '3. 导出当前系统发行包'
   Write-Host '4. 导出 Windows 便携版（单个 .exe，免安装）'
+  Write-Host '5. 导出 Windows ZIP 包（解压后运行 .exe，免安装）'
   Write-Host '0. 退出'
   Write-Host ''
   $selection = Read-Host '请输入菜单编号，按回车执行'

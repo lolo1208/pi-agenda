@@ -41,7 +41,7 @@ VIAddVersionKey "LegalCopyright" "Pi Agenda"
       SetOutPath "$TEMP"
   SectionEnd
 !else
-  InstallDir "$LOCALAPPDATA\Programs\${APP_NAME}"
+  InstallDir "$LOCALAPPDATA\Programs\${APP_DIRECTORY_NAME}"
   InstallDirRegKey HKCU "Software\PiAgenda" "InstallDir"
   !define MUI_ABORTWARNING
   !define MUI_FINISHPAGE_RUN "$INSTDIR\${APP_EXE}"

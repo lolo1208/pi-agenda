@@ -1,7 +1,3 @@
-.monaco-scrollable-element > .scrollbar > .slider {
-  border-radius: 999px;
-}
-
 .tool-sidebar {
   background: var(--bg);
   border-left: 1px solid var(--border);
@@ -113,3 +109,5 @@
   padding: 30px;
   font-size: calc(13rem / 14);
 }
+
+.diff > .tool-approval-diff { flex: 1; min-height: 0; max-height: none; }

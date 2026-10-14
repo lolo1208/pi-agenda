@@ -52,7 +52,7 @@ export function PlanDialog({ interaction, onRespond, onDismiss, onCancel }: { in
         <label htmlFor="plan-feedback">修改意见</label>
         <Textarea id="plan-feedback" placeholder="告诉助手应该如何调整计划…" value={feedback} maxLength={8000} disabled={submitting} onChange={event => setFeedback(event.target.value)} />
         {error && <p className="error" role="alert">{error}</p>}
-        <footer className="plan-dialog-actions"><Button variant="ghost" onClick={onCancel} disabled={submitting}>停止计划</Button><div><Button variant="outline" disabled={!feedback.trim() || submitting} onClick={() => { void submit({ decision: 'revise', feedback }) }}>修改计划</Button><Button className="plan-approve" disabled={submitting || !!feedback.trim()} onClick={() => { void submit({ decision: 'approve' }) }}><Check size={15} />批准计划并开始执行</Button></div></footer>
+        <footer className="plan-dialog-actions"><Button variant="ghost" onClick={onCancel} disabled={submitting}>停止计划</Button><div><Button className="plan-revise" variant="outline" disabled={!feedback.trim() || submitting} onClick={() => { void submit({ decision: 'revise', feedback }) }}>修改计划</Button><Button className="plan-approve" disabled={submitting || !!feedback.trim()} onClick={() => { void submit({ decision: 'approve' }) }}><Check size={15} />批准计划并开始执行</Button></div></footer>
       </div>
     </>}
   </Modal>

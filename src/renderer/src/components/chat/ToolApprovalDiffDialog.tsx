@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { FileCode2, LockKeyhole, ShieldQuestion, Terminal } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/modal'
-import { baseName, DiffFileHeader, DiffStat, DiffView, DiffViewSwitch, diffStat, fileIcon, initialDiffViewMode, type DiffViewMode } from './DiffView'
+import { baseName, DiffFileHeader, DiffStat, DiffView, DiffViewSwitch, fileIcon, initialDiffViewMode, type DiffViewMode } from './DiffView'
 import type { ToolApproval, ToolApprovalPreview } from '../../../../shared/models'
 
 type EntryState = 'loading' | 'ready' | 'error'
@@ -14,6 +14,7 @@ interface FileEntry {
   path: string
   preview?: ToolApprovalPreview
   state: EntryState
+  stats?: { added: number; removed: number }
   message?: string
 }
 
@@ -55,7 +56,6 @@ export function ToolApprovalDiffDialog({ open, onOpenChange, approvals, getPrevi
     return () => { cancelled = true }
   }, [open, approvals, getPreview, loadTick])
 
-  const stats = useMemo(() => new Map(entries.map(e => [e.approval.id, e.preview ? diffStat(e.preview.before, e.preview.after) : undefined])), [entries])
   const fileCount = entries.filter(e => e.isFile).length
   const title = fileCount > 0 ? `${fileCount} 个文件` : '执行操作'
 
@@ -67,7 +67,7 @@ export function ToolApprovalDiffDialog({ open, onOpenChange, approvals, getPrevi
       {entries.length === 0 && <div className="tool-approval-preview-state" role="status"><span>没有待审批的文件操作</span></div>}
       {entries.map(entry => {
         const isCollapsed = collapsed[entry.approval.id] ?? false
-        const stat = stats.get(entry.approval.id)
+        const stat = entry.stats
         return <section key={entry.approval.id} className={`tool-approval-file${isCollapsed ? ' is-collapsed' : ''}`}>
           <DiffFileHeader
             icon={entry.isFile ? fileIcon(entry.path) : <Terminal size={15} aria-hidden="true" />}
@@ -81,7 +81,7 @@ export function ToolApprovalDiffDialog({ open, onOpenChange, approvals, getPrevi
             {entry.state === 'loading' && <div className="tool-approval-preview-state" role="status"><span>正在加载修改对比…</span></div>}
             {entry.state === 'error' && <div className="tool-approval-preview-state" role="alert"><ShieldQuestion size={24} aria-hidden="true" /><p>{entry.message}</p><Button type="button" variant="outline" onClick={() => setLoadTick(t => t + 1)}>重试</Button></div>}
             {entry.state === 'ready' && (entry.isFile
-              ? <DiffView before={entry.preview!.before} after={entry.preview!.after} mode={mode} />
+              ? <DiffView before={entry.preview!.before} after={entry.preview!.after} mode={mode} path={entry.preview!.path} onStats={stats => setEntries(prev => prev.map(item => item.approval.id === entry.approval.id ? { ...item, stats } : item))} />
               : <pre className="tool-approval-operation">{commandOf(entry.approval)}</pre>)}
           </div>}
         </section>

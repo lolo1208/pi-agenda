@@ -5,6 +5,12 @@ import type { SimpleGit } from 'simple-git'
 import { openSnapshotStorage, removeSnapshotStorage, type SnapshotStorage } from './snapshot-storage'
 import { copyProjectFiles } from './project-file-capture'
 import type { ChangedFile, Checkpoint, FileDiff } from '../../shared/api'
+import { SnapshotReadCache } from './snapshot-read-cache'
+
+// 跨管理器实例复用缓存，包含存储路径，避免不同数据目录的项目相互串用。
+const changesCache = new SnapshotReadCache<ChangedFile[]>(128, 4 * 1024 * 1024, value => JSON.stringify(value).length * 2)
+const diffCache = new SnapshotReadCache<FileDiff>(64, 32 * 1024 * 1024, value => (value.before.length + value.after.length + (value.hunks?.join('').length ?? 0)) * 2)
+const projectCachePrefix = (root: string): string => `${process.platform === 'win32' ? root.toLowerCase() : root}\0`
 
 export class ShadowGitManager {
   private constructor(private readonly root: string, private readonly staging: string, private readonly git: SimpleGit, private readonly serialized: SnapshotStorage['serialized']) {}
@@ -17,7 +23,10 @@ export class ShadowGitManager {
   getRoot(): string { return this.root }
 
   static async removeProjectStorage(project: string, dataRoot: string): Promise<string> {
-    return removeSnapshotStorage(project, dataRoot)
+    const root = await removeSnapshotStorage(project, dataRoot)
+    changesCache.clearPrefix(projectCachePrefix(root))
+    diffCache.clearPrefix(projectCachePrefix(root))
+    return root
   }
 
   createCheckpoint(label: string): Promise<Checkpoint> {
@@ -92,14 +101,22 @@ export class ShadowGitManager {
     await this.git.raw(['cat-file', '-e', `${hash}^{commit}`])
   }
 
+  private cacheKey(base: string, current: string): string {
+    return `${projectCachePrefix(this.root)}${this.staging}\0${base}\0${current}`
+  }
+
   getChanges(base: string, current: string): Promise<ChangedFile[]> {
-    return this.serialized(() => this.readChanges(base, current))
+    return changesCache.get(this.cacheKey(base, current), () => this.serialized(() => this.readChanges(base, current))).then(value => structuredClone(value))
   }
 
   private async readChanges(base: string, current: string): Promise<ChangedFile[]> {
-    await this.validateCommit(base); await this.validateCommit(current)
-    const raw = await this.git.raw(['diff', '--numstat', '-z', '--no-renames', base, current, '--'])
-    const statusRaw = await this.git.raw(['diff', '--name-status', '-z', '--no-renames', base, current, '--'])
+    // 验证失败时不能留下尚未结束的 Git 进程，让存储队列提前释放。
+    await this.validateCommit(base)
+    await this.validateCommit(current)
+    const [raw, statusRaw] = await Promise.all([
+      this.git.raw(['diff', '--numstat', '-z', '--no-renames', base, current, '--']),
+      this.git.raw(['diff', '--name-status', '-z', '--no-renames', base, current, '--'])
+    ])
     const parts = statusRaw.split('\0')
     const statuses = new Map<string, 'A' | 'M' | 'D'>()
     for (let i = 0; i + 1 < parts.length; i += 2) statuses.set(parts[i + 1], parts[i] as 'A' | 'M' | 'D')
@@ -111,15 +128,25 @@ export class ShadowGitManager {
     })
   }
 
-  async getDiff(base: string, current: string, file: string): Promise<FileDiff> {
+  getDiff(base: string, current: string, file: string): Promise<FileDiff> {
+    return diffCache.get(`${this.cacheKey(base, current)}\0${file}`, () => this.readDiff(base, current, file)).then(value => structuredClone(value))
+  }
+
+  private async readDiff(base: string, current: string, file: string): Promise<FileDiff> {
     const changes = await this.getChanges(base, current)
     const change = changes.find(item => item.path === file)
     if (!change) throw new Error('文件不在此轮改动列表中')
     if (change.binary) return { path: file, before: '', after: '', binary: true }
-    return this.serialized(async () => ({ path: file, binary: false,
-      before: change.status === 'A' ? '' : await this.git.show([`${base}:${file}`]),
-      after: change.status === 'D' ? '' : await this.git.show([`${current}:${file}`])
-    }))
+    return this.serialized(async () => {
+      // 保留全文以支持默认的上下文展开；直接传 Git 片段，界面无需再计算差异。
+      const [before, after, patch] = await Promise.all([
+        change.status === 'A' ? Promise.resolve('') : this.git.show([`${base}:${file}`]),
+        change.status === 'D' ? Promise.resolve('') : this.git.show([`${current}:${file}`]),
+        this.git.raw(['diff', '--no-ext-diff', '--no-textconv', '--no-color', '--no-renames', '--unified=3', base, current, '--', `:(literal)${file}`])
+      ])
+      // 库解析器需要 --- / +++ 文件头，不能只截取 @@ 后的正文。
+      return { path: file, binary: false, before, after, hunks: patch ? [patch] : [] }
+    })
   }
 
   /** 保存回滚前快照；只恢复本轮改动，并拒绝覆盖本轮之后的手动修改。 */

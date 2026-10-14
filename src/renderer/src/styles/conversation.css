@@ -26,7 +26,8 @@
 .tool-approval-actions .tool-approval-approve { border-color: transparent; background: var(--accent); color: var(--accent-foreground); }
 .tool-approval-actions .tool-approval-approve:hover { background: color-mix(in srgb, var(--accent) 88%, var(--text)); }
 .tool-approval-actions .tool-approval-approve:disabled { background: var(--hover); color: var(--muted); }
-.modal-panel.tool-approval-preview { width: min(1120px, calc(100vw - 40px)); max-height: calc(100dvh - 60px); padding: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); }
+.modal-panel.tool-approval-preview { display: flex; flex-direction: column; width: calc(100vw - 40px); height: calc(100dvh - 60px); max-height: calc(100dvh - 60px); padding: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); }
+.tool-approval-preview .modal-heading, .tool-approval-preview .modal-description, .tool-approval-preview-footer { flex-shrink: 0; }
 .tool-approval-preview .modal-heading { margin: 0; padding: 20px 24px 5px; }
 .tool-approval-preview .modal-title { min-width: 0; width: 100%; font-size: calc(15rem / 14); }
 .tool-approval-file-title { display: flex; align-items: center; gap: 10px; min-width: 0; }
@@ -34,36 +35,21 @@
 .tool-approval-file-title > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tool-approval-preview .modal-close { top: 17px; right: 17px; border-radius: 6px; }
 .tool-approval-preview .modal-description { margin: 0; padding: 0 56px 17px 52px; font-size: calc(12rem / 14); line-height: 1.5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tool-approval-preview-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 20px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
-.tool-approval-preview-caption { font-size: calc(12rem / 14); font-weight: 500; color: var(--muted); }
 /* 对比视图切换：胶囊分段控件，选中项浮起 */
 .tool-approval-view-switch { display: flex; align-items: center; gap: 2px; flex-shrink: 0; padding: 2px; border-radius: 9px; background: color-mix(in srgb, var(--muted) 14%, transparent); }
 .tool-approval-view-switch .ui-button { display: inline-flex; align-items: center; gap: 5px; height: calc(26rem / 14); min-height: 0; padding: 0 10px; font-size: calc(12rem / 14); font-weight: 400; border: 0; border-radius: 7px; background: transparent; color: var(--muted); }
 .tool-approval-view-switch .ui-button:hover { background: color-mix(in srgb, var(--text) 7%, transparent); color: var(--text); }
 .tool-approval-view-switch .ui-button[aria-pressed="true"] { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px #0000001f, 0 0 0 1px color-mix(in srgb, var(--text) 8%, transparent); }
-.tool-approval-diff-labels { display: grid; grid-template-columns: 1fr 1fr; background: var(--bg); border-bottom: 1px solid var(--border); color: var(--muted); font-size: calc(11rem / 14); }
-.tool-approval-diff-labels > span { display: flex; align-items: center; gap: 7px; padding: 8px 20px; }
-.tool-approval-diff-labels > span + span { border-left: 1px solid var(--border); }
-.tool-approval-diff-labels i { width: calc(6rem / 14); height: calc(6rem / 14); border-radius: 50%; }
-.diff-before-dot { background: #cb6666; }
-.diff-after-dot { background: #559a69; }
-.tool-approval-diff-labels.is-inline { display: flex; }
-.tool-approval-diff-labels.is-inline > span + span { border: 0; padding-left: 0; }
-.tool-approval-diff { max-height: min(58dvh, 560px); background: var(--bg); }
+.tool-approval-diff { min-height: 56px; max-height: min(58dvh, 560px); overflow: auto; }
 .tool-approval-preview-state { height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 12px; color: var(--muted); padding: 24px; font-size: calc(13rem / 14); text-align: center; }
 .tool-approval-preview-state p { margin: 0; max-width: 460px; overflow-wrap: anywhere; }
-.tool-approval-loading { animation: approval-loading-spin 1s linear infinite; }
-@keyframes approval-loading-spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .tool-approval-loading { animation: none; } }
 .tool-approval-preview-footer { display: flex; align-items: center; gap: 16px; padding: 12px 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: calc(11rem / 14); }
-.modal-panel.tool-approval-multi { width: min(1240px, calc(100vw - 40px)); }
 .tool-approval-multi .modal-heading { align-items: center; gap: 16px; padding: 16px 60px 8px 20px; }
 .tool-approval-multi .modal-heading .tool-approval-view-switch { flex-shrink: 0; }
 .tool-approval-multi .modal-title { flex: 1; min-width: 0; }
 .tool-approval-multi .modal-description { padding: 0 56px 12px 52px; white-space: normal; }
-.tool-approval-filelist { display: flex; flex-direction: column; gap: 10px; overflow: auto; max-height: calc(88dvh - 130px); padding: 10px 12px; border-top: 1px solid var(--border); background: var(--bg); }
-/* 审查弹窗没有底部说明栏，可用高度比审批弹窗多一些 */
-.tool-approval-review .tool-approval-filelist { max-height: calc(88dvh - 84px); }
+/* 列表占满弹窗剩余空间，文件对比以列表实际可用高度为上限。 */
+.tool-approval-filelist { display: flex; flex: 1; flex-direction: column; min-height: 0; container-type: size; gap: 10px; overflow: auto; padding: 10px 12px; border-top: 1px solid var(--border); background: var(--bg); }
 .tool-approval-file { flex-shrink: 0; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); overflow: hidden; }
 /* 审查弹窗的卡片文字统一用等宽字体，字号略小 */
 .tool-approval-file-header { display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 12px; border: 0; background: transparent; color: var(--text); font-family: var(--font-mono); font-size: calc(12rem / 14); text-align: left; cursor: pointer; }
@@ -79,47 +65,13 @@
 .tool-approval-diffstat em.is-del { color: var(--diff-del); }
 .tool-approval-binary { flex-shrink: 0; color: var(--muted); font-size: calc(12rem / 14); }
 .tool-approval-file-body { border-top: 1px solid var(--border); }
-/* 对比区内文字选中高亮：默认主题下与增删行底色叠加后几乎看不出，显式给一个明显的选中色 */
-.tool-approval-diff ::selection { background: color-mix(in srgb, #3b82f6 45%, transparent); color: inherit; }
-.tool-approval-file-body .tool-approval-diff { max-height: min(46dvh, 460px); }
+.tool-approval-file-body .tool-approval-diff { max-height: max(56px, calc(100cqh - 60px)); }
 .tool-approval-file-body .tool-approval-preview-state { min-height: 140px; height: 140px; }
-.tool-approval-file-body .tool-approval-operation { max-height: min(46dvh, 460px); border-top: 0; }
-/* 折叠的未改动区域：点线 + 居中文案，作为“此处略过 N 行”的分隔，而不是普通分割线 */
-.tool-approval-diff .monaco-editor .diff-hidden-lines .center { background: transparent; box-shadow: none; color: var(--muted); font-family: var(--font-mono); font-size: calc(11rem / 14); }
-/* Monaco 用内联样式占位展开图标，收起时改为零宽，只保留双击展开的能力 */
-.tool-approval-diff .monaco-editor .diff-hidden-lines .center > div:first-child { flex: 0 0 0 !important; width: 0 !important; overflow: hidden; }
-.tool-approval-diff .monaco-editor .diff-hidden-lines .center > div:first-child a { display: none; }
-.tool-approval-diff .monaco-editor .diff-hidden-lines .center > div:last-child { flex: 1; }
-.tool-approval-diff .monaco-editor .diff-hidden-lines .center > div:last-child > span:first-child { display: flex; align-items: center; width: 100%; cursor: default; }
-.tool-approval-diff .monaco-editor .diff-hidden-lines .center > div:last-child > span:first-child::before,
-.tool-approval-diff .monaco-editor .diff-hidden-lines .center > div:last-child > span:first-child::after { content: ''; flex: 1; height: 1px; background: repeating-linear-gradient(to right, var(--border) 0 5px, #0000 5px 10px); }
-.tool-approval-diff .monaco-editor .diff-hidden-lines .center > div:last-child > span:first-child::before { margin-right: 8px; }
-.tool-approval-diff .monaco-editor .diff-hidden-lines .center > div:last-child > span:first-child::after { margin-left: 8px; }
-.tool-approval-diff .monaco-editor .diff-hidden-lines .breadcrumb-item { display: none; }
-/* 空侧占位：把 Monaco 默认的斜纹换成与主题一致的淡色底，避免成片条纹干扰阅读 */
-.tool-approval-diff .monaco-editor .diagonal-fill { background-image: none; background-color: color-mix(in srgb, var(--muted) 9%, transparent); }
-/* 对比只有新增和删除：去掉词级（“修改”）高亮、删除线与移动标记，只保留整行底色和 +/- 符号 */
-.tool-approval-diff .monaco-editor .char-insert,
-.tool-approval-diff .monaco-editor .char-delete,
-.tool-approval-diff .monaco-editor .inline-deleted-text { background-color: transparent !important; border-color: transparent !important; text-decoration: none !important; }
-.tool-approval-diff .monaco-editor .diff-range-empty { background-color: transparent !important; }
-/* 行号后面的增删标记：不用图标字体，改成字符 + / -，并配对应颜色 */
-.tool-approval-diff .monaco-editor .insert-sign,
-.tool-approval-diff .monaco-editor .delete-sign { justify-content: center; opacity: 1 !important; font-family: var(--font-mono) !important; font-size: calc(12rem / 14) !important; font-weight: 700; }
-.tool-approval-diff .monaco-editor .insert-sign::before { content: '+'; color: var(--diff-add); }
-.tool-approval-diff .monaco-editor .delete-sign::before { content: '-'; color: var(--diff-del); }
-/* 统一视图里被删除的代码块：允许直接框选，并去掉 Monaco 的“复制删除行”灯泡与菜单 */
-/* Monaco 的模型文本层是一整块透明图层，盖在被删除代码视图区之上，
-   因此删除区的鼠标事件都落在它上：既无法框选删除区，左键还会弹出“复制删除行/复制改动行”菜单。
-   这里把视图区提到模型文本层之上，事件就会先落到删除区自身的 DOM（模型文本的事件处理不受影响）。 */
-.tool-approval-diff .monaco-diff-editor:not(.side-by-side) .lines-content > .view-zones { z-index: 1; }
-.tool-approval-diff .monaco-editor .view-zones .view-lines.line-delete,
-.tool-approval-diff .monaco-editor .view-zones .view-lines.line-delete * { user-select: text !important; }
-.tool-approval-diff .monaco-editor .lightbulb-glyph { display: none !important; }
+.tool-approval-file-body .tool-approval-operation { max-height: max(56px, calc(100cqh - 60px)); border-top: 0; }
 .tool-approval-readonly { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
 .tool-approval-reason { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tool-approval-operation { margin: 0; padding: 20px 24px; border-top: 1px solid var(--border); background: var(--bg); max-height: 55dvh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: calc(13rem / 14); line-height: 1.7; }
-@media (max-width: 600px) { .modal-panel.tool-approval-preview { width: calc(100vw - 24px); } .tool-approval-preview .modal-heading { padding-left: 16px; } .tool-approval-preview .modal-description { padding-left: 44px; } .tool-approval-preview-footer { padding: 10px 16px; } }
+@media (max-width: 600px) { .modal-panel.tool-approval-preview { width: calc(100vw - 24px); height: calc(100dvh - 24px); max-height: calc(100dvh - 24px); } .tool-approval-preview .modal-heading { padding-left: 16px; } .tool-approval-preview .modal-description { padding-left: 44px; } .tool-approval-preview-footer { padding: 10px 16px; } }
 @media (max-width: 700px) { .tool-approval-card { flex-wrap: wrap; } .tool-approval-summary { flex-basis: calc(100% - 32px); } .tool-approval-actions { margin-left: auto; } }
 .full-access-dialog { display: grid; gap: 12px; width: min(460px, calc(100vw - 32px)); border: 0; }
 .full-access-dialog .alert-dialog-title, .full-access-dialog .alert-dialog-description { margin: 0; }
@@ -711,7 +663,7 @@
   background: var(--accent);
 }
 
-.message-queue { margin-bottom: 10px; }
+.message-queue { margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
 .queue-save-button { width: auto; padding: 0 10px; border-radius: 6px; font-size: calc(12rem / 14); }
 .message-queue ol { list-style: none; margin: 0; padding: 0; max-height: 160px; overflow-y: auto; }
 .queue-item { display: flex; align-items: center; gap: 6px; min-width: 0; min-height: 30px; padding: 2px 4px; border-radius: 6px; font-size: calc(12rem / 14); }

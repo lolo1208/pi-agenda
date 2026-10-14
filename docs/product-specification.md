@@ -11,7 +11,7 @@
 | 能力 | 目标行为 | 当前状态 |
 | --- | --- | --- |
 | 双轨时光机 | 恢复指定已完成轮次的文件与对话；支持硬恢复及分支恢复 | 待开发 |
-| 改动检查 | 每轮 A/M/D、增删行数、Monaco 统一/分栏 Diff（折叠未改动区域） | 按轮次的文件审查弹窗与手动快照对比已实现，桌面实机待验收 |
+| 改动检查 | 每轮 A/M/D、增删行数、git-diff-view 统一/分栏对比（可展开未改动上下文） | 按轮次的文件审查弹窗与手动快照对比已实现，使用库默认增删样式 |
 | 模型适配 | OpenAI、Claude、DeepSeek、Ollama、vLLM；自定义 Base URL、模型和参数 | 两种协议与服务商预设已实现；支持非流式多轮文本对话，真实服务待联调 |
 | 凭证配置 | safeStorage 加密 API Key；测试连接及延迟 | 已实现；自动测试通过，系统密钥链与桌面流程待实机验收 |
 | 本地工具 | 受限文件读写/补丁、终端、实时输出、超时和取消 | 待开发 |
@@ -33,7 +33,7 @@
 | 构建/打包 | electron-vite 4、Vite 7、electron-builder 26 | 编译已实现，安装包待验收 |
 | 界面 | React 19、Tailwind CSS 4、Lucide | 已接入三栏工作台 |
 | 通用组件 | shadcn/ui、Radix UI | 规划中，用于设置与确认弹窗 |
-| 代码对比 | Monaco Editor、@monaco-editor/react | 已接入，资源本地打包 |
+| 代码对比 | @git-diff-view/react、core、file | 已接入，资源与计算 Worker 本地打包 |
 | 终端 | node-pty | 规划中，需要 Electron ABI 重建 |
 | 快照 | 系统 Git、simple-git | 已实现独立影子仓库 |
 | 本地数据 | better-sqlite3 | 规划中，事务、迁移、外键、WAL |

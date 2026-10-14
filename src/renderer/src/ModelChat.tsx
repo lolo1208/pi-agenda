@@ -30,6 +30,9 @@ interface Props {
   conversationId?: string
   initialMessages?: ChatMessage[]; initialDraft?: string; initialDraftImages?: ChatImage[]
   onDraftChange?(draft: string, images: ChatImage[]): void
+  initialQueue?: QueuedMessage[]
+  initialQueuePaused?: boolean
+  onQueueChange?(queue: QueuedMessage[], paused: boolean): void
   profiles?: ModelProfileView[]
   customPrompt?: string
   compressionThreshold?: number; initialCompaction?: ContextCompaction
@@ -45,7 +48,7 @@ interface Props {
   profile: ModelProfileView | undefined; onBusyChange(busy: boolean): void; onOpenSettings(): void
   onMessagesChange?(messages: ChatMessage[], restored?: boolean): void; settingsDisabled?: boolean; sendWithCtrlEnter?: boolean
 }
-export default function ModelChat({ snapshots, initialIntentMode = 'execute', onIntentChange, initialPermissionMode = 'default', onPermissionChange, active = true, projectReady = true, conversationId, initialMessages = [], initialDraft = '', initialDraftImages = [], initialCompaction, onCompactionChange, compressionThreshold = 90, onDraftChange, profile: defaultProfile, profiles, project, providers, onModelSettingsChange, onBusyChange, onReplyComplete, onWaitingForInputChange, onOpenSettings, onMessagesChange, initialModelId, onModelChange, settingsDisabled, sendWithCtrlEnter = true, customPrompt = '' }: Props): React.JSX.Element {
+export default function ModelChat({ snapshots, initialIntentMode = 'execute', onIntentChange, initialPermissionMode = 'default', onPermissionChange, active = true, projectReady = true, conversationId, initialMessages = [], initialDraft = '', initialDraftImages = [], initialQueue = [], initialQueuePaused = false, onQueueChange, initialCompaction, onCompactionChange, compressionThreshold = 90, onDraftChange, profile: defaultProfile, profiles, project, providers, onModelSettingsChange, onBusyChange, onReplyComplete, onWaitingForInputChange, onOpenSettings, onMessagesChange, initialModelId, onModelChange, settingsDisabled, sendWithCtrlEnter = true, customPrompt = '' }: Props): React.JSX.Element {
   const [permissionMode, setPermissionMode] = useState(initialPermissionMode)
   const [intentMode, setIntentMode] = useState<IntentMode>(initialIntentMode)
   const intentCallback = useRef(onIntentChange)
@@ -86,9 +89,9 @@ export default function ModelChat({ snapshots, initialIntentMode = 'execute', on
   const [compaction, setCompaction] = useState(initialCompaction)
   const [prompt, setPrompt] = useState(initialDraft)
   const [images, setImages] = useState<ChatImage[]>(initialDraftImages)
-  const [queue, setQueue] = useState<QueuedMessage[]>([])
+  const [queue, setQueue] = useState<QueuedMessage[]>(initialQueue)
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [queuePaused, setQueuePaused] = useState(false)
+  const [queuePaused, setQueuePaused] = useState(initialQueuePaused)
   const savedDraft = useRef<{ prompt: string; images: ChatImage[] } | null>(null)
   const restoreDraft = (): void => {
     setPrompt(savedDraft.current?.prompt ?? ''); setImages(savedDraft.current?.images ?? [])
@@ -257,6 +260,10 @@ export default function ModelChat({ snapshots, initialIntentMode = 'execute', on
   const draftCallback = useRef(onDraftChange)
   draftCallback.current = onDraftChange
   useEffect(() => { draftCallback.current?.(prompt, images) }, [prompt, images])
+  const queueCallback = useRef(onQueueChange)
+  queueCallback.current = onQueueChange
+  // 编辑尚未保存时，刷新后保留原队列并暂停，避免直接发送旧内容。
+  useEffect(() => { queueCallback.current?.(queue, queuePaused || Boolean(editingId)) }, [queue, queuePaused, editingId])
   const send = async (item: QueuedMessage): Promise<void> => {
     if (!profile || busyRef.current) return
     const { id: _queueId, ...message } = item

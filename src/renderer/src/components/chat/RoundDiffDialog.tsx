@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { FileCode2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/modal'
-import { baseName, DiffFileHeader, DiffStat, DiffView, DiffViewSwitch, diffStat, fileIcon, initialDiffViewMode, type DiffViewMode } from './DiffView'
+import { baseName, DiffFileHeader, DiffStat, DiffView, DiffViewSwitch, fileIcon, initialDiffViewMode, type DiffViewMode } from './DiffView'
 import type { ChangedFile, FileDiff } from '../../../../shared/api'
 import type { AgentSnapshot } from '../../../../shared/models'
 import { FileContextMenu } from './FileContextMenu'
@@ -40,7 +40,7 @@ function FileReview({ round, file, mode, defaultExpanded }: { round: AgentSnapsh
           ? <div className="tool-approval-preview-state" role="status">正在加载修改对比…</div>
           : diff.binary
             ? <div className="tool-approval-preview-state">二进制文件不支持文本对比</div>
-            : <DiffView before={diff.before} after={diff.after} mode={mode} originalModelPath={`round/${round.before.hash}/${file.path}`} modifiedModelPath={`round/${round.after.hash}/${file.path}`} />}
+            : <DiffView before={diff.before} after={diff.after} mode={mode} path={file.path} hunks={diff.hunks} />}
     </div>}
   </section>
 }
@@ -50,7 +50,7 @@ export function RoundDiffDialog({ round, files, selectedPath, onClose }: { round
   const [mode, setMode] = useState<DiffViewMode>(initialDiffViewMode)
   const visible = selectedPath ? files.filter(file => file.path === selectedPath) : files
   // 从单个文件入口打开时直接展开该文件；整轮审查时保持全部折叠，避免一次性加载所有对比
-  return <Modal open onOpenChange={open => { if (!open) onClose() }} title={<span className="tool-approval-file-title"><FileCode2 size={18} aria-hidden="true" /><span>{visible.length} 个文件</span></span>} contentClassName="tool-approval-preview tool-approval-multi tool-approval-review" headingExtra={<DiffViewSwitch mode={mode} onChange={setMode} />}>
+  return <Modal open onOpenChange={open => { if (!open) onClose() }} title={<span className="tool-approval-file-title"><FileCode2 size={18} aria-hidden="true" /><span>{visible.length} 个文件</span></span>} contentClassName="tool-approval-preview tool-approval-multi" headingExtra={<DiffViewSwitch mode={mode} onChange={setMode} />}>
     <div className="tool-approval-filelist">{visible.map(file => <FileReview key={file.path} round={round} file={file} mode={mode} defaultExpanded={Boolean(selectedPath)} />)}</div>
   </Modal>
 }

@@ -1,7 +1,7 @@
 import type { AgentEvent, AgentRequestOptions, ChatMessage, ModelDescriptor, ModelReply, ModelResult, ModelSettings, SaveModelProfile } from './models'
 export interface Checkpoint { hash: string; createdAt: string; label: string }
 export interface ChangedFile { path: string; status: 'A' | 'M' | 'D'; additions: number; deletions: number; binary: boolean }
-export interface FileDiff { path: string; before: string; after: string; binary: boolean }
+export interface FileDiff { path: string; before: string; after: string; binary: boolean; hunks?: string[] }
 export type FileAction = 'copy-file' | 'copy-path' | 'open-directory' | 'open-file'
 import type { ConversationState } from './conversations'
 export interface PiAgendaApi {

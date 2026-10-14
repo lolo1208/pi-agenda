@@ -25,6 +25,16 @@ function parseState(value: unknown): ConversationState {
     if (task.titleEdited !== undefined && typeof task.titleEdited !== 'boolean') throw new Error('会话名称状态无效')
     if (task.prompt !== undefined && (typeof task.prompt !== 'string' || task.prompt.length > MAX_CUSTOM_PROMPT_LENGTH)) throw new Error('会话提示词无效')
     if (task.unreadCompletion !== undefined && typeof task.unreadCompletion !== 'boolean') throw new Error('会话未读状态无效')
+    if (task.queuePaused !== undefined && typeof task.queuePaused !== 'boolean') throw new Error('会话队列状态无效')
+    if (task.queuedMessages !== undefined) {
+      const queueIds = new Set<string>()
+      if (!Array.isArray(task.queuedMessages) || !task.queuedMessages.every(value => {
+        const item = record(value)
+        if (typeof item.id !== 'string' || !item.id || queueIds.has(item.id) || item.role !== 'user' || typeof item.content !== 'string' || !images(item.images)) return false
+        queueIds.add(item.id)
+        return true
+      })) throw new Error('会话队列消息格式无效')
+    }
     if (task.permissionMode !== undefined && !PERMISSION_MODES.includes(task.permissionMode as PermissionMode)) throw new Error('会话权限模式无效')
     if (task.intentMode !== undefined && !['plan', 'execute'].includes(String(task.intentMode))) throw new Error('会话目的模式无效')
     if (typeof task.id !== 'string' || !task.id || ids.has(task.id) || typeof task.title !== 'string' || typeof task.preview !== 'string' || !(task.project === null || typeof task.project === 'string') || !(task.updatedAt === undefined || typeof task.updatedAt === 'number' && Number.isFinite(task.updatedAt)) || !(task.draft === undefined || typeof task.draft === 'string') || !(task.modelId === undefined || typeof task.modelId === 'string') || !images(task.draftImages)) throw new Error('会话文件格式无效')

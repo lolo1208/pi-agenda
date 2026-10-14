@@ -1,46 +1,47 @@
 import { SANDBOX_CHECKS } from '../../shared/sandbox'
 import { randomUUID } from 'node:crypto'
 import { createServer } from 'node:http'
-import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
-import os from 'node:os'
+import { mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { TerminalSandbox } from './terminal-sandbox'
 import { ModelError } from './model-validation'
+import { createSandboxCheckWorkspace } from './sandbox-check-workspace'
 
 const literal = (value: string): string => "'" + value.replace(/'/g, "''") + "'"
-/** 有效完整记录仍需真正启动隔离进程，快速检查项目和两个外部边界。 */
-export async function checkCachedSandboxIsolation(sandbox: TerminalSandbox, project: string, dataDirectory: string, signal: AbortSignal): Promise<void> {
-  const folder = await mkdtemp(path.join(project, '.pi-agenda-check-'))
-  const outside = await mkdtemp(path.join(os.tmpdir(), 'pi-agenda-outside-check-'))
+/** 在独立测试工作区真正启动隔离进程，快速检查读写和两个外部边界。 */
+export async function checkCachedSandboxIsolation(sandbox: TerminalSandbox, _project: string, dataDirectory: string, signal: AbortSignal): Promise<void> {
+  const workspace = await createSandboxCheckWorkspace()
+  const { project: folder, outside } = workspace
   const outsideFile = path.join(outside, 'outside.txt'), privateFile = path.join(dataDirectory, `isolation-check-${randomUUID()}.txt`)
   const token = randomUUID(), file = path.join(folder, 'test.txt')
   try {
+    await sandbox.prepare(folder, signal)
+    await mkdir(dataDirectory, { recursive: true })
     await writeFile(outsideFile, token); await writeFile(privateFile, token)
     const blocked = (command: string): string => `try { ${command}; exit 23 } catch { }`
     const command = `[IO.File]::WriteAllText(${literal(file)},'ok'); if ([IO.File]::ReadAllText(${literal(file)}) -ne 'ok') { exit 24 }; [IO.File]::Delete(${literal(file)}); ${blocked(`[IO.File]::ReadAllText(${literal(outsideFile)}) | Out-Null`)}; ${blocked(`[IO.File]::WriteAllText(${literal(outsideFile)},'unexpected')`)}; ${blocked(`[IO.File]::ReadAllText(${literal(privateFile)}) | Out-Null`)}; Write-Output '${token}'`
     let output = ''
-    const result = await sandbox.exec(command, project, { signal, timeout: 20, onData: data => { output = (output + data.toString('utf8')).slice(-8000) } })
+    const result = await sandbox.exec(command, folder, { signal, timeout: 20, onData: data => { output = (output + data.toString('utf8')).slice(-8000) } })
     if (result.exitCode !== 0 || !output.includes(token) || await readFile(outsideFile, 'utf8') !== token) throw new ModelError('已有隔离环境未通过快速边界校验，请重新检测')
   } finally {
-    await Promise.allSettled([folder, outside].map(async root => { if (await realpath(root) === root) await rm(root, { recursive: true, force: true }) }))
-    await rm(privateFile, { force: true })
+    await Promise.all([workspace.cleanup(), rm(privateFile, { force: true })])
   }
 }
 /** 所有探针只接触本次创建的测试文件；拒绝必须有来自隔离进程的明确标记。 */
-export async function checkSandboxIsolation(sandbox: TerminalSandbox, project: string, dataDirectory: string, signal: AbortSignal, check: (id: string, label: string, action: () => Promise<void>) => Promise<void>): Promise<void> {
-  const projectProbe = await mkdtemp(path.join(project, '.pi-agenda-check-'))
-  const outside = await mkdtemp(path.join(os.tmpdir(), 'pi-agenda-outside-check-'))
+export async function checkSandboxIsolation(sandbox: TerminalSandbox, _project: string, dataDirectory: string, signal: AbortSignal, check: (id: string, label: string, action: () => Promise<void>) => Promise<void>): Promise<void> {
+  const workspace = await createSandboxCheckWorkspace()
+  const { project: projectProbe, outside } = workspace
   const privateFile = path.join(dataDirectory, `isolation-check-${randomUUID()}.txt`)
   const outsideFile = path.join(outside, 'outside.txt')
   const token = randomUUID()
-  const roots = [projectProbe, outside]
   try {
+    await sandbox.prepare(projectProbe, signal)
     await mkdir(dataDirectory, { recursive: true })
     await writeFile(outsideFile, token); await writeFile(privateFile, token)
     const run = async (command: string, marker: string): Promise<void> => {
       signal.throwIfAborted()
       let output = ''
-      const result = await sandbox.exec(command, project, { signal, timeout: 25, onData: data => { output = (output + data.toString('utf8')).slice(-16000) } })
+      const result = await sandbox.exec(command, projectProbe, { signal, timeout: 25, onData: data => { output = (output + data.toString('utf8')).slice(-16000) } })
       if (result.exitCode !== 0 || !output.includes(marker)) throw new ModelError(`隔离测试未通过：${output.trim().slice(-1800) || '隔离进程未返回有效测试结果'}`)
     }
     const blocked = (command: string): Promise<void> => run(`try { ${command}; Write-Output 'UNEXPECTED_ACCESS'; exit 23 } catch { Write-Output 'ACCESS_BLOCKED' }`, 'ACCESS_BLOCKED')
@@ -79,11 +80,6 @@ export async function checkSandboxIsolation(sandbox: TerminalSandbox, project: s
       } finally { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())) }
     })
   } finally {
-    // 仅清理本次分配的固定根；rm 不跟随子项的符号链接或目录联接。
-    await Promise.allSettled(roots.map(async root => {
-      if (await realpath(root) !== root || !path.basename(root).startsWith('pi-agenda-') && !path.basename(root).startsWith('.pi-agenda-check-')) throw new Error('测试目录路径发生变化')
-      await rm(root, { recursive: true, force: true })
-    }))
-    await rm(privateFile, { force: true })
+    await Promise.all([workspace.cleanup(), rm(privateFile, { force: true })])
   }
 }

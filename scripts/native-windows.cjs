@@ -131,7 +131,8 @@ async function getCompiler(projectDir) {
 async function packageWindows({ projectDir, stagingDir, portable }) {
   const metadata = JSON.parse(await fs.readFile(path.join(projectDir, 'package.json'), 'utf8'))
   const appName = metadata.build.productName
-  const appExe = `${appName}.exe`
+  const executableName = metadata.build.win?.executableName ?? metadata.build.executableName ?? appName
+  const appExe = `${executableName}.exe`
   const unpacked = path.join(stagingDir, 'win-unpacked')
   await assertX64(path.join(unpacked, appExe))
   const compiler = await getCompiler(projectDir)
@@ -139,6 +140,7 @@ async function packageWindows({ projectDir, stagingDir, portable }) {
   const args = [
     '/V2', '/INPUTCHARSET', 'UTF8',
     `/DAPP_NAME=${appName}`, `/DAPP_EXE=${appExe}`, `/DAPP_VERSION=${metadata.version}`,
+    `/DAPP_DIRECTORY_NAME=${executableName}`,
     `/DAPP_DIR=${unpacked}`, `/DOUTPUT_FILE=${output}`,
     `/DAPP_ICON=${path.join(projectDir, 'resources', 'icons', 'icon.ico')}`,
   ]
