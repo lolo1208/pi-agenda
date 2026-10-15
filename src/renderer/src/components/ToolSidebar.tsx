@@ -2,6 +2,8 @@ import { Button } from '@/components/ui/button'
 import { Camera, ChevronRight, Files, Globe, Terminal, X } from 'lucide-react'
 import { DiffView } from './chat/DiffView'
 import type { ChangedFile, Checkpoint, FileDiff } from '../../../shared/api'
+import { useState } from 'react'
+import { PagedList } from './PagedList'
 
 type ToolId = 'snapshots' | 'files' | 'terminal' | 'browser'
 
@@ -45,6 +47,7 @@ function PlaceholderTool({ tool }: { tool: Exclude<ToolId, 'snapshots'> }): Reac
 }
 
 export function ToolSidebar({ project, isBusy, activeTool, checkpoints, changes, diff, theme, inlineDiff, onToolChange, onClose, onCaptureCheckpoint, onRollbackCheckpoint, onSelectDiff }: ToolSidebarProps): React.JSX.Element {
+  const [historyOpen, setHistoryOpen] = useState(false)
   return <section className="tool-sidebar" aria-label="侧栏工具">
     <header>
       <span>侧栏工具</span>
@@ -60,14 +63,14 @@ export function ToolSidebar({ project, isBusy, activeTool, checkpoints, changes,
         <Button disabled={!project || isBusy} onClick={onCaptureCheckpoint}><Camera size={16} />{isBusy ? '处理中…' : checkpoints.length ? '捕获当前改动' : '创建基准快照'}</Button>
         <Button disabled={!project || isBusy || !changes.length || checkpoints.length < 2} onClick={onRollbackCheckpoint}>回滚最近改动</Button>
         <p className="hint">修改前后自动保存快照。回滚会先保存当前状态；有后续手动修改时会停止回滚。</p>
-        <details>
+        <details onToggle={event => setHistoryOpen(event.currentTarget.open)}>
           <summary>快照记录 · {checkpoints.length}</summary>
-          {checkpoints.map(checkpoint => <div className="checkpoint" key={checkpoint.hash}><span>{checkpoint.label}</span><code>{checkpoint.hash.slice(0, 8)}</code></div>)}
+          {historyOpen && <PagedList items={checkpoints} label="快照记录" resetKey={project ?? ''}>{page => page.map(checkpoint => <div className="checkpoint" key={checkpoint.hash}><span>{checkpoint.label}</span><code>{checkpoint.hash.slice(0, 8)}</code></div>)}</PagedList>}
         </details>
         <h3>最近改动 <span className="muted">{changes.length}</span></h3>
-        {changes.map(file => <Button className="file" disabled={isBusy} key={file.path} onClick={() => onSelectDiff(file.path)}>
+        <PagedList items={changes} label="最近改动" resetKey={project ?? ''}>{page => page.map(file => <Button className="file" disabled={isBusy} key={file.path} onClick={() => onSelectDiff(file.path)}>
           <b>{file.status}</b><span>{file.path}</span><ChevronRight size={14} />
-        </Button>)}
+        </Button>)}</PagedList>
         {!changes.length && <p className="hint">暂无文件差异</p>}
       </div>
       {diff && <div className="diff">

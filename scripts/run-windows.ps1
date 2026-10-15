@@ -55,5 +55,6 @@ while ($true) {
   } else {
     Write-Host "`n执行失败（退出码：$result），请查看上方输出。"
   }
-  [void](Read-Host '按回车返回命令菜单')
+  Write-Host '按任意键返回菜单...'
+  [void][Console]::ReadKey($true)
 }

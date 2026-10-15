@@ -1,33 +1,66 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { FileCode2, LockKeyhole, ShieldQuestion, Terminal } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/modal'
+import { PagedList } from '../PagedList'
 import { baseName, DiffFileHeader, DiffStat, DiffView, DiffViewSwitch, fileIcon, initialDiffViewMode, type DiffViewMode } from './DiffView'
 import type { ToolApproval, ToolApprovalPreview } from '../../../../shared/models'
 
-type EntryState = 'loading' | 'ready' | 'error'
+function isFileChange(approval: ToolApproval): boolean { return ['edit', 'write'].includes(approval.tool) }
+function filePath(approval: ToolApproval): string { return typeof approval.args.path === 'string' ? approval.args.path : approval.cwd }
+type PreviewLoader = (approval: ToolApproval, signal: AbortSignal) => Promise<ToolApprovalPreview>
 
-interface FileEntry {
-  approval: ToolApproval
-  isFile: boolean
-  name: string
-  path: string
-  preview?: ToolApprovalPreview
-  state: EntryState
-  stats?: { added: number; removed: number }
-  message?: string
+/** 未开始的读取随卡片卸载取消，已开始的读取最多三个；翻页不会累积请求。 */
+function previewLoader(getPreview: (approval: ToolApproval) => Promise<ToolApprovalPreview>): PreviewLoader {
+  let running = 0
+  const queue: (() => void)[] = []
+  const pump = (): void => { while (running < 3 && queue.length) queue.shift()!() }
+  return (approval, signal) => new Promise((resolve, reject) => {
+    const abort = (): void => {
+      const index = queue.indexOf(start)
+      if (index >= 0) queue.splice(index, 1)
+      reject(new Error('预览读取已取消'))
+    }
+    const start = (): void => {
+      signal.removeEventListener('abort', abort)
+      if (signal.aborted) { reject(new Error('预览读取已取消')); return }
+      running++
+      void Promise.resolve().then(() => getPreview(approval)).then(resolve, reject).finally(() => { running--; pump() })
+    }
+    if (signal.aborted) { abort(); return }
+    signal.addEventListener('abort', abort, { once: true })
+    queue.push(start)
+    pump()
+  })
 }
 
-function isFileChange(approval: ToolApproval): boolean {
-  return ['edit', 'write'].includes(approval.tool)
-}
-
-function filePath(approval: ToolApproval): string {
-  return typeof approval.args.path === 'string' ? approval.args.path : approval.cwd
-}
-
-function commandOf(approval: ToolApproval): string {
-  return typeof approval.args.command === 'string' ? approval.args.command : JSON.stringify(approval.args, null, 2)
+function ApprovalReview({ approval, mode, load }: { approval: ToolApproval; mode: DiffViewMode; load: PreviewLoader }): React.JSX.Element {
+  const [expanded, setExpanded] = useState(true)
+  const [preview, setPreview] = useState<ToolApprovalPreview>()
+  const [error, setError] = useState('')
+  const [retry, setRetry] = useState(0)
+  const [stats, setStats] = useState<{ added: number; removed: number }>()
+  const isFile = isFileChange(approval)
+  const path = filePath(approval)
+  useEffect(() => { setPreview(undefined); setStats(undefined); setError('') }, [approval, load])
+  useEffect(() => {
+    if (!isFile || !expanded || preview) return
+    const controller = new AbortController()
+    setError('')
+    void load(approval, controller.signal).then(value => { if (!controller.signal.aborted) setPreview(value) }).catch(reason => {
+      if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : '修改对比加载失败')
+    })
+    return () => controller.abort()
+  }, [approval, isFile, expanded, preview, retry, load])
+  return <section className={`tool-approval-file${expanded ? '' : ' is-collapsed'}`}>
+    <DiffFileHeader icon={isFile ? fileIcon(path) : <Terminal size={15} aria-hidden="true" />} name={baseName(path)} path={path} expanded={expanded} onToggle={() => setExpanded(value => !value)} trailing={stats && <DiffStat additions={stats.added} deletions={stats.removed} />} />
+    {expanded && <div className="tool-approval-file-body">
+      {!isFile ? <pre className="tool-approval-operation">{typeof approval.args.command === 'string' ? approval.args.command : JSON.stringify(approval.args, null, 2)}</pre>
+        : error ? <div className="tool-approval-preview-state" role="alert"><ShieldQuestion size={24} aria-hidden="true" /><p>{error}</p><Button type="button" variant="outline" onClick={() => setRetry(value => value + 1)}>重试</Button></div>
+          : !preview ? <div className="tool-approval-preview-state" role="status">正在加载修改对比…</div>
+            : <DiffView before={preview.before} after={preview.after} mode={mode} path={preview.path} onStats={setStats} />}
+    </div>}
+  </section>
 }
 
 export function ToolApprovalDiffDialog({ open, onOpenChange, approvals, getPreview }: {
@@ -37,56 +70,16 @@ export function ToolApprovalDiffDialog({ open, onOpenChange, approvals, getPrevi
   getPreview(approval: ToolApproval): Promise<ToolApprovalPreview>
 }): React.JSX.Element {
   const [mode, setMode] = useState<DiffViewMode>(initialDiffViewMode)
-  const [entries, setEntries] = useState<FileEntry[]>([])
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
-  const [loadTick, setLoadTick] = useState(0)
-
-  useEffect(() => {
-    if (!open) return
-    let cancelled = false
-    setEntries(approvals.map(approval => ({ approval, isFile: isFileChange(approval), name: baseName(filePath(approval)), path: filePath(approval), state: isFileChange(approval) ? 'loading' : 'ready' })))
-    setCollapsed({})
-    for (const approval of approvals.filter(isFileChange)) {
-      getPreview(approval).then(preview => {
-        if (!cancelled) setEntries(prev => prev.map(e => e.approval.id === approval.id ? { ...e, preview, state: 'ready' } : e))
-      }).catch(e => {
-        if (!cancelled) setEntries(prev => prev.map(item => item.approval.id === approval.id ? { ...item, state: 'error', message: e instanceof Error ? e.message : '修改对比加载失败' } : item))
-      })
-    }
-    return () => { cancelled = true }
-  }, [open, approvals, getPreview, loadTick])
-
-  const fileCount = entries.filter(e => e.isFile).length
-  const title = fileCount > 0 ? `${fileCount} 个文件` : '执行操作'
-
-  return <Modal open={open} onOpenChange={onOpenChange} title={<span className="tool-approval-file-title"><FileCode2 size={18} aria-hidden="true" /><span>{title}</span></span>}
-    description={<span>本次请求批准的操作共 {entries.length} 项，确认后将按权限执行</span>}
+  const load = useMemo(() => previewLoader(getPreview), [getPreview])
+  const fileCount = approvals.filter(isFileChange).length
+  return <Modal open={open} onOpenChange={onOpenChange} title={<span className="tool-approval-file-title"><FileCode2 size={18} aria-hidden="true" /><span>{fileCount > 0 ? `${fileCount} 个文件` : '执行操作'}</span></span>}
+    description={<span>本次请求批准的操作共 {approvals.length} 项，确认后将按权限执行</span>}
     headingExtra={<DiffViewSwitch mode={mode} onChange={setMode} />}
     contentClassName="tool-approval-preview tool-approval-multi">
     <div className="tool-approval-filelist">
-      {entries.length === 0 && <div className="tool-approval-preview-state" role="status"><span>没有待审批的文件操作</span></div>}
-      {entries.map(entry => {
-        const isCollapsed = collapsed[entry.approval.id] ?? false
-        const stat = entry.stats
-        return <section key={entry.approval.id} className={`tool-approval-file${isCollapsed ? ' is-collapsed' : ''}`}>
-          <DiffFileHeader
-            icon={entry.isFile ? fileIcon(entry.path) : <Terminal size={15} aria-hidden="true" />}
-            name={entry.name}
-            path={entry.path}
-            expanded={!isCollapsed}
-            onToggle={() => setCollapsed(prev => ({ ...prev, [entry.approval.id]: !isCollapsed }))}
-            trailing={stat && <DiffStat additions={stat.added} deletions={stat.removed} />}
-          />
-          {!isCollapsed && <div className="tool-approval-file-body">
-            {entry.state === 'loading' && <div className="tool-approval-preview-state" role="status"><span>正在加载修改对比…</span></div>}
-            {entry.state === 'error' && <div className="tool-approval-preview-state" role="alert"><ShieldQuestion size={24} aria-hidden="true" /><p>{entry.message}</p><Button type="button" variant="outline" onClick={() => setLoadTick(t => t + 1)}>重试</Button></div>}
-            {entry.state === 'ready' && (entry.isFile
-              ? <DiffView before={entry.preview!.before} after={entry.preview!.after} mode={mode} path={entry.preview!.path} onStats={stats => setEntries(prev => prev.map(item => item.approval.id === entry.approval.id ? { ...item, stats } : item))} />
-              : <pre className="tool-approval-operation">{commandOf(entry.approval)}</pre>)}
-          </div>}
-        </section>
-      })}
+      {approvals.length === 0 && <div className="tool-approval-preview-state" role="status">没有待审批的文件操作</div>}
+      <PagedList items={approvals} label="待审批操作" pageSize={10}>{page => page.map(approval => <ApprovalReview key={approval.id} approval={approval} mode={mode} load={load} />)}</PagedList>
     </div>
-    <footer className="tool-approval-preview-footer"><span className="tool-approval-readonly"><LockKeyhole size={12} aria-hidden="true" />只读预览</span><span className="tool-approval-reason">{entries[0]?.approval.reason}</span></footer>
+    <footer className="tool-approval-preview-footer"><span className="tool-approval-readonly"><LockKeyhole size={12} aria-hidden="true" />只读预览</span><span className="tool-approval-reason">{approvals[0]?.reason}</span></footer>
   </Modal>
 }

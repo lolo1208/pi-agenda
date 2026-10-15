@@ -18,12 +18,12 @@ export class PiAttachments {
     }
   }
   prepare(message: ChatMessage): { text: string; images: ImageContent[] } {
-    if (!message.images?.length) return { text: message.content, images: [] }
+    if (!message.images?.length && !message.skillIds?.length) return { text: message.content, images: [] }
     const id = randomUUID()
     this.messages.set(id, message)
     this.manager.appendCustomEntry('pi-agenda-files', { id, message })
-    const texts = message.images.filter(file => attachmentKind(file) === 'text').map(file => `附件：${file.name}\n${attachmentText(file)}`)
-    const images: ImageContent[] = message.images.filter(file => attachmentKind(file) === 'image').map(file => ({
+    const texts = (message.images ?? []).filter(file => attachmentKind(file) === 'text').map(file => `附件：${file.name}\n${attachmentText(file)}`)
+    const images: ImageContent[] = (message.images ?? []).filter(file => attachmentKind(file) === 'image').map(file => ({
       type: 'image', mimeType: file.dataUrl.slice(5, file.dataUrl.indexOf(';')), data: file.dataUrl.slice(file.dataUrl.indexOf(',') + 1)
     }))
     return { text: [message.content, ...texts, `[pi-agenda-files:${id}]`].filter(Boolean).join('\n\n'), images }

@@ -1,10 +1,36 @@
-import { useId, useState } from 'react'
-import { Popover } from 'radix-ui'
+import { useId, useLayoutEffect, useRef, useState } from 'react'
+import { Popover, Tooltip } from 'radix-ui'
 import { ChevronDown, ChevronRight, Eye, Search, Settings2 } from 'lucide-react'
 import { ModelIcon } from './ModelIcon'
+import { ModelPriceTag } from '../ModelPriceTag'
 import { Button } from '@/components/ui/button'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import { PagedList } from '../PagedList'
 import { findModelDescriptor, PROVIDER_PRESETS, selectedModelThinking, thinkingLabel, tokenCountLabel, type ModelProfileView, type ModelProviderConnection } from '../../../../shared/models'
+
+function ModelName({ text, className }: { text: string; className: string }): React.JSX.Element {
+  const ref = useRef<HTMLSpanElement>(null)
+  const [truncated, setTruncated] = useState(false)
+  const [open, setOpen] = useState(false)
+  const measure = (): void => {
+    const element = ref.current
+    const clipped = Boolean(element && element.clientWidth > 0 && element.scrollWidth > element.clientWidth)
+    setTruncated(clipped)
+    if (!clipped) setOpen(false)
+  }
+  useLayoutEffect(() => {
+    const element = ref.current
+    if (!element) return
+    measure()
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure)
+    observer?.observe(element)
+    return () => observer?.disconnect()
+  }, [text, className])
+  return <Tooltip.Root open={truncated && open} onOpenChange={setOpen}>
+    <Tooltip.Trigger asChild><span ref={ref} className={className} onPointerEnter={measure} onFocus={measure} tabIndex={truncated ? 0 : undefined}>{text}</span></Tooltip.Trigger>
+    {truncated && <Tooltip.Portal><Tooltip.Content className="conversation-model-name-tooltip" side="top" sideOffset={6} collisionPadding={12}>{text}</Tooltip.Content></Tooltip.Portal>}
+  </Tooltip.Root>
+}
 
 interface Props {
   profile?: ModelProfileView
@@ -43,13 +69,14 @@ export function ConversationModelPicker({ profile, profiles, providers, disabled
     finally { setThinkingSaving(false) }
   }
 
-  return <Popover.Root open={open && !disabled} onOpenChange={next => {
+  return <Tooltip.Provider delayDuration={250}><Popover.Root open={open && !disabled} onOpenChange={next => {
     setOpen(next)
     if (next) setQuery('')
   }}>
     <Popover.Trigger asChild>
       <Button type="button" className="model-picker" disabled={disabled} aria-label={`切换模型：${profile?.model || '选择模型'}`} title="切换本次会话的模型，并可在此设置推理强度">
-        <ModelIcon model={profile?.model} provider={profile?.provider} size={14} /><span>{profile?.model || '选择模型'}</span>
+        <ModelIcon model={profile?.model} provider={profile?.provider} size={14} /><span className="model-price-name-text">{profile?.model || '选择模型'}</span>
+        {profile && <ModelPriceTag descriptor={descriptor} />}
         {showThinking && configuredThinkingLabel && <span className="model-picker-thinking">· {configuredThinkingLabel}</span>}
         <ChevronDown size={14} />
       </Button>
@@ -71,20 +98,23 @@ export function ConversationModelPicker({ profile, profiles, providers, disabled
                 {expanded ? <ChevronDown size={14} aria-hidden="true" /> : <ChevronRight size={14} aria-hidden="true" />}
               </Button></h2>
               <div id={modelsId} hidden={!expanded}>
-                {models.map(model => {
+                {expanded && <PagedList items={models} label={preset.label} resetKey={search}>{page => page.map(model => {
                   const info = findModelDescriptor(providers, model)
                   const context = tokenCountLabel(info?.maxContextTokens ?? model.contextTokens)
                   const modelThinking = thinkingLabel(selectedModelThinking(model, info?.thinking))
-                  return <Button type="button" variant="ghost" className="conversation-model-option" key={model.id} aria-label={`使用 ${model.name}`} aria-current={model.id === profile?.id || undefined} disabled={model.available === false} onClick={() => onSelect(model.id)}>
+                  return <Button type="button" variant="ghost" className="conversation-model-option" key={model.id} aria-label={`使用 ${model.name}`} aria-current={model.id === profile?.id || undefined} disabled={model.available === false} onClick={() => {
+                    if (model.id === profile?.id) close()
+                    else onSelect(model.id)
+                  }} onDoubleClick={close}>
                     <ModelIcon model={model.model} provider={model.provider} size={16} />
-                    <span className={model.id === profile?.id ? 'conversation-model-name is-current' : 'conversation-model-name'}>{model.name}{model.available === false ? ' · 本地未找到' : ''}</span>
+                    <span className="conversation-model-priced-name"><ModelName className={model.id === profile?.id ? 'conversation-model-name is-current' : 'conversation-model-name'} text={`${model.name}${model.available === false ? ' · 当前不可用' : ''}`} /><ModelPriceTag descriptor={info} /></span>
                     <span className="conversation-model-meta">
                       {modelThinking && <span title={`推理强度：${modelThinking}`}>{modelThinking}</span>}
                       {info?.capabilities.includes('vision') && <span title="支持图片输入"><Eye size={13} aria-hidden="true" /></span>}
                       {context && <span title={`上下文上限 ${info?.maxContextTokens ?? model.contextTokens} Token`}>{context}</span>}
                     </span>
                   </Button>
-                })}
+                })}</PagedList>}
               </div>
             </section>
           })}
@@ -93,7 +123,7 @@ export function ConversationModelPicker({ profile, profiles, providers, disabled
         <footer className="conversation-model-reasoning" aria-busy={thinkingSaving}>
           {!profile ? <p className="conversation-model-reasoning-hint">请先选择一个模型。</p>
             : showThinking ? <>
-              <div className="conversation-model-reasoning-head"><span>推理强度</span><strong>{profile.name}</strong></div>
+              <div className="conversation-model-reasoning-head"><span>推理强度</span><strong className="model-priced-name"><ModelName className="model-price-name-text" text={profile.name} /><ModelPriceTag descriptor={descriptor} /></strong></div>
               <RadioGroup className="conversation-model-thinking" aria-label={`${profile.name} 推理强度`} value={selectedThinkingKey} disabled={thinkingSaving || !onThinkingChange} onValueChange={value => {
                 const raw = thinkingOptions.find(option => option.key === value)?.raw
                 if (raw !== undefined) void changeThinking(raw)
@@ -105,5 +135,5 @@ export function ConversationModelPicker({ profile, profiles, providers, disabled
         </footer>
       </Popover.Content>
     </Popover.Portal>
-  </Popover.Root>
+  </Popover.Root></Tooltip.Provider>
 }

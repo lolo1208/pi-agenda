@@ -52,5 +52,7 @@ export function attachmentSize(file: ChatAttachment): number {
 }
 
 export function formatAttachmentSize(bytes: number): string {
-  return bytes >= 1024 * 1024 ? `${Number((bytes / (1024 * 1024)).toFixed(1))} MiB` : bytes >= 1024 ? `${Number((bytes / 1024).toFixed(1))} KiB` : `${bytes} B`
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  const index = bytes > 0 ? Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1) : 0
+  return `${Number((bytes / 1024 ** index).toFixed(1))} ${units[index]}`
 }

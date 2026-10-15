@@ -185,7 +185,7 @@
 }
 
 .project-group {
-  margin: 0 0 18px;
+  margin: 0 0 10px;
 }
 
 .project-heading-row {
@@ -404,7 +404,7 @@ to {
 }
 
 .task-row:not(.selected):hover,
-.task-row:not(.selected):focus-within {
+.task-row:not(.selected):has(:focus-visible) {
   background: color-mix(in srgb, var(--text) 7%, var(--bg));
 }
 
@@ -413,12 +413,12 @@ to {
 }
 
 .task-row:hover .task-item,
-.task-row:focus-within .task-item {
+.task-row:has(:focus-visible) .task-item {
   padding-right: calc(66rem / 14);
 }
 
 .task-row:hover .task-time,
-.task-row:focus-within .task-time {
+.task-row:has(:focus-visible) .task-time {
   display: none;
 }
 
@@ -455,8 +455,8 @@ to {
 
 .task-row:hover .task-delete-button,
 .task-row:hover .task-edit-button,
-.task-row:focus-within .task-delete-button,
-.task-row:focus-within .task-edit-button {
+.task-row:has(:focus-visible) .task-delete-button,
+.task-row:has(:focus-visible) .task-edit-button {
   opacity: 1;
   pointer-events: auto;
 }
@@ -472,8 +472,8 @@ to {
   opacity: .5;
 }
 
-.task-row:not(:hover):not(:focus-within) .task-delete-button:disabled,
-.task-row:not(:hover):not(:focus-within) .task-edit-button:disabled {
+.task-row:not(:hover):not(:has(:focus-visible)) .task-delete-button:disabled,
+.task-row:not(:hover):not(:has(:focus-visible)) .task-edit-button:disabled {
   opacity: 0;
 }
 
@@ -481,7 +481,7 @@ to {
   .task-row .task-item { padding-right: calc(66rem / 14); }
   .task-row .task-time { display: none; }
   .task-row .task-delete-button, .task-row .task-edit-button { opacity: 1; pointer-events: auto; }
-  .task-row:not(:hover):not(:focus-within) .task-delete-button:disabled, .task-row:not(:hover):not(:focus-within) .task-edit-button:disabled { opacity: .5; }
+  .task-row:not(:hover):not(:has(:focus-visible)) .task-delete-button:disabled, .task-row:not(:hover):not(:has(:focus-visible)) .task-edit-button:disabled { opacity: .5; }
 }
 
 .task-item {
@@ -626,6 +626,34 @@ to {
 
 .selected.running .task-icon {
   color: var(--selected-text);
+}
+
+.ui-button.conversation-action-button {
+  transition: color 150ms ease-out, background-color 150ms ease-out;
+}
+
+.ui-button.conversation-action-button:not(:disabled):is(:hover, :focus-visible) {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--sidebar));
+}
+
+.ui-button.conversation-action-button:not(:disabled):active {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 22%, var(--sidebar));
+}
+
+.ui-button.conversation-action-button:is(.project-edit-button, .task-edit-button):not(:disabled):is(:hover, :focus-visible) {
+  color: var(--text);
+  background: var(--hover);
+}
+
+.ui-button.conversation-action-button:is(.project-edit-button, .task-edit-button):not(:disabled):active {
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 12%, var(--hover));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-button.conversation-action-button { transition: none; }
 }
 
 @keyframes task-spin {

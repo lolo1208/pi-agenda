@@ -1,5 +1,7 @@
 import { MAX_MESSAGE_ATTACHMENTS, MAX_ATTACHMENT_BYTES, MAX_CONVERSATION_ATTACHMENT_BYTES, PROVIDER_PRESETS, type ChatImage, type ChatMessage, type ModelProfile, type SaveModelProfile } from '../../shared/models'
 import { ATTACHMENT_DATA_URL } from '../../shared/attachments'
+import { validSkillIds } from '../../shared/skills'
+import { OPENROUTER_BASE_URL } from '../../shared/openrouter'
 
 export class ModelError extends Error {}
 export function asRecord(value: unknown): Record<string, unknown> {
@@ -43,6 +45,7 @@ export function parseProfile(value: unknown): ModelProfile {
   if (item.ollamaThinkingLevel != null && (typeof item.ollamaThinkingLevel !== 'string' || !item.ollamaThinkingLevel.trim() || item.ollamaThinkingLevel.length > 80)) throw new ModelError('Ollama 推理档位无效')
   const contextTokens = item.contextTokens === undefined || item.contextTokens === null ? null : numberInRange(item.contextTokens, 1, 2097152, '上下文上限', true)
   if (item.provider === 'chatgpt' && (item.baseUrl !== 'https://chatgpt.com/backend-api' || item.protocol !== 'openai-compatible' || item.temperature !== null)) throw new ModelError('ChatGPT 订阅使用固定服务地址，Temperature 由服务决定')
+  if (item.provider === 'openrouter' && (normalizeBaseUrl(item.baseUrl) !== OPENROUTER_BASE_URL || item.protocol !== 'openai-compatible' || item.tokenParameter !== 'max_tokens')) throw new ModelError('OpenRouter 使用固定官方地址、OpenAI 兼容协议及 max_tokens 参数')
   if (contextTokens !== null && typeof item.maxTokens === 'number' && item.maxTokens > contextTokens) throw new ModelError('输出 Token 上限不能超过上下文上限')
   return {
     id: profileId(item.id), name: requiredString(item.name, '配置名称', 80),
@@ -100,7 +103,8 @@ export function parseMessages(value: unknown): ChatMessage[] {
     const content = item.content.trim()
     if (!content && !images?.length) throw new ModelError('消息不能为空')
     length += content.length
-    return { role: item.role, content, ...(images?.length ? { images } : {}) } as ChatMessage
+    if (!validSkillIds(item.skillIds)) throw new ModelError('消息技能参数无效')
+    return { role: item.role, content, ...(images?.length ? { images } : {}), ...(item.skillIds ? { skillIds: item.skillIds } : {}) } as ChatMessage
   })
   if (length > 128000) throw new ModelError('对话过长，请清空对话后重试')
   if (imageBytes > MAX_CONVERSATION_ATTACHMENT_BYTES) throw new ModelError('对话附件总量超过 128 MiB，请新建对话后重试')

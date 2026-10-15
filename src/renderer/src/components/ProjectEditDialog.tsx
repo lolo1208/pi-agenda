@@ -46,11 +46,12 @@ export function ProjectEditDialog({ root, name, directory, prompt, isBusy, error
             <Input id="project-edit-directory" value={draftDirectory} disabled={isBusy} onChange={event => setDraftDirectory(event.target.value)} />
             <Button variant="outline" size="icon" aria-label="选择目录" title="选择目录" disabled={isBusy} onClick={chooseDirectory}><FolderOpen size={15} /></Button>
           </div>
-          <p className="hint">修改目录后，此项目的对话会关联到新目录。</p>
+          <p className="hint">修改目录后，此项目的对话会关联到新目录。当前有任务运行时，目录切换会在任务结束后生效。</p>
         </div>
         <div className="project-edit-field">
           <Label htmlFor="project-edit-prompt">项目提示词</Label>
           <Textarea ref={promptRef} id="project-edit-prompt" rows={2} className="project-edit-prompt" maxLength={MAX_CUSTOM_PROMPT_LENGTH} value={draftPrompt} placeholder="为此项目添加的固定提示词，会随此项目的每次对话一起发送。" disabled={isBusy} onChange={event => setDraftPrompt(event.target.value)} />
+          <p className="hint">修改从下一轮对话生效。</p>
         </div>
       </div>
       <div className="project-edit-actions">

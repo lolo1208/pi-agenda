@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId } from 'react'
 import { Check, ChevronDown, ChevronRight, ChevronUp, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { AgentSnapshot } from '../../../../shared/models'
@@ -7,30 +7,39 @@ import { FileContextMenu } from './FileContextMenu'
 import { baseName, fileIcon } from './DiffView'
 import { PROJECT_FILES_RESTORED, type RoundFileState } from '../../hooks/useRoundFileState'
 import type { RoundChangesData } from '../../hooks/useRoundChanges'
+import { useTranscriptOverlay, useTranscriptState } from './TranscriptState'
+import { TranscriptPagedList } from './TranscriptPagedList'
 
 export function RoundChanges({ round, disabled, data, onRetry, fileState = data?.fileState ?? 'checking' }: { round: AgentSnapshot; disabled?: boolean; data?: RoundChangesData; onRetry?: () => void; fileState?: RoundFileState }): React.JSX.Element | null {
   const files = data?.files
-  const [expanded, setExpanded] = useState(false)
-  const [review, setReview] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  const [notice, setNotice] = useState('')
-  const [restored, setRestored] = useState(false)
-  const lock = useRef(false)
+  const [expanded, setExpanded] = useTranscriptState('files-expanded', false)
+  const [busy, setBusy] = useTranscriptState('restore-busy', false)
+  const [error, setError] = useTranscriptState('restore-error', '')
+  const [notice, setNotice] = useTranscriptState('restore-notice', '')
+  const [restoredState, setRestored] = useTranscriptState('restored', { fileState, disabled, value: false })
+  const restored = restoredState.fileState === fileState && restoredState.disabled === disabled && restoredState.value
+  const [lock] = useTranscriptState('restore-lock', () => ({ current: false }))
+  const { showOverlay, overlay } = useTranscriptOverlay()
+  const setReview = (selectedPath: string): void => {
+    if (files) showOverlay(close => <RoundDiffDialog round={round} files={files} selectedPath={selectedPath} onClose={close} />)
+  }
   const listId = useId()
-  useEffect(() => { setRestored(false) }, [fileState, disabled])
+  useEffect(() => {
+    if (restoredState.fileState !== fileState || restoredState.disabled !== disabled) setRestored({ fileState, disabled, value: false })
+  }, [fileState, disabled, restoredState, setRestored])
   const toggle = async (): Promise<void> => {
     if (lock.current || disabled) return
     lock.current = true; setBusy(true); setError(''); setNotice('')
     try {
       await window.piAgenda.restoreCheckpoint(round.after.hash, round.project)
-      setRestored(true)
+      setRestored({ fileState, disabled, value: true })
       setNotice('项目文件已还原到此轮结果')
       window.dispatchEvent(new CustomEvent(PROJECT_FILES_RESTORED, { detail: round.project }))
     } catch (e) { setError(e instanceof Error ? e.message : '文件恢复失败，请重试') }
     finally { lock.current = false; setBusy(false) }
   }
-  if (files?.length === 0) return null
+  // 未知是否有改动时不挂载占位卡片，空轮次读完后无需再移除整块内容。
+  if (files?.length === 0 || !files && data?.status !== 'error') return null
   const additions = files?.reduce((sum, file) => sum + file.additions, 0) ?? 0
   const deletions = files?.reduce((sum, file) => sum + file.deletions, 0) ?? 0
   const hidden = files ? files.length - 3 : 0
@@ -49,10 +58,10 @@ export function RoundChanges({ round, disabled, data, onRetry, fileState = data?
             : <span className="round-changes-current" role="status">正在检查文件状态…</span>}
       </div>}
     </header>
-    {files && <div id={listId} className="round-changes-list">{(expanded ? files : files.slice(0, 3)).map(file => <FileContextMenu key={file.path} project={round.project} path={file.path}><button type="button" className="round-changes-file" onClick={() => setReview(file.path)} title={file.path}>{fileIcon(file.path)}<span className="tool-approval-file-meta"><strong title={baseName(file.path)}>{baseName(file.path)}</strong><small title={file.path}>{file.path}</small></span><span className="tool-approval-diffstat">{file.binary ? '二进制' : <><em>+{file.additions}</em>{file.deletions > 0 && <em className="is-del">-{file.deletions}</em>}</>}</span></button></FileContextMenu>)}</div>}
+    {files && <div id={listId} className="round-changes-list"><TranscriptPagedList items={expanded ? files : files.slice(0, 3)} label="本轮文件">{page => page.map(file => <FileContextMenu key={file.path} project={round.project} path={file.path}><button type="button" className="round-changes-file" onClick={() => setReview(file.path)} title={file.path}>{fileIcon(file.path)}<span className="tool-approval-file-meta"><strong title={baseName(file.path)}>{baseName(file.path)}</strong><small title={file.path}>{file.path}</small></span><span className="tool-approval-diffstat">{file.binary ? '二进制' : <><em>+{file.additions}</em>{file.deletions > 0 && <em className="is-del">-{file.deletions}</em>}</>}</span></button></FileContextMenu>)}</TranscriptPagedList></div>}
     {files && files.length > 3 && <Button className="round-changes-more" variant="ghost" aria-controls={listId} aria-expanded={expanded} aria-label={expanded ? '收起' : `更多（${hidden} 个文件）`} onClick={() => setExpanded(value => !value)}>{expanded ? <>收起 <ChevronUp size={14} aria-hidden="true" /></> : <>再显示 {hidden} 个文件 <ChevronDown size={14} aria-hidden="true" /></>}</Button>}
     {(error || data?.error) && <div className="round-changes-error" role="alert">{error || data?.error}{!files && onRetry && <Button variant="ghost" onClick={onRetry}>重试</Button>}</div>}
     {notice && <div className="round-changes-notice" role="status">{notice}</div>}
-    {review !== null && files && <RoundDiffDialog round={round} files={files} selectedPath={review} onClose={() => setReview(null)} />}
+    {overlay}
   </section>
 }

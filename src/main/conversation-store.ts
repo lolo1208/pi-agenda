@@ -3,6 +3,7 @@ import path from 'node:path'
 import type { ConversationState } from '../shared/conversations'
 import { ATTACHMENT_DATA_URL } from '../shared/attachments'
 import { MAX_CUSTOM_PROMPT_LENGTH, PERMISSION_MODES, type PermissionMode } from '../shared/models'
+import { validSkillIds } from '../shared/skills'
 
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('会话文件格式无效')
@@ -22,6 +23,7 @@ function parseState(value: unknown): ConversationState {
   const ids = new Set<string>()
   for (const value of state.tasks) {
     const task = record(value)
+    if (!validSkillIds(task.draftSkillIds)) throw new Error('会话草稿技能格式无效')
     if (task.titleEdited !== undefined && typeof task.titleEdited !== 'boolean') throw new Error('会话名称状态无效')
     if (task.prompt !== undefined && (typeof task.prompt !== 'string' || task.prompt.length > MAX_CUSTOM_PROMPT_LENGTH)) throw new Error('会话提示词无效')
     if (task.unreadCompletion !== undefined && typeof task.unreadCompletion !== 'boolean') throw new Error('会话未读状态无效')
@@ -30,10 +32,16 @@ function parseState(value: unknown): ConversationState {
       const queueIds = new Set<string>()
       if (!Array.isArray(task.queuedMessages) || !task.queuedMessages.every(value => {
         const item = record(value)
+        if (!validSkillIds(item.skillIds)) return false
         if (typeof item.id !== 'string' || !item.id || queueIds.has(item.id) || item.role !== 'user' || typeof item.content !== 'string' || !images(item.images)) return false
         queueIds.add(item.id)
         return true
       })) throw new Error('会话队列消息格式无效')
+    }
+    if (task.queueEdit !== undefined) {
+      const edit = record(task.queueEdit), draft = record(edit.draft)
+      if (typeof edit.id !== 'string' || !Array.isArray(task.queuedMessages) || !task.queuedMessages.some(item => record(item).id === edit.id)
+        || typeof edit.paused !== 'boolean' || typeof draft.prompt !== 'string' || !Array.isArray(draft.images) || !images(draft.images) || !Array.isArray(draft.skillIds) || !validSkillIds(draft.skillIds)) throw new Error('会话队列编辑状态无效')
     }
     if (task.permissionMode !== undefined && !PERMISSION_MODES.includes(task.permissionMode as PermissionMode)) throw new Error('会话权限模式无效')
     if (task.intentMode !== undefined && !['plan', 'execute'].includes(String(task.intentMode))) throw new Error('会话目的模式无效')
@@ -45,6 +53,7 @@ function parseState(value: unknown): ConversationState {
     }
     if (task.messages !== undefined && (!Array.isArray(task.messages) || !task.messages.every(value => {
       const message = record(value)
+      if (!validSkillIds(message.skillIds)) return false
       return (message.role === 'user' || message.role === 'assistant') && typeof message.content === 'string' && images(message.images)
     }))) throw new Error('会话消息格式无效')
   }

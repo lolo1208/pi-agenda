@@ -1,6 +1,8 @@
 import { clipboard, dialog, ipcMain, shell, type BrowserWindow } from 'electron'
 import path from 'node:path'
+import { writeFile } from 'node:fs/promises'
 import { ConversationStore } from './conversation-store'
+import { defaultConversationPermission } from '../shared/conversations'
 import { fileURLToPath } from 'node:url'
 import { IPC_CHANNELS } from '../shared/api'
 import { ShadowGitManager } from './snapshot/shadow-git-manager'
@@ -11,6 +13,8 @@ import { ModelError } from './models/model-validation'
 import type { SandboxService } from './models/sandbox-service'
 import { performFileAction } from './file-actions'
 import type { FileAction } from '../shared/api'
+import { SkillStore } from './skill-store'
+import { readCodePreview } from './code-preview'
 
 interface IpcHandlerDependencies {
   getMainWindow: () => BrowserWindow | null
@@ -46,6 +50,7 @@ function parseString(value: unknown): string {
 }
 
 export function registerIpcHandlers(dependencies: IpcHandlerDependencies): void {
+  const skills = new SkillStore(path.join(dependencies.dataDirectory, 'skills'))
   const chatgpt = (): ChatgptService => {
     const service = dependencies.getChatgptService?.()
     if (!service) throw new Error('ChatGPT 订阅服务尚未初始化')
@@ -82,7 +87,43 @@ export function registerIpcHandlers(dependencies: IpcHandlerDependencies): void 
   }
 
   handle(IPC_CHANNELS.conversationsLoad, () => loadPermissions())
+  handle(IPC_CHANNELS.skillsList, () => modelResult(() => skills.list()))
+  handle(IPC_CHANNELS.skillsEnable, (id, enabled) => modelResult(() => skills.setEnabled(id, enabled)))
+  handle(IPC_CHANNELS.skillsDelete, id => modelResult(() => skills.remove(id)))
+  handle(IPC_CHANNELS.skillsExport, id => modelResult(async () => {
+    const window = dependencies.getMainWindow()
+    if (!window) throw new ModelError('应用窗口尚未准备就绪')
+    const { name, archive } = await skills.exportZip(id)
+    // 保留技能名称，仅替换操作系统不允许出现在文件名中的字符。
+    let filename = name.replace(/[\x00-\x1f<>:"/\\|?*]/g, '_').replace(/[. ]+$/, '') || '技能'
+    if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(filename)) filename = `_${filename}`
+    const result = await dialog.showSaveDialog(window, {
+      title: '导出技能 ZIP 压缩包', defaultPath: `${filename}.zip`,
+      filters: [{ name: '技能 ZIP 压缩包', extensions: ['zip'] }]
+    })
+    if (result.canceled || !result.filePath) return null
+    const file = /\.zip$/i.test(result.filePath) ? result.filePath : `${result.filePath}.zip`
+    try { await writeFile(file, archive) }
+    catch { throw new ModelError('技能导出失败，请检查保存位置的访问权限和剩余空间后重试') }
+    return file
+  }))
+  handle(IPC_CHANNELS.skillsRefresh, () => modelResult(() => skills.refresh()))
+  handle(IPC_CHANNELS.skillsDirectory, () => modelResult(() => skills.rootDirectory()))
+  handle(IPC_CHANNELS.skillsOpenDirectory, () => modelResult(async () => {
+    const error = await shell.openPath(await skills.rootDirectory())
+    if (error) throw new ModelError('无法打开技能根目录，请检查目录访问权限后重试')
+  }))
+  handle(IPC_CHANNELS.skillsInstall, (source = 'zip') => modelResult(async () => {
+    if (source !== 'zip' && source !== 'directory') throw new ModelError('技能安装来源无效')
+    const window = dependencies.getMainWindow()
+    if (!window) throw new ModelError('应用窗口尚未准备就绪')
+    const result = await dialog.showOpenDialog(window, source === 'zip'
+      ? { title: '选择技能 ZIP 压缩包', properties: ['openFile'], filters: [{ name: '技能 ZIP 压缩包', extensions: ['zip'] }] }
+      : { title: '选择包含 SKILL.md 的技能目录', properties: ['openDirectory'] })
+    return result.canceled ? null : source === 'zip' ? skills.installZip(result.filePaths[0]) : skills.install(result.filePaths[0])
+  }))
   handle(IPC_CHANNELS.fileAction, (project, file, action) => performFileAction(parseString(project), parseString(file), parseString(action) as FileAction))
+  handle(IPC_CHANNELS.codePreview, (project, file, ranges) => readCodePreview(parseString(project), parseString(file), ranges))
   const sandbox = (): SandboxService => {
     const service = dependencies.getSandboxService?.()
     if (!service) throw new ModelError('安全执行环境尚未初始化')
@@ -103,7 +144,7 @@ export function registerIpcHandlers(dependencies: IpcHandlerDependencies): void 
     const conversationId = parseString(id)
     loadPermissions()
     const service = dependencies.getModelService()
-    if (service.isBusy()) throw new ModelError('请先停止当前任务，再切换权限')
+    if (service.isBusy(conversationId)) throw new ModelError('请先停止当前任务，再切换权限')
     if (mode === 'full' && service.permission(conversationId) !== 'full') {
       if (!await service.confirmFullPermission(conversationId)) return service.permission(conversationId)
     }
@@ -119,10 +160,28 @@ export function registerIpcHandlers(dependencies: IpcHandlerDependencies): void 
   handle(IPC_CHANNELS.toolApprovalPreview, (requestId, conversationId, approvalId) => modelResult(() => dependencies.getModelService().approvalPreview(requestId, conversationId, approvalId)))
   handle(IPC_CHANNELS.conversationsSave, async state => {
     const previous = loadPermissions()
-    // 权限只能通过独立的设置入口改变，普通会话保存不能提升执行权限。
+    // 已有会话权限只能通过独立入口改变；新会话只按已保存的同项目会话推导初始权限。
     const value = state as import('../shared/conversations').ConversationState
     if (!value || !Array.isArray(value.tasks)) throw new Error('会话文件格式无效')
-    conversations.save({ ...value, tasks: value.tasks.map(task => ({ ...task, permissionMode: dependencies.getModelService().permission(task.id) })) })
+    const service = dependencies.getModelService()
+    const existingIds = new Set(previous.tasks.map(task => task.id))
+    for (const task of previous.tasks) {
+      const next = value.tasks.find(item => item.id === task.id)
+      if (service.isBusy(task.id) && (!next || next.project !== task.project)) throw new ModelError('请先停止当前会话，再删除或修改其项目目录')
+    }
+    const trustedTasks = previous.tasks.map(task => ({ ...task, permissionMode: service.permission(task.id) }))
+    const tasks = value.tasks.map(task => ({ ...task, permissionMode: existingIds.has(task.id) ? service.permission(task.id) : defaultConversationPermission(task.project, trustedTasks) }))
+    const initialized: string[] = []
+    try {
+      for (const task of tasks) if (!existingIds.has(task.id)) {
+        service.initializePermission(task.id, task.permissionMode as 'default' | 'auto')
+        initialized.push(task.id)
+      }
+      conversations.save({ ...value, tasks })
+    } catch (error) {
+      for (const id of initialized) service.initializePermission(id, 'default')
+      throw error
+    }
     const remaining = new Set((state as import('../shared/conversations').ConversationState).tasks.map(task => task.id))
     for (const task of previous.tasks) if (!remaining.has(task.id)) await dependencies.getModelService().removeHistory(task.id)
   })
@@ -162,6 +221,7 @@ export function registerIpcHandlers(dependencies: IpcHandlerDependencies): void 
   handle(IPC_CHANNELS.projectRemove, async value => {
     const root = parseString(value)
     if (!path.isAbsolute(root)) throw new Error('项目路径必须是绝对路径')
+    if (dependencies.getModelService().isBusy()) throw new ModelError('请先停止代理任务，再移除项目')
     const canonicalRoot = await ShadowGitManager.removeProjectStorage(root, dependencies.dataDirectory)
     if (dependencies.getSnapshotManager()?.getRoot() === canonicalRoot) dependencies.setSnapshotManager(undefined)
   })
@@ -234,6 +294,8 @@ export function registerIpcHandlers(dependencies: IpcHandlerDependencies): void 
   handle(IPC_CHANNELS.agentHistory, id => modelResult(() => dependencies.getModelService().history(id)))
   handle(IPC_CHANNELS.modelCancel, requestId => modelResult(() => dependencies.getModelService().cancel(requestId)))
   handle(IPC_CHANNELS.ollamaConnect, baseUrl => modelResult(() => dependencies.getModelService().connectOllama(baseUrl)))
+  handle(IPC_CHANNELS.openrouterConnect, apiKey => modelResult(() => dependencies.getModelService().connectOpenrouter(apiKey)))
+  handle(IPC_CHANNELS.openrouterUsage, () => modelResult(() => dependencies.getModelService().openrouterUsage()))
   handle(IPC_CHANNELS.ollamaInfo, (baseUrl, model) => modelResult(() => dependencies.getModelService().getOllamaModelInfo(baseUrl, model)))
   handle(IPC_CHANNELS.windowMinimize, () => { dependencies.getMainWindow()?.minimize() })
   handle(IPC_CHANNELS.windowToggleMaximize, () => {

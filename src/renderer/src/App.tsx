@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button'
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 
-import { FolderOpen, PanelRightOpen, PlusCircle } from 'lucide-react'
+import { FolderOpen, MessageCirclePlus, PanelRightOpen } from 'lucide-react'
 import type { ModelSettings } from '../../shared/models'
 import ModelChat from './ModelChat'
 import { sameSandboxProject } from './lib/sandbox-state'
@@ -22,9 +22,9 @@ import './styles.css'
 export default function App(): React.JSX.Element {
   const workspace = useProjectWorkspace()
   const {
-    project, savedProjects, projectMeta, isBusy, error, setError, projectPickerOpen, setProjectPickerOpen,
-    pendingProjectRemoval, setPendingProjectRemoval, busyTasks, setBusyTasks, tasks, setTasks,
-    currentTask, query, setQuery, collapsedProjects, setCollapsedProjects, searchOpen, setSearchOpen,
+    project, readyProjects, savedProjects, projectMeta, isBusy, error, setError, projectPickerOpen, setProjectPickerOpen,
+    pendingProjectRemoval, setPendingProjectRemoval, busyTasks, setBusyTasks, pendingProjectDirectories, tasks, setTasks,
+    currentTask, composerFocusTaskId, setComposerFocusTaskId, query, setQuery, collapsedProjects, setCollapsedProjects, searchOpen, setSearchOpen,
     projectSnapshot, isChatBusy, updateProjectSnapshot, runAction, createProjectTask,
     chooseExistingProject, saveProjectEdit, selectTask, removeTask, removeProject, captureCheckpoint, rollbackCheckpoint,
   } = workspace
@@ -36,6 +36,27 @@ export default function App(): React.JSX.Element {
   const [settingsError, setSettingsError] = useState('')
   const [waitingTaskIds, setWaitingTaskIds] = useState<string[]>([])
   const [settingsSection, setSettingsSection] = useState<string | null>(null)
+  // 历史会话在首次打开时恢复；已打开的会话保留状态，后台运行和排队不受切换影响。
+  const [openedTaskIds, setOpenedTaskIds] = useState<Set<string>>(() => new Set())
+  useEffect(() => {
+    setOpenedTaskIds(previous => {
+      const existing = new Set(tasks.map(task => task.id))
+      const next = new Set([...previous].filter(id => existing.has(id)))
+      if (currentTask) next.add(currentTask.id)
+      return next.size === previous.size && [...next].every(id => previous.has(id)) ? previous : next
+    })
+  }, [tasks, currentTask?.id])
+  const mountedTasks = tasks.filter(task => task.id === currentTask?.id || openedTaskIds.has(task.id) || task.queuedMessages?.length || busyTasks.includes(task.id))
+  const conversationRef = useRef<HTMLElement>(null)
+  useEffect(() => {
+    if (!composerFocusTaskId || currentTask?.id !== composerFocusTaskId || isBusy || projectPickerOpen || settingsSection !== null) return
+    // 等待弹窗卸载并恢复焦点后，再聚焦新会话的输入框。
+    const timer = window.setTimeout(() => {
+      conversationRef.current?.querySelector<HTMLTextAreaElement>('.task-chat:not([hidden]) .composer textarea')?.focus({ preventScroll: true })
+      setComposerFocusTaskId(null)
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [composerFocusTaskId, currentTask?.id, isBusy, projectPickerOpen, settingsSection, setComposerFocusTaskId])
   useEffect(() => {
     const markViewed = (): void => {
       if (!currentTask || settingsSection !== null || document.hidden) return
@@ -73,18 +94,25 @@ export default function App(): React.JSX.Element {
   }
   const activeProfile = settings?.profiles.find(item => item.id === settings.activeProfileId)
   // 最近交流的对话先分组，同时让其所属项目排在列表顶部。
-  const filtered = [...tasks].sort((left, right) => (right.updatedAt ?? 0) - (left.updatedAt ?? 0))
-    .filter(item => `${item.title} ${item.preview} ${item.project ?? ''}`.toLowerCase().includes(query.trim().toLowerCase()))
-  const knownProjects = [...new Set([...savedProjects, ...tasks.map(item => item.project).filter((root): root is string => Boolean(root))])]
-  const groupedTasks = new Map<string, Task[]>()
-  for (const task of filtered) {
-    const group = task.project ?? UNLINKED_PROJECT_LABEL
-    groupedTasks.set(group, [...(groupedTasks.get(group) ?? []), task])
-  }
-  if (!query.trim()) for (const root of knownProjects) if (!groupedTasks.has(root)) groupedTasks.set(root, [])
+  const filtered = useMemo(() => {
+    const search = query.trim().toLowerCase()
+    return tasks.filter(item => `${item.title} ${item.preview} ${item.project ?? ''}`.toLowerCase().includes(search))
+      .sort((left, right) => (right.updatedAt ?? 0) - (left.updatedAt ?? 0))
+  }, [tasks, query])
+  const knownProjects = useMemo(() => [...new Set([...savedProjects, ...tasks.map(item => item.project).filter((root): root is string => Boolean(root))])], [tasks, savedProjects])
+  const groupedTasks = useMemo(() => {
+    const groups = new Map<string, Task[]>()
+    for (const task of filtered) {
+      const root = task.project ?? UNLINKED_PROJECT_LABEL
+      const group = groups.get(root)
+      if (group) group.push(task)
+      else groups.set(root, [task])
+    }
+    if (!query.trim()) for (const root of knownProjects) if (!groups.has(root)) groups.set(root, [])
+    return groups
+  }, [filtered, knownProjects, query])
   const projectNameFor = (root: string): string => projectMeta[root]?.name?.trim() || defaultProjectName(root)
-  const projectNames = new Map<string, string>()
-  for (const root of groupedTasks.keys()) projectNames.set(root, projectNameFor(root))
+  const projectNames = useMemo(() => new Map(knownProjects.map(root => [root, projectMeta[root]?.name?.trim() || defaultProjectName(root)])), [knownProjects, projectMeta])
   const [projectEditTarget, setProjectEditTarget] = useState<string | null>(null)
   const [conversationEditId, setConversationEditId] = useState<string | null>(null)
   const conversationEditTarget = tasks.find(task => task.id === conversationEditId)
@@ -126,17 +154,17 @@ export default function App(): React.JSX.Element {
         onCreateProjectTask={chooseExistingProject}
         onOpenSettings={() => setSettingsSection('general')}
       />
-      <main className="conversation">
+      <main className="conversation" ref={conversationRef}>
         <header className="conversation-header"><Button className="icon-button" aria-label={toolsOpen ? '收起工具栏' : '展开工具栏'} aria-expanded={toolsOpen} onClick={() => setToolsOpen(value => !value)}><PanelRightOpen size={18} /></Button></header>
-        {!currentTask && <section className="no-task-state"><FolderOpen size={30} /><h1>从一个项目开始</h1><p>为新对话选择已有项目，或添加一个新的目录。</p><Button className="project-new-button" onClick={() => setProjectPickerOpen(true)}><PlusCircle size={17} />新建对话</Button></section>}
-        {tasks.map(task => <div className="task-chat" key={task.id} hidden={task.id !== currentTask?.id}><ModelChat snapshots={task.agentSnapshots} active={task.id === currentTask?.id && settingsSection === null} projectReady={!isBusy && Boolean(project && task.project && sameSandboxProject(project, task.project))} conversationId={task.id} initialIntentMode={task.intentMode} onIntentChange={intentMode => setTasks(items => items.map(item => item.id === task.id ? { ...item, intentMode } : item))} initialPermissionMode={task.permissionMode} onPermissionChange={permissionMode => setTasks(items => items.map(item => item.id === task.id ? { ...item, permissionMode } : item))} compressionThreshold={preferences.compressionThreshold} initialCompaction={task.compaction} onCompactionChange={compaction => setTasks(items => items.map(item => item.id === task.id ? { ...item, compaction } : item))} initialModelId={task.modelId} onModelChange={modelId => setTasks(items => items.map(item => item.id === task.id && item.modelId !== modelId ? { ...item, modelId } : item))} customPrompt={composeCustomPrompt(task.prompt, task.project ? projectMeta[task.project]?.prompt : undefined, preferences.customPrompt)} project={task.project} providers={settings?.providers} initialMessages={task.messages} initialDraft={task.draft} initialDraftImages={task.draftImages} initialQueue={task.queuedMessages} initialQueuePaused={task.queuePaused} onQueueChange={(queuedMessages, queuePaused) => setTasks(items => items.map(item => item.id === task.id && (item.queuedMessages !== queuedMessages || item.queuePaused !== queuePaused) ? { ...item, queuedMessages, queuePaused } : item))} onDraftChange={(draft, draftImages) => setTasks(items => items.map(item => item.id === task.id && (item.draft !== draft || item.draftImages !== draftImages) ? { ...item, draft, draftImages } : item))} profile={activeProfile} profiles={settings?.profiles} onModelSettingsChange={setSettings} onWaitingForInputChange={waiting => {
+        {!currentTask && <section className="no-task-state"><FolderOpen size={30} /><h1>从一个项目开始</h1><p>为新对话选择已有项目，或添加一个新的目录。</p><Button className="project-new-button conversation-action-button" onClick={() => setProjectPickerOpen(true)}><MessageCirclePlus size={17} aria-hidden="true" />新建对话</Button></section>}
+        {mountedTasks.map(task => <div className="task-chat" key={task.id} hidden={task.id !== currentTask?.id}><ModelChat snapshots={task.agentSnapshots} active={task.id === currentTask?.id && settingsSection === null} projectReady={!pendingProjectDirectories[task.project ?? ''] && Boolean(task.project && [...readyProjects].some(root => sameSandboxProject(root, task.project!)))} projectCurrent={!isBusy && Boolean(project && task.project && sameSandboxProject(project, task.project))} conversationId={task.id} initialIntentMode={task.intentMode} onIntentChange={intentMode => setTasks(items => items.map(item => item.id === task.id ? { ...item, intentMode } : item))} initialPermissionMode={task.permissionMode} onPermissionChange={permissionMode => setTasks(items => items.map(item => item.id === task.id ? { ...item, permissionMode } : item))} compressionThreshold={preferences.compressionThreshold} initialCompaction={task.compaction} onCompactionChange={compaction => setTasks(items => items.map(item => item.id === task.id ? { ...item, compaction } : item))} initialModelId={task.modelId} onModelChange={modelId => setTasks(items => items.map(item => item.id === task.id && item.modelId !== modelId ? { ...item, modelId } : item))} customPrompt={composeCustomPrompt(task.prompt, task.project ? projectMeta[task.project]?.prompt : undefined, preferences.customPrompt)} project={task.project} providers={settings?.providers} initialMessages={task.messages} initialDraft={task.draft} initialDraftImages={task.draftImages} initialDraftSkillIds={task.draftSkillIds} initialQueue={task.queuedMessages} initialQueuePaused={task.queuePaused} initialQueueEdit={task.queueEdit} onQueueChange={(queuedMessages, queuePaused, queueEdit) => setTasks(items => items.map(item => item.id === task.id && (item.queuedMessages !== queuedMessages || item.queuePaused !== queuePaused || item.queueEdit !== queueEdit) ? { ...item, queuedMessages, queuePaused, queueEdit } : item))} onDraftChange={(draft, draftImages, draftSkillIds) => setTasks(items => items.map(item => item.id === task.id && (item.draft !== draft || item.draftImages !== draftImages || item.draftSkillIds !== draftSkillIds) ? { ...item, draft, draftImages, draftSkillIds } : item))} profile={activeProfile} profiles={settings?.profiles} onModelSettingsChange={setSettings} onWaitingForInputChange={waiting => {
           setWaitingTaskIds(items => waiting ? items.includes(task.id) ? items : [...items, task.id] : items.includes(task.id) ? items.filter(id => id !== task.id) : items)
           if (waiting) setCollapsedProjects(items => items.filter(root => root !== (task.project ?? UNLINKED_PROJECT_LABEL)))
         }} onReplyComplete={() => {
           const unreadCompletion = task.id !== currentTask?.id || settingsSection !== null || document.hidden
           setTasks(items => items.map(item => item.id === task.id ? { ...item, unreadCompletion } : item))
           setCollapsedProjects(items => items.filter(root => root !== (task.project ?? UNLINKED_PROJECT_LABEL)))
-        }} onBusyChange={busy => { setBusyTasks(items => busy ? [...items.filter(id => id !== task.id), task.id] : items.filter(id => id !== task.id)); if (busy) setTasks(items => items.map(item => item.id === task.id ? { ...item, updatedAt: Date.now() } : item)) }} onOpenSettings={() => setSettingsSection('models')} settingsDisabled={isChatBusy && !busyTasks.includes(task.id)} sendWithCtrlEnter={preferences.sendWithCtrlEnter} onMessagesChange={(messages, restored) => setTasks(items => items.map(item => item.id === task.id ? { ...item, messages, updatedAt: restored ? item.updatedAt : Date.now(), title: item.titleEdited ? item.title : messages.find(message => message.role === 'user')?.content.slice(0, 36) || (messages.some(message => message.images?.length) ? '附件对话' : '新建对话'), preview: messages.at(-1)?.content.slice(0, 90) ?? '开始一段新的对话' } : item))} /></div>)}
+        }} onBusyChange={busy => { setBusyTasks(items => busy ? [...items.filter(id => id !== task.id), task.id] : items.filter(id => id !== task.id)); if (busy) setTasks(items => items.map(item => item.id === task.id ? { ...item, updatedAt: Date.now() } : item)) }} onOpenSettings={section => setSettingsSection(section ?? 'models')} sendWithCtrlEnter={preferences.sendWithCtrlEnter} onMessagesChange={(messages, restored) => setTasks(items => items.map(item => item.id === task.id ? { ...item, messages, updatedAt: restored ? item.updatedAt : Date.now(), title: item.titleEdited ? item.title : messages.find(message => message.role === 'user')?.content.slice(0, 36) || (messages.some(message => message.images?.length) ? '附件对话' : '新建对话'), preview: messages.at(-1)?.content.slice(0, 90) ?? '开始一段新的对话' } : item))} /></div>)}
         {error && <p role="alert" className="error">{error}</p>}
         {settingsError && <p role="alert" className="error">{settingsError}<Button onClick={loadSettings}>重新读取设置</Button></p>}
 
@@ -179,7 +207,7 @@ export default function App(): React.JSX.Element {
     {projectEditTarget && <ProjectEditDialog
       root={projectEditTarget}
       name={projectMeta[projectEditTarget]?.name ?? ''}
-      directory={projectEditTarget}
+      directory={pendingProjectDirectories[projectEditTarget] ?? projectEditTarget}
       prompt={projectMeta[projectEditTarget]?.prompt ?? ''}
       isBusy={isBusy}
       error={error}

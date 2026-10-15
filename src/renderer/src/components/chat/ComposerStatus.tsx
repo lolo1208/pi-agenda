@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import type { ChatAttachment, ChatMessage, ModelProfileView, ModelRateLimit, ModelReply, ModelUsage } from '../../../../shared/models'
 import { attachmentKind, attachmentText } from '../../../../shared/attachments'
 import { SubscriptionLimits } from './SubscriptionLimits'
+import { OpenrouterLimits } from './OpenrouterLimits'
 
 interface Props {
   project?: string | null
@@ -18,6 +19,7 @@ interface Props {
   latestReply?: ModelReply
   rateLimits?: ModelRateLimit[]
   subscriptionUsage?: import('../../../../shared/models').ChatgptUsage
+  openrouterUsage?: import('../../../../shared/models').OpenrouterUsage
   onOpenProject(): void
 }
 
@@ -31,7 +33,7 @@ const number = (value: number): string => value.toLocaleString('en-US')
 
 const attachmentTokens = (files: ChatAttachment[] = []): number => files.reduce((total, file) => total + (attachmentKind(file) === 'text' ? estimateTextTokens(`附件：${file.name}\n${attachmentText(file)}`) : 0), 0)
 
-export function ComposerStatus({ project, profile, contextLimit, messages, prompt, imageCount, attachments, usage, latestReply, rateLimits, subscriptionUsage, compressionThreshold = 90, onOpenProject }: Props): React.JSX.Element {
+export function ComposerStatus({ project, profile, contextLimit, messages, prompt, imageCount, attachments, usage, latestReply, rateLimits, subscriptionUsage, openrouterUsage, compressionThreshold = 90, onOpenProject }: Props): React.JSX.Element {
   const used = (usage ? usage.inputTokens + usage.outputTokens : messages.reduce((total, message) => total + estimateTextTokens(message.content) + attachmentTokens(message.images) + 4, 0))
     + (prompt ? estimateTextTokens(prompt) + 4 : 0)
     + attachmentTokens(attachments)
@@ -47,6 +49,7 @@ export function ComposerStatus({ project, profile, contextLimit, messages, promp
         : <span className="composer-project"><Monitor size={13} aria-hidden="true" /><span>未关联项目</span></span>}
       <div className="composer-status-details">
         {profile?.provider === 'chatgpt' && <SubscriptionLimits usage={subscriptionUsage} latestReply={latestReply} />}
+        {profile?.provider === 'openrouter' && <OpenrouterLimits model={profile.model} usage={openrouterUsage} latestReply={latestReply} />}
         {profile?.provider === 'openai' && <Tooltip.Root>
           <Tooltip.Trigger asChild><Button type="button" variant="ghost" className="composer-limits" aria-label="当前模型使用限制">
             {rateLimits?.length ? rateLimits.map(item => <span key={item.kind}>{item.kind === 'requests' ? '请求' : 'Token'} 剩余 {Math.round(item.remaining / item.limit * 100)}%</span>) : '使用限制：暂未提供'}

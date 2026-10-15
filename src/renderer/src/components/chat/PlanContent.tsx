@@ -1,5 +1,7 @@
 import { Fragment, createElement, type ReactNode } from 'react'
 import { Lexer, type Token, type Tokens } from 'marked'
+import type { CodeReference } from '../../../../shared/code-preview'
+import { SyntaxCode } from './SyntaxCode'
 
 export interface PlanSection { id: string; text: string }
 export function parsePlan(content: string): { tokens: Token[]; sections: PlanSection[] } {
@@ -18,11 +20,15 @@ function safeHref(href: string): string | undefined {
 }
 
 /** 用 React 元素呈现解析结果，模型正文中的 HTML 不作为可执行内容注入页面。 */
-function renderTokens(tokens: Token[], prefix = 'plan'): ReactNode {
+function renderTokens(tokens: Token[], prefix = 'plan', onCodeReference?: (reference: CodeReference) => void): ReactNode {
   return tokens.map((token, index) => {
     const key = `${prefix}-${index}`
-    const children = 'tokens' in token && token.tokens ? renderTokens(token.tokens, key) : 'text' in token ? String(token.text ?? '') : ''
+    const children = 'tokens' in token && token.tokens ? renderTokens(token.tokens, key, token.type === 'link' ? undefined : onCodeReference) : 'text' in token ? String(token.text ?? '') : ''
     switch (token.type) {
+      case 'codeReference': {
+        const reference = token.reference as CodeReference
+        return onCodeReference ? <button key={key} type="button" className="code-reference" onClick={() => onCodeReference(reference)} title="查看代码及前后 10 行"><code>{reference.path}</code><span>{String(token.label)}</span></button> : <Fragment key={key}>{token.raw}</Fragment>
+      }
       case 'space': case 'def': return null
       case 'heading': return createElement(`h${(token as Tokens.Heading).depth}`, { key, id: `${prefix}-section-${index}` }, children)
       case 'paragraph': return <p key={key}>{children}</p>
@@ -30,8 +36,8 @@ function renderTokens(tokens: Token[], prefix = 'plan'): ReactNode {
       case 'strong': return <strong key={key}>{children}</strong>
       case 'em': return <em key={key}>{children}</em>
       case 'del': return <del key={key}>{children}</del>
-      case 'codespan': return <code key={key}>{token.text}</code>
-      case 'code': return <pre key={key}><code>{token.text}</code></pre>
+      case 'codespan': return <SyntaxCode key={key} code={token.text} inline />
+      case 'code': return <SyntaxCode key={key} code={token.text} language={(token as Tokens.Code).lang} />
       case 'br': return <br key={key} />
       case 'hr': return <hr key={key} />
       case 'blockquote': return <blockquote key={key}>{children}</blockquote>
@@ -43,12 +49,12 @@ function renderTokens(tokens: Token[], prefix = 'plan'): ReactNode {
       case 'image': return <span key={key}>{(token as Tokens.Image).text}</span>
       case 'list': {
         const list = token as Tokens.List
-        const items = list.items.map((item, itemIndex) => <li key={itemIndex}>{item.task && <input type="checkbox" checked={!!item.checked} disabled aria-label={plainText(item.tokens)} />}{renderTokens(item.tokens, `${key}-${itemIndex}`)}</li>)
+        const items = list.items.map((item, itemIndex) => <li key={itemIndex}>{item.task && <input type="checkbox" checked={!!item.checked} disabled aria-label={plainText(item.tokens)} />}{renderTokens(item.tokens, `${key}-${itemIndex}`, onCodeReference)}</li>)
         return list.ordered ? <ol key={key} start={typeof list.start === 'number' ? list.start : undefined}>{items}</ol> : <ul key={key}>{items}</ul>
       }
       case 'table': {
         const table = token as Tokens.Table
-        return <div className="plan-table" key={key}><table><thead><tr>{table.header.map((cell, cellIndex) => <th key={cellIndex} style={{ textAlign: cell.align ?? undefined }}>{renderTokens(cell.tokens, `${key}-header-${cellIndex}`)}</th>)}</tr></thead><tbody>{table.rows.map((row, rowIndex) => <tr key={rowIndex}>{row.map((cell, cellIndex) => <td key={cellIndex} style={{ textAlign: cell.align ?? undefined }}>{renderTokens(cell.tokens, `${key}-${rowIndex}-${cellIndex}`)}</td>)}</tr>)}</tbody></table></div>
+        return <div className="plan-table" key={key}><table><thead><tr>{table.header.map((cell, cellIndex) => <th key={cellIndex} style={{ textAlign: cell.align ?? undefined }}>{renderTokens(cell.tokens, `${key}-header-${cellIndex}`, onCodeReference)}</th>)}</tr></thead><tbody>{table.rows.map((row, rowIndex) => <tr key={rowIndex}>{row.map((cell, cellIndex) => <td key={cellIndex} style={{ textAlign: cell.align ?? undefined }}>{renderTokens(cell.tokens, `${key}-${rowIndex}-${cellIndex}`, onCodeReference)}</td>)}</tr>)}</tbody></table></div>
       }
       case 'html': return <Fragment key={key}>{token.text}</Fragment>
       default: return <Fragment key={key}>{children}</Fragment>
@@ -56,6 +62,6 @@ function renderTokens(tokens: Token[], prefix = 'plan'): ReactNode {
   })
 }
 
-export function PlanContent({ tokens, className = 'plan-document', prefix = 'plan' }: { tokens: Token[]; className?: string; prefix?: string }): React.JSX.Element {
-  return <div className={className}>{renderTokens(tokens, prefix)}</div>
+export function PlanContent({ tokens, className = 'plan-document', prefix = 'plan', onCodeReference }: { tokens: Token[]; className?: string; prefix?: string; onCodeReference?: (reference: CodeReference) => void }): React.JSX.Element {
+  return <div className={className}>{renderTokens(tokens, prefix, onCodeReference)}</div>
 }

@@ -2,9 +2,10 @@ import { ModelRuntime } from '@earendil-works/pi-coding-agent'
 import { getSupportedThinkingLevels } from '@earendil-works/pi-ai'
 import type { Api, Model, AuthPrompt, CredentialStore, SimpleStreamOptions, TranscriptContext } from '@earendil-works/pi-ai'
 import { selectedModelThinking, type ChatgptAuthStatus, type ChatgptUsage, type ModelDescriptor, type ModelProfile, type ResetCredits, type SubscriptionWindow } from '../../shared/models'
+import { chatgptReferencePricing } from '../../shared/model-pricing'
 import type { ModelSettingsStore } from './model-settings-store'
 import { ModelError, requiredString } from './model-validation'
-import { safePiStream } from './pi-stream'
+import { requestPiStream } from './pi-stream'
 import type { PiAttachments } from './pi-attachments'
 import { exchangeChatgptToken, loginChatgpt } from './chatgpt-oauth'
 
@@ -187,6 +188,7 @@ export class ChatgptService {
     const descriptors: ModelDescriptor[] = this.models.map(model => {
       const values = actualThinkingLevels(model)
       return { id: model.id, maxContextTokens: model.contextWindow, capabilities: ['completion', 'tools', ...(model.reasoning ? ['thinking'] : []), ...(model.input.includes('image') ? ['vision'] : [])],
+        pricing: chatgptReferencePricing(model.id),
         thinking: { values, default: model.defaultThinkingLevel ?? (values.includes('medium') ? 'medium' : values[0]) } }
     })
     return this.settings.syncChatgpt(descriptors)
@@ -219,7 +221,7 @@ export class ChatgptService {
     }).finally(() => { this.usagePending = undefined })
   }
   invalidateUsage(): void { this.usageCache = undefined }
-  async createProvider(profile: ModelProfile, attachments: PiAttachments) {
+  async createProvider(profile: ModelProfile, attachments: PiAttachments, onModelRequestActive: (active: boolean) => void = () => {}) {
     if (!await this.credentials.read(providerId)) throw new ModelError('请先在模型供应商中授权 ChatGPT 订阅账号')
     const runtime = await this.createRuntime()
     const original = runtime.getProvider(providerId)!
@@ -240,11 +242,11 @@ export class ChatgptService {
       streamSimple: (target: Model<Api>, context: TranscriptContext, options?: SimpleStreamOptions) => {
         const controller = new AbortController()
         this.invalidateUsage()
-        return safePiStream(original.streamSimple(target, context, { ...options, transport: 'sse', maxTokens: profile.maxTokens, temperature: undefined, timeoutMs: profile.timeoutSeconds * 1000, maxRetries: 0,
+        return requestPiStream(() => original.streamSimple(target, context, { ...options, transport: 'sse', maxTokens: profile.maxTokens, temperature: undefined, timeoutMs: profile.timeoutSeconds * 1000, maxRetries: 0,
           signal: options?.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal,
           fetch: (url, init) => this.fetchRequest(url, { ...init, redirect: 'error' }),
           onPayload: async (payload, target) => attachments.replacePayload(await options?.onPayload?.(payload, target) ?? payload, profile, true)
-        }), options?.apiKey ?? '', () => controller.abort())
+        }), options?.apiKey ?? '', () => controller.abort(), onModelRequestActive)
       }
     })
     const levels = actualThinkingLevels(configured)

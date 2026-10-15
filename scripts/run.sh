@@ -45,6 +45,7 @@ while true; do
   else
     printf '\n执行失败（退出码：%s），请查看上方输出。\n' "$result" >&2
   fi
-  printf '按回车返回命令菜单：'
-  IFS= read -r _ || exit 0
+  printf '按任意键返回菜单...'
+  IFS= read -r -s -n 1 _ || exit 0
+  printf '\n'
 done

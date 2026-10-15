@@ -2,7 +2,9 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import path from 'node:path'
 import { parseThinkingControls, selectedModelThinking, type ModelDescriptor, type ModelProfile, type ModelProviderConnection, type ModelSettings } from '../../shared/models'
+import { parseModelPricing } from '../../shared/model-pricing'
 import { asRecord, ModelError, normalizeOllamaUrl, parseProfile, parseSaveProfile, profileId, requiredString } from './model-validation'
+import { OPENROUTER_BASE_URL } from '../../shared/openrouter'
 
 export interface CredentialCipher {
   isAvailable(): boolean
@@ -10,7 +12,7 @@ export interface CredentialCipher {
   decrypt(value: Buffer): string
 }
 interface StoredProfile { profile: ModelProfile; encryptedApiKey?: string }
-interface SettingsFile { version: 1; activeProfileId: string | null; profiles: StoredProfile[]; providers?: ModelProviderConnection[] }
+interface SettingsFile { version: 1; activeProfileId: string | null; profiles: StoredProfile[]; providers?: ModelProviderConnection[]; encryptedOpenrouterApiKey?: string }
 
 export class ModelSettingsStore {
   private queue: Promise<unknown> = Promise.resolve()
@@ -31,6 +33,7 @@ export class ModelSettingsStore {
     try {
       const raw = asRecord(JSON.parse(text))
       if (raw.version !== 1 || !Array.isArray(raw.profiles) || raw.profiles.length > 200) throw new Error()
+      if (raw.encryptedOpenrouterApiKey !== undefined && (typeof raw.encryptedOpenrouterApiKey !== 'string' || raw.encryptedOpenrouterApiKey.length > 32768 || !/^[A-Za-z0-9+/]+={0,2}$/.test(raw.encryptedOpenrouterApiKey))) throw new Error()
       const profiles = raw.profiles.map(value => {
         const entry = asRecord(value)
         if (entry.encryptedApiKey !== undefined && (typeof entry.encryptedApiKey !== 'string' || entry.encryptedApiKey.length > 32768 || !/^[A-Za-z0-9+/]+={0,2}$/.test(entry.encryptedApiKey))) throw new Error()
@@ -44,21 +47,27 @@ export class ModelSettingsStore {
         if (!Array.isArray(raw.providers) || raw.providers.length > 20) throw new Error()
         for (const value of raw.providers) {
           const entry = asRecord(value)
-          if (!['ollama', 'chatgpt'].includes(String(entry.provider)) || !Array.isArray(entry.models) || entry.models.length > 200) throw new Error()
+          if (!['ollama', 'chatgpt', 'openrouter'].includes(String(entry.provider)) || !Array.isArray(entry.models) || entry.models.length > (entry.provider === 'openrouter' ? 5000 : 200)) throw new Error()
           const models: ModelDescriptor[] = entry.models.map(value => {
             const model = asRecord(value)
             if (!Array.isArray(model.capabilities) || model.capabilities.some(item => typeof item !== 'string')) throw new Error()
             if (model.maxContextTokens !== null && (typeof model.maxContextTokens !== 'number' || !Number.isSafeInteger(model.maxContextTokens) || model.maxContextTokens <= 0)) throw new Error()
             return { id: requiredString(model.id, '模型名称', 200), capabilities: model.capabilities as string[], maxContextTokens: model.maxContextTokens as number | null,
+              name: typeof model.name === 'string' ? model.name.slice(0, 200) : undefined,
+              created: typeof model.created === 'number' && Number.isSafeInteger(model.created) ? model.created : undefined,
+              maxOutputTokens: typeof model.maxOutputTokens === 'number' && Number.isSafeInteger(model.maxOutputTokens) && model.maxOutputTokens > 0 ? model.maxOutputTokens : undefined,
+              supportedParameters: Array.isArray(model.supportedParameters) ? model.supportedParameters.filter((x): x is string => typeof x === 'string').slice(0, 100) : undefined,
               sizeBytes: typeof model.sizeBytes === 'number' ? model.sizeBytes : undefined, parameterSize: typeof model.parameterSize === 'string' ? model.parameterSize : undefined,
               quantization: typeof model.quantization === 'string' ? model.quantization : undefined,
+              pricing: parseModelPricing(model.pricing),
               ...(parseThinkingControls(model.thinking) ? { thinking: parseThinkingControls(model.thinking) } : {}) }
           })
           if (entry.provider === 'chatgpt' && entry.baseUrl !== 'https://chatgpt.com/backend-api') throw new Error()
-          providers.push({ provider: entry.provider as 'ollama' | 'chatgpt', baseUrl: entry.provider === 'ollama' ? normalizeOllamaUrl(entry.baseUrl) : 'https://chatgpt.com/backend-api', models })
+          if (entry.provider === 'openrouter' && entry.baseUrl !== OPENROUTER_BASE_URL) throw new Error()
+          providers.push({ provider: entry.provider as ModelProviderConnection['provider'], baseUrl: entry.provider === 'ollama' ? normalizeOllamaUrl(entry.baseUrl) : entry.provider === 'openrouter' ? OPENROUTER_BASE_URL : 'https://chatgpt.com/backend-api', models })
         }
       }
-      const settings = { version: 1 as const, profiles, activeProfileId, providers }
+      const settings: SettingsFile = { version: 1, profiles, activeProfileId, providers, encryptedOpenrouterApiKey: raw.encryptedOpenrouterApiKey as string | undefined }
       this.reconcileActive(settings)
       return settings
     } catch { throw new ModelError('模型配置损坏或版本不支持，已停止读取；请备份应用数据后检查 model-settings.json') }
@@ -76,8 +85,8 @@ export class ModelSettingsStore {
 
   private view(settings: SettingsFile): ModelSettings {
     return { activeProfileId: settings.activeProfileId, encryptionAvailable: this.cipher.isAvailable(),
-      providers: settings.providers ?? [],
-      profiles: settings.profiles.map(item => ({ ...item.profile, hasApiKey: Boolean(item.encryptedApiKey), available: this.available(settings, item.profile) })) }
+      providers: (settings.providers ?? []).map(connection => ({ ...connection, ...(connection.provider === 'openrouter' ? { hasApiKey: Boolean(settings.encryptedOpenrouterApiKey) } : {}) })),
+      profiles: settings.profiles.map(item => ({ ...item.profile, hasApiKey: Boolean(item.profile.provider === 'openrouter' ? settings.encryptedOpenrouterApiKey : item.encryptedApiKey), available: this.available(settings, item.profile) })) }
   }
   private available(settings: SettingsFile, profile: ModelProfile): boolean {
     const connection = settings.providers?.find(item => item.provider === profile.provider && item.baseUrl === profile.baseUrl)
@@ -108,6 +117,31 @@ export class ModelSettingsStore {
 
   list(): Promise<ModelSettings> { return this.serialized(async () => this.view(await this.read())) }
 
+  openrouterKey(): Promise<string> {
+    return this.serialized(async () => {
+      const settings = await this.read()
+      if (!settings.encryptedOpenrouterApiKey) throw new ModelError('请先配置 OpenRouter API Key')
+      if (!this.cipher.isAvailable()) throw new ModelError('系统安全存储不可用，无法读取 API Key')
+      try { return this.cipher.decrypt(Buffer.from(settings.encryptedOpenrouterApiKey, 'base64')) }
+      catch { throw new ModelError('OpenRouter API Key 解密失败，请重新输入密钥') }
+    })
+  }
+
+  syncOpenrouter(models: ModelDescriptor[], apiKey?: string): Promise<ModelSettings> {
+    return this.serialized(async () => {
+      const settings = await this.read()
+      if (apiKey !== undefined) {
+        if (!this.cipher.isAvailable()) throw new ModelError('系统安全存储不可用，无法保存 API Key；不会以明文保存')
+        try { settings.encryptedOpenrouterApiKey = this.cipher.encrypt(apiKey).toString('base64') }
+        catch { throw new ModelError('API Key 加密失败，原配置未更改') }
+      }
+      settings.providers = [...(settings.providers ?? []).filter(item => item.provider !== 'openrouter'), { provider: 'openrouter', baseUrl: OPENROUTER_BASE_URL, models }]
+      this.reconcileActive(settings)
+      await this.write(settings)
+      return this.view(settings)
+    })
+  }
+
   rememberOllamaInfo(baseUrl: unknown, descriptor: ModelDescriptor): Promise<void> {
     return this.serialized(async () => {
       const settings = await this.read()
@@ -137,11 +171,14 @@ export class ModelSettingsStore {
   save(input: unknown): Promise<ModelSettings> {
     return this.serialized(async () => {
       const { profile, credential } = parseSaveProfile(input)
+      if (profile.provider === 'openrouter' && credential.action !== 'keep') throw new ModelError('OpenRouter 密钥由供应商统一管理，请在配置连接中更新')
       if (profile.provider === 'chatgpt' && credential.action === 'replace') throw new ModelError('ChatGPT 订阅请通过浏览器授权，无需 API Key')
       const settings = await this.read()
       const existing = settings.profiles.find(item => item.profile.id === profile.id)
       if (!existing && settings.profiles.length >= 200) throw new ModelError('最多保存 200 个模型配置')
       const descriptor = settings.providers?.find(item => item.provider === profile.provider && item.baseUrl === profile.baseUrl)?.models.find(item => item.id === profile.model)
+      if (profile.provider === 'openrouter' && (!settings.encryptedOpenrouterApiKey || !descriptor?.capabilities.includes('tools'))) throw new ModelError('请先连接 OpenRouter，并选择支持工具调用的模型')
+      if (descriptor?.maxOutputTokens && profile.maxTokens > descriptor.maxOutputTokens) throw new ModelError('输出 Token 上限不能超过模型支持的最大输出')
       if (descriptor?.maxContextTokens && profile.contextTokens && profile.contextTokens > descriptor.maxContextTokens) throw new ModelError('上下文上限不能超过模型支持的最大上下文')
       const selectedThinking = profile.provider === 'ollama' ? profile.ollamaThinkingLevel ?? profile.thinking : profile.thinkingLevel
       if (descriptor?.thinking && selectedThinking != null && !descriptor.thinking.values.includes(selectedThinking)) throw new ModelError('当前模型不支持所选推理档位，请重新选择')
@@ -175,22 +212,31 @@ export class ModelSettingsStore {
     })
   }
 
-  getForRequest(id: unknown): Promise<{ profile: ModelProfile; apiKey: string }> {
+  getForRequest(id: unknown, forTest = false): Promise<{ profile: ModelProfile; apiKey: string }> {
     return this.serialized(async () => {
       const selectedId = profileId(id)
       const settings = await this.read()
       const entry = settings.profiles.find(item => item.profile.id === selectedId)
       if (!entry) throw new ModelError('请先保存模型配置')
-      if (entry.profile.enabled === false || !this.available(settings, entry.profile)) throw new ModelError('该模型已停用或不可用，请在模型设置中启用或刷新模型列表')
+      if ((!forTest && entry.profile.enabled === false) || !this.available(settings, entry.profile)) throw new ModelError('该模型已停用或不可用，请在模型设置中启用或刷新模型列表')
       let apiKey = ''
-      if (entry.encryptedApiKey) {
+      const encryptedKey = entry.profile.provider === 'openrouter' ? settings.encryptedOpenrouterApiKey : entry.encryptedApiKey
+      if (encryptedKey) {
         if (!this.cipher.isAvailable()) throw new ModelError('系统安全存储不可用，无法读取 API Key')
-        try { apiKey = this.cipher.decrypt(Buffer.from(entry.encryptedApiKey, 'base64')) }
+        try { apiKey = this.cipher.decrypt(Buffer.from(encryptedKey, 'base64')) }
         catch { throw new ModelError('API Key 解密失败，请在设置中重新输入密钥') }
       }
-      if (!apiKey && ['openai', 'anthropic', 'deepseek'].includes(entry.profile.provider)) throw new ModelError('请先保存该服务的 API Key')
+      if (!apiKey && ['openai', 'anthropic', 'deepseek', 'openrouter'].includes(entry.profile.provider)) throw new ModelError('请先保存该服务的 API Key')
       const descriptor = settings.providers?.find(item => item.provider === entry.profile.provider && item.baseUrl === entry.profile.baseUrl)?.models.find(item => item.id === entry.profile.model)
       const profile = { ...entry.profile, contextTokens: entry.profile.contextTokens ?? descriptor?.maxContextTokens }
+      if (profile.provider === 'openrouter') {
+        profile.supportedParameters = descriptor?.supportedParameters
+        profile.maxTokens = Math.min(profile.maxTokens, descriptor?.maxOutputTokens ?? profile.maxTokens)
+        if (descriptor?.thinking) {
+          const selected = selectedModelThinking(profile, descriptor.thinking)
+          profile.thinkingLevel = typeof selected === 'string' ? selected as ModelProfile['thinkingLevel'] : null
+        } else profile.thinkingLevel = null
+      }
       if (profile.provider === 'ollama' && descriptor?.thinking) {
         const selected = selectedModelThinking(profile, descriptor.thinking)
         profile.ollamaThinkingLevel = typeof selected === 'string' ? selected : null

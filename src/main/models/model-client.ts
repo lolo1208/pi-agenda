@@ -42,6 +42,10 @@ export class ModelClient {
       else body.messages = [{ role: 'system', content: instruction }, ...requestMessages]
     }
     if (profile.temperature !== null) body.temperature = profile.temperature
+    if (profile.provider === 'openrouter') {
+      if (!profile.supportedParameters?.includes('temperature')) delete body.temperature
+      if (profile.thinkingLevel != null) body.reasoning = profile.thinkingLevel === 'off' ? { enabled: false } : { effort: profile.thinkingLevel }
+    }
     if (isOllama) {
       delete body[profile.tokenParameter]
       delete body.temperature
@@ -66,7 +70,7 @@ export class ModelClient {
       await response.body?.cancel().catch(() => undefined)
       const hints: Record<number, string> = {
         400: messages.some(message => message.images?.length) ? '当前模型或接口不支持所附文件或请求参数，请检查模型的文件格式支持，或移除附件后重试' : '请求参数不受支持，请检查模型、Token 参数与 Temperature',
-        401: '认证失败，请检查 API Key', 403: '没有访问权限，请检查密钥和模型授权',
+        401: '认证失败，请检查 API Key', 402: '账户余额不足，请充值后重试', 403: '没有访问权限，请检查密钥和模型授权',
         404: '接口或模型不存在，请检查 Base URL 和模型 ID',
         429: '请求过于频繁或额度不足，请检查服务额度后重试'
       }

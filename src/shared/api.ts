@@ -5,6 +5,15 @@ export interface FileDiff { path: string; before: string; after: string; binary:
 export type FileAction = 'copy-file' | 'copy-path' | 'open-directory' | 'open-file'
 import type { ConversationState } from './conversations'
 export interface PiAgendaApi {
+  readCodePreview(project: string, path: string, ranges: import('./code-preview').CodeLineRange[]): Promise<import('./code-preview').CodePreview>
+  getSkills(): Promise<ModelResult<import('./skills').LocalSkill[]>>
+  installSkill(source?: 'zip' | 'directory'): Promise<ModelResult<import('./skills').LocalSkill[] | null>>
+  getSkillsDirectory(): Promise<ModelResult<string>>
+  openSkillsDirectory(): Promise<ModelResult<void>>
+  setSkillEnabled(id: string, enabled: boolean): Promise<ModelResult<import('./skills').LocalSkill[]>>
+  deleteSkill(id: string): Promise<ModelResult<import('./skills').LocalSkill[]>>
+  exportSkill(id: string): Promise<ModelResult<string | null>>
+  refreshSkills(): Promise<ModelResult<import('./skills').LocalSkill[]>>
   performFileAction(project: string, path: string, action: FileAction): Promise<void>
   getSandboxStatus(): Promise<ModelResult<import('./sandbox').SandboxState>>
   ensureSandbox(): Promise<ModelResult<import('./sandbox').SandboxState>>
@@ -48,6 +57,8 @@ export interface PiAgendaApi {
   getAgentHistory(conversationId: string): Promise<ModelResult<ChatMessage[] | null>>
   cancelModelRequest(requestId: string): Promise<ModelResult<void>>
   connectOllama(baseUrl: string): Promise<ModelResult<ModelSettings>>
+  connectOpenrouter(apiKey?: string): Promise<ModelResult<ModelSettings>>
+  getOpenrouterUsage(): Promise<ModelResult<import('./models').OpenrouterUsage>>
   getOllamaModelInfo(baseUrl: string, model: string): Promise<ModelResult<ModelDescriptor>>
   minimizeWindow(): Promise<void>
   toggleMaximizeWindow(): Promise<boolean>
@@ -55,6 +66,9 @@ export interface PiAgendaApi {
   onWindowMaximizedChange(callback: (maximized: boolean) => void): () => void
 }
 export const IPC_CHANNELS = {
+  codePreview: 'files:code-preview',
+  skillsExport: 'models:skills-export',
+  skillsList: 'models:skills-list', skillsInstall: 'models:skills-install', skillsEnable: 'models:skills-enable', skillsDelete: 'models:skills-delete', skillsRefresh: 'models:skills-refresh', skillsDirectory: 'models:skills-directory', skillsOpenDirectory: 'models:skills-open-directory',
   fileAction: 'files:action',
   sandboxStatus: 'models:sandbox-status', sandboxEnsure: 'models:sandbox-ensure', sandboxStart: 'models:sandbox-start', sandboxStop: 'models:sandbox-stop', sandboxState: 'sandbox:state',
   planInteraction: 'models:plan-interaction',
@@ -69,6 +83,8 @@ export const IPC_CHANNELS = {
   modelSettings: 'models:list', modelSave: 'models:save',
   modelActivate: 'models:activate', modelTest: 'models:test', modelChat: 'models:chat', modelCancel: 'models:cancel',
   ollamaConnect: 'models:ollama-connect', ollamaInfo: 'models:ollama-info',
+  openrouterConnect: 'models:openrouter-connect',
+  openrouterUsage: 'models:openrouter-usage',
   windowMinimize: 'window:minimize', windowToggleMaximize: 'window:toggle-maximize', windowClose: 'window:close', windowMaximized: 'window:maximized',
   projectOpen: 'project:open', projectRebind: 'project:rebind', projectRemove: 'project:remove', projectDirectory: 'project:directory', projectPick: 'project:pick'
 } as const

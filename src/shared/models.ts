@@ -1,5 +1,13 @@
 export type ModelProtocol = 'openai-compatible' | 'anthropic'
-export type ProviderId = 'chatgpt' | 'openai' | 'anthropic' | 'deepseek' | 'ollama' | 'vllm' | 'custom'
+export type ProviderId = 'chatgpt' | 'openai' | 'openrouter' | 'anthropic' | 'deepseek' | 'ollama' | 'vllm' | 'custom'
+export interface OpenrouterUsage {
+  fetchedAt: number
+  limit?: number | null
+  remaining?: number | null
+  dailySpend?: number
+  freeDaily?: { used: number; limit: number; remaining: number }
+  error?: string
+}
 export interface ModelProfile {
   id: string
   name: string
@@ -17,15 +25,22 @@ export interface ModelProfile {
   thinking?: boolean | null
   thinkingLevel?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null
   ollamaThinkingLevel?: string | null
+  /** 目录提供的请求能力，仅由主进程在调用时填充。 */
+  supportedParameters?: string[]
 }
 export interface ModelDescriptor {
   id: string
+  name?: string
+  created?: number
+  maxOutputTokens?: number
+  supportedParameters?: string[]
   sizeBytes?: number
   parameterSize?: string
   quantization?: string
   capabilities: string[]
   maxContextTokens: number | null
   thinking?: { values: (boolean | string)[]; default?: boolean | string }
+  pricing?: import('./model-pricing').ModelPricing
 }
 export function parseThinkingControls(value: unknown): ModelDescriptor['thinking'] {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
@@ -44,14 +59,15 @@ export function thinkingLabel(value: boolean | string | null | undefined): strin
 }
 export function selectedModelThinking(profile: ModelProfile, controls: ModelDescriptor['thinking']): boolean | string | null {
   const values = controls?.values ?? []
-  const selected = profile.provider === 'chatgpt' ? profile.thinkingLevel ?? (profile.thinking === false ? 'off' : null) : profile.ollamaThinkingLevel ?? profile.thinking
+  const selected = profile.provider === 'chatgpt' || profile.provider === 'openrouter' ? profile.thinkingLevel ?? (profile.thinking === false ? 'off' : null) : profile.ollamaThinkingLevel ?? profile.thinking
   if (selected != null && values.includes(selected)) return selected
-  if (values.includes('low')) return 'low'
-  if (values.includes(true)) return true
+  // 保留用户选择；未配置时优先模型声明的默认值，再回退到中档或开启。
   if (controls?.default != null && values.includes(controls.default)) return controls.default
+  if (values.includes('medium')) return 'medium'
+  if (values.includes(true)) return true
   return values.find(value => value !== false && value !== 'off') ?? values[0] ?? null
 }
-export interface ModelProviderConnection { provider: ProviderId; baseUrl: string; models: ModelDescriptor[] }
+export interface ModelProviderConnection { provider: ProviderId; baseUrl: string; models: ModelDescriptor[]; hasApiKey?: boolean }
 export interface ModelProfileView extends ModelProfile { hasApiKey: boolean; available?: boolean }
 /** 按供应商与服务地址查找界面使用的模型描述符；Ollama 地址可能带或不带 /v1。 */
 export function findModelDescriptor(providers: ModelProviderConnection[] | undefined, profile: Pick<ModelProfile, 'provider' | 'baseUrl' | 'model'>): ModelDescriptor | undefined {
@@ -89,14 +105,14 @@ export type ChatImage = ChatAttachment
 export interface ChatExecution { model: string; provider?: ProviderId; elapsedMs?: number; roundId?: string }
 export interface ChatWorkItem { id: string; kind: 'thinking' | 'tool'; name?: string; args?: Record<string, unknown>; content: string; isError?: boolean; completed?: boolean }
 export interface ChatCall { elapsedMs?: number; work: ChatWorkItem[] }
-export interface ChatMessage { role: 'user' | 'assistant'; content: string; images?: ChatImage[]; execution?: ChatExecution; call?: ChatCall; snapshotHash?: string }
+export interface ChatMessage { role: 'user' | 'assistant'; content: string; images?: ChatImage[]; skillIds?: string[]; execution?: ChatExecution; call?: ChatCall; snapshotHash?: string }
 export interface ModelUsage { inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheWriteTokens?: number }
 export interface ModelRateLimit { kind: 'requests' | 'tokens'; limit: number; remaining: number; reset?: string }
 export interface ChatgptAuthStatus { state: 'signed-out' | 'authorizing' | 'signed-in'; url?: string; manualInput?: boolean; error?: string; catalogSource?: 'account' | 'sdk' }
 export interface SubscriptionWindow { seconds: number; usedPercent: number; resetsAt?: number }
 export interface ResetCredits { availableCount: number; earliestExpiresAt?: number | null }
 export interface ChatgptUsage { windows: SubscriptionWindow[]; fetchedAt: number; plan?: string; error?: string; resetCredits?: ResetCredits; resetCreditsError?: string }
-export interface ModelReply { text: string; elapsedMs: number; model: string; truncated: boolean; usage?: ModelUsage; roundUsage?: ModelUsage; rateLimits?: ModelRateLimit[]; compaction?: import('./context').ContextCompaction; messages?: ChatMessage[] }
+export interface ModelReply { text: string; elapsedMs: number; model: string; truncated: boolean; usage?: ModelUsage; roundUsage?: ModelUsage; rateLimits?: ModelRateLimit[]; compaction?: import('./context').ContextCompaction; messages?: ChatMessage[]; warnings?: string[] }
 export type PermissionMode = 'default' | 'auto' | 'full'
 export const PERMISSION_MODES: PermissionMode[] = ['default', 'auto', 'full']
 export interface ToolApproval {
@@ -137,6 +153,7 @@ export interface ProviderPreset { id: ProviderId; label: string; protocol: Model
 export const PROVIDER_PRESETS: ProviderPreset[] = [
   { id: 'chatgpt', label: 'ChatGPT 订阅', protocol: 'openai-compatible', baseUrl: 'https://chatgpt.com/backend-api' },
   { id: 'openai', label: 'OpenAI', protocol: 'openai-compatible', baseUrl: 'https://api.openai.com/v1' },
+  { id: 'openrouter', label: 'OpenRouter', protocol: 'openai-compatible', baseUrl: 'https://openrouter.ai/api/v1' },
   { id: 'anthropic', label: 'Claude', protocol: 'anthropic', baseUrl: 'https://api.anthropic.com/v1' },
   { id: 'deepseek', label: 'DeepSeek', protocol: 'openai-compatible', baseUrl: 'https://api.deepseek.com/v1' },
   { id: 'ollama', label: 'Ollama', protocol: 'openai-compatible', baseUrl: 'http://localhost:11434/v1' },

@@ -1,9 +1,18 @@
 import type { AssistantMessage, AssistantMessageEventStream } from '@earendil-works/pi-ai'
 import { createAssistantMessageEventStream } from '@earendil-works/pi-ai/utils/event-stream'
 
+/** 同步启动失败也必须停止计时，避免清理期间被误报为超时。 */
+export function requestPiStream(start: () => AssistantMessageEventStream, apiKey: string, abortSource: () => void, onActive: (active: boolean) => void): AssistantMessageEventStream {
+  onActive(true)
+  try { return safePiStream(start(), apiKey, abortSource, () => onActive(false)) }
+  catch (error) { onActive(false); throw error }
+}
+
 /** 在 pi 记录会话之前过滤密钥回显，并限制单次模型响应大小。 */
-export function safePiStream(source: AssistantMessageEventStream, apiKey: string, abortSource: () => void = () => {}): AssistantMessageEventStream {
+export function safePiStream(source: AssistantMessageEventStream, apiKey: string, abortSource: () => void = () => {}, onComplete: () => void = () => {}): AssistantMessageEventStream {
   const output = createAssistantMessageEventStream()
+  let completed = false
+  const complete = (): void => { if (!completed) { completed = true; onComplete() } }
   const sanitize = (message: AssistantMessage): AssistantMessage => {
     const copy = structuredClone(message)
     if (copy.errorMessage) copy.errorMessage = copy.stopReason === 'aborted' ? '模型请求已取消' : '模型服务请求失败，请检查接口、密钥和模型配置'
@@ -35,18 +44,20 @@ export function safePiStream(source: AssistantMessageEventStream, apiKey: string
           if (tail) output.push({ type: 'text_delta', contentIndex: event.contentIndex, delta: tail, partial: last! })
           pending.delete(event.contentIndex)
           output.push({ ...event, content: apiKey ? event.content.split(apiKey).join('[已隐藏密钥]') : event.content, partial: last! })
-        } else if (event.type === 'done') output.push({ ...event, message: sanitize(event.message) })
-        else if (event.type === 'error') output.push({ ...event, error: sanitize(event.error) })
+        } else if (event.type === 'done') { last = sanitize(event.message); complete(); output.push({ ...event, message: last }); return }
+        else if (event.type === 'error') { last = sanitize(event.error); complete(); output.push({ ...event, error: last }); return }
         else if ('partial' in event) output.push({ ...event, partial: last! })
       }
+      if (!completed) throw new Error('模型响应缺少结束事件')
     } catch {
+      if (completed) return
       abortSource()
       last ??= { role: 'assistant', api: 'openai-completions', provider: 'pi-agenda', model: '', content: [], timestamp: Date.now(), stopReason: 'error', usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } }
       last.stopReason = 'error'
       last.errorMessage = bytes > 2 * 1024 * 1024 ? '模型响应超过 2 MiB 上限，请降低输出 Token 上限' : '模型响应读取失败，请重试'
       if (bytes > 2 * 1024 * 1024) last.content = []
       output.push({ type: 'error', reason: 'error', error: last })
-    } finally { output.end(last) }
+    } finally { complete(); output.end(last) }
   })()
   return output
 }

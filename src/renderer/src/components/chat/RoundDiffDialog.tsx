@@ -6,6 +6,7 @@ import { baseName, DiffFileHeader, DiffStat, DiffView, DiffViewSwitch, fileIcon,
 import type { ChangedFile, FileDiff } from '../../../../shared/api'
 import type { AgentSnapshot } from '../../../../shared/models'
 import { FileContextMenu } from './FileContextMenu'
+import { PagedList } from '../PagedList'
 
 const STATUS_LABELS: Record<ChangedFile['status'], string> = { A: '新增文件', M: '修改文件', D: '删除文件' }
 
@@ -51,6 +52,6 @@ export function RoundDiffDialog({ round, files, selectedPath, onClose }: { round
   const visible = selectedPath ? files.filter(file => file.path === selectedPath) : files
   // 从单个文件入口打开时直接展开该文件；整轮审查时保持全部折叠，避免一次性加载所有对比
   return <Modal open onOpenChange={open => { if (!open) onClose() }} title={<span className="tool-approval-file-title"><FileCode2 size={18} aria-hidden="true" /><span>{visible.length} 个文件</span></span>} contentClassName="tool-approval-preview tool-approval-multi" headingExtra={<DiffViewSwitch mode={mode} onChange={setMode} />}>
-    <div className="tool-approval-filelist">{visible.map(file => <FileReview key={file.path} round={round} file={file} mode={mode} defaultExpanded={Boolean(selectedPath)} />)}</div>
+    <div className="tool-approval-filelist"><PagedList items={visible} label="文件对比" resetKey={`${round.after.hash}:${selectedPath}`}>{page => page.map(file => <FileReview key={file.path} round={round} file={file} mode={mode} defaultExpanded={Boolean(selectedPath)} />)}</PagedList></div>
   </Modal>
 }

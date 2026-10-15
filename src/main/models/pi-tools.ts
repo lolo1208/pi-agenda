@@ -113,7 +113,7 @@ export function piProjectTools(root: string, beforeMutation: () => Promise<void>
   const definitions: ToolDefinition<any, any>[] = [createReadToolDefinition(root), createEditToolDefinition(root), createWriteToolDefinition(root), createDeleteToolDefinition(), ...filesystemToolDefinitions(protectPath), createLsToolDefinition(root), createFindToolDefinition(root), createGrepToolDefinition(root), process.platform === 'win32' ? createPowerShellToolDefinition(root) : createBashToolDefinition(root)]
   return definitions.map(tool => ({ ...tool,
     ...(['bash', 'powershell'].includes(tool.name) ? {
-      description: `${tool.description} 自动审批模式下在系统沙箱内运行，项目外访问和联网会被拦截。Windows 工作目录映射为 Project:，原生程序的工作目录仍为项目路径。Windows PowerShell 5 的部分路径命令（包括 Remove-Item）会额外读取项目祖先而失败；此时使用专用文件工具或 System.IO API，不要申请沙箱外权限。仅当确实需要项目外访问或联网时设置 outsideSandbox=true，应用将请求本次批准。不要因普通语法或程序错误申请脱离沙箱。`,
+      description: `${tool.description} 受限自动模式下在系统沙箱内运行，项目外访问和联网会被拦截。Windows 工作目录映射为 Project:，原生程序的工作目录仍为项目路径。Windows PowerShell 5 的部分路径命令（包括 Remove-Item）会额外读取项目祖先而失败；此时使用专用文件工具或 System.IO API，不要申请沙箱外权限。仅当确实需要项目外访问或联网时设置 outsideSandbox=true，应用将请求本次批准。不要因普通语法或程序错误申请脱离沙箱。`,
       parameters: { ...tool.parameters, properties: { ...tool.parameters.properties, outsideSandbox: { type: 'boolean', description: '显式申请脱离系统沙箱执行，需要用户批准；默认 false' } } }
     } : {}),
     ...(['find', 'grep'].includes(tool.name) ? { description: `${tool.name === 'find' ? '按 glob 查找普通文件和目录' : '按模式搜索普通文件内容'}；不跟随链接，排除 Git 元数据、应用内部数据和 node_modules。` } : {}),
@@ -169,7 +169,7 @@ export function piProjectTools(root: string, beforeMutation: () => Promise<void>
       const target = await canonicalToolPath(requestedPath)
       const project = permissions.project ? await canonicalToolPath(permissions.project) : undefined
       const protectedDirectories = await Promise.all(permissions.protectedDirectories.map(canonicalToolPath))
-      let reason = mutation && permissions.mode === 'default' ? '默认权限下，文件和目录修改需要逐次确认' : undefined
+      let reason = mutation && permissions.mode === 'default' ? '“每次询问”模式下，文件和目录修改需要逐次确认' : undefined
       const checkPath = async (value: string): Promise<void> => {
         const canonical = await canonicalToolPath(value)
         if (canonical !== value) throw new ModelError('操作期间目标路径发生变化，请重新请求操作')

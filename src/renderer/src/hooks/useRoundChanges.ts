@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useLayoutEffect, useRef, useState } from 'react'
 import type { ChangedFile } from '../../../shared/api'
 import type { AgentSnapshot } from '../../../shared/models'
 import { checkRoundFileStates, PROJECT_FILES_RESTORED, type RoundFileState } from './useRoundFileState'
@@ -13,9 +13,9 @@ export interface RoundChangesData {
 export const roundChangesKey = (round: AgentSnapshot): string => JSON.stringify([round.project, round.before.hash, round.after.hash])
 
 /** 同一会话只提交一个快照请求，始终从最新的可见范围选择下一项。 */
-export function useRoundChanges(rounds: AgentSnapshot[], visible: string[], active: boolean, disabled: boolean, ready: boolean) {
+export function useRoundChanges(rounds: AgentSnapshot[], visible: string[], active: boolean, disabled: boolean, ready: boolean, retainedRounds?: AgentSnapshot[]) {
   const [data, setData] = useState<Record<string, RoundChangesData>>({})
-  const cache = useRef<Record<string, RoundChangesData>>({})
+  const cache = useRef(new Map<string, RoundChangesData>())
   const input = useRef({ rounds, visible, active: false, disabled, ready })
   const generation = useRef(0)
   const checkVersion = useRef(0)
@@ -23,16 +23,21 @@ export function useRoundChanges(rounds: AgentSnapshot[], visible: string[], acti
   const running = useRef(false)
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const mounted = useRef(false)
+  const pumpRef = useRef<() => Promise<void>>(async () => {})
+  const retainedKeys = useRef<Set<string> | null>(null)
+  const knownProjects = useRef(new Set<string>())
 
-  const publish = (key: string, value: RoundChangesData): void => {
-    cache.current = { ...cache.current, [key]: value }
-    if (mounted.current) setData(cache.current)
-  }
-  const schedule = (delay = 0): void => {
+  const publish = useCallback((key: string, value: RoundChangesData): void => {
+    if (retainedKeys.current && !retainedKeys.current.has(key)) return
+    cache.current.set(key, value)
+    // 缓存保留已访问结果，React 状态仅复制当前挂载范围。
+    if (mounted.current && input.current.rounds.some(round => roundChangesKey(round) === key)) setData(previous => ({ ...previous, [key]: value }))
+  }, [])
+  const schedule = useCallback((delay = 0): void => {
     if (!mounted.current || running.current || !input.current.active || !input.current.ready) return
     if (timer.current !== undefined) clearTimeout(timer.current)
-    timer.current = setTimeout(() => { timer.current = undefined; void pump() }, delay)
-  }
+    timer.current = setTimeout(() => { timer.current = undefined; void pumpRef.current() }, delay)
+  }, [])
   const pump = async (): Promise<void> => {
     const current = input.current
     if (running.current || !mounted.current || !current.active || !current.ready) return
@@ -48,14 +53,14 @@ export function useRoundChanges(rounds: AgentSnapshot[], visible: string[], acti
       ...current.rounds.slice(firstVisible, lastVisible + 1).filter(round => !visibleSet.has(roundChangesKey(round))).reverse(),
       ...current.rounds.slice(0, firstVisible).reverse()
     ]
-    const waiting = (round: AgentSnapshot): boolean => !cache.current[roundChangesKey(round)] || cache.current[roundChangesKey(round)].status === 'waiting'
+    const waiting = (round: AgentSnapshot): boolean => !cache.current.has(roundChangesKey(round)) || cache.current.get(roundChangesKey(round))!.status === 'waiting'
     const visibleNext = visibleRounds.find(waiting)
     const next = visibleNext ?? order.find(waiting)
     const visibleFinished = !visibleNext
     const checkCandidates = visibleFinished && !current.disabled
       ? (next ? visibleRounds : current.rounds).filter(round => {
         const key = roundChangesKey(round)
-        return cache.current[key]?.status === 'loaded' && checked.current.get(key)?.version !== checkVersion.current
+        return cache.current.get(key)?.status === 'loaded' && checked.current.get(key)?.version !== checkVersion.current
       }) : []
     const session = generation.current
     const version = checkVersion.current
@@ -74,15 +79,18 @@ export function useRoundChanges(rounds: AgentSnapshot[], visible: string[], acti
               const key = roundChangesKey(round)
               if (!eligible.has(key)) continue
               checked.current.set(key, { version, at: Date.now() })
-              publish(key, { ...cache.current[key], fileState: states[round.after.hash] })
+              publish(key, { ...cache.current.get(key)!, fileState: states[round.after.hash] })
             }
           }
         } catch {
           if (valid() && checkVersion.current === version && !input.current.disabled) {
+            const eligible = new Set(input.current.rounds.map(roundChangesKey))
             for (const round of batch) {
               const key = roundChangesKey(round)
+              if (!eligible.has(key)) continue
+              const previous = cache.current.get(key)
+              if (!previous) continue
               checked.current.set(key, { version, at: Date.now() })
-              const previous = cache.current[key]
               publish(key, { ...previous, fileState: previous.fileState === 'matches' || previous.fileState === 'different' ? previous.fileState : 'error' })
             }
           }
@@ -104,11 +112,19 @@ export function useRoundChanges(rounds: AgentSnapshot[], visible: string[], acti
       if (next || checkCandidates.length) schedule()
     }
   }
+  useLayoutEffect(() => { pumpRef.current = pump })
+  useLayoutEffect(() => {
+    if (!retainedRounds) return
+    const keys = new Set(retainedRounds.map(roundChangesKey))
+    retainedKeys.current = keys
+    knownProjects.current = new Set(retainedRounds.map(round => round.project))
+    for (const key of cache.current.keys()) if (!keys.has(key)) { cache.current.delete(key); checked.current.delete(key) }
+  }, [retainedRounds])
 
   useLayoutEffect(() => {
     mounted.current = true
     const invalidate = (event: Event): void => {
-      if (input.current.rounds.some(round => round.project === (event as CustomEvent<string>).detail)) {
+      if (knownProjects.current.has((event as CustomEvent<string>).detail)) {
         checkVersion.current++
         schedule(250)
       }
@@ -140,15 +156,26 @@ export function useRoundChanges(rounds: AgentSnapshot[], visible: string[], acti
       for (const [key, last] of checked.current) if (Date.now() - last.at >= 60000) checked.current.delete(key)
     }
     input.current = { rounds, visible, active, disabled, ready }
+    if (!retainedRounds) for (const round of rounds) knownProjects.current.add(round.project)
+    setData(previous => {
+      const next: Record<string, RoundChangesData> = {}
+      for (const round of rounds) {
+        const key = roundChangesKey(round)
+        const value = cache.current.get(key)
+        if (value) next[key] = value
+      }
+      const keys = Object.keys(next)
+      return keys.length === Object.keys(previous).length && keys.every(key => previous[key] === next[key]) ? previous : next
+    })
     if (!active && timer.current !== undefined) { clearTimeout(timer.current); timer.current = undefined }
     schedule()
   }, [rounds, visible, active, disabled, ready])
 
-  const retry = (round: AgentSnapshot): void => {
+  const retry = useCallback((round: AgentSnapshot): void => {
     const key = roundChangesKey(round)
-    if (cache.current[key]?.status !== 'error') return
+    if (cache.current.get(key)?.status !== 'error') return
     publish(key, { status: 'waiting' })
     schedule()
-  }
+  }, [publish, schedule])
   return { data, retry }
 }

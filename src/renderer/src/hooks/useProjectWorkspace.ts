@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ChangedFile, Checkpoint, FileDiff } from '../../../shared/api'
 import type { Task } from '../app-types'
+import { defaultConversationPermission } from '../../../shared/conversations'
 import { readProjectMetaMap, writeProjectMetaMap, defaultProjectName, type ProjectMetaMap } from '../project-meta'
 
 interface ProjectSnapshotState {
@@ -27,12 +28,17 @@ function readProjectList(): string[] {
   }
 }
 
-function createTask(project: string): Task {
-  return { id: crypto.randomUUID(), title: '新建对话', preview: '开始一段新的对话', project, updatedAt: Date.now() }
+function createTask(project: string, tasks: Task[]): Task {
+  return { id: crypto.randomUUID(), title: '新建对话', preview: '开始一段新的对话', project, updatedAt: Date.now(), permissionMode: defaultConversationPermission(project, tasks) }
 }
 
 export function useProjectWorkspace() {
-  const [project, setProject] = useState<string | null>(null)
+  const [project, setCurrentProject] = useState<string | null>(null)
+  const [readyProjects, setReadyProjects] = useState<Set<string>>(() => new Set())
+  const setProject = (root: string | null): void => {
+    setCurrentProject(root)
+    if (root) setReadyProjects(current => new Set([...current, root]))
+  }
   const [savedProjects, setSavedProjects] = useState(readProjectList)
   const [projectMeta, setProjectMeta] = useState<ProjectMetaMap>(readProjectMetaMap)
   const [snapshotsByProject, setSnapshotsByProject] = useState<Record<string, ProjectSnapshotState>>({})
@@ -41,8 +47,18 @@ export function useProjectWorkspace() {
   const [projectPickerOpen, setProjectPickerOpen] = useState(false)
   const [pendingProjectRemoval, setPendingProjectRemoval] = useState<string | null>(null)
   const [busyTasks, setBusyTasks] = useState<string[]>([])
+  const [pendingProjectDirectories, setPendingProjectDirectories] = useState<Record<string, string>>(() => {
+    try {
+      const value: unknown = JSON.parse(localStorage.getItem('pi-agenda.pending-project-directories') ?? '{}')
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+      return Object.fromEntries(Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === 'string' && Boolean(entry[1].trim())))
+    }
+    catch { return {} }
+  })
+  const failedProjectDirectories = useRef<Record<string, string>>({})
   const [tasks, setTasks] = useState<Task[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [composerFocusTaskId, setComposerFocusTaskId] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [collapsedProjects, setCollapsedProjects] = useState<string[]>([])
   const [searchOpen, setSearchOpen] = useState(false)
@@ -55,11 +71,15 @@ export function useProjectWorkspace() {
       if (!active) return
       setTasks(state.tasks)
       const restored: Record<string, ProjectSnapshotState> = {}
+      const checkpointsByProject = new Map<string, Map<string, Checkpoint>>()
       for (const task of state.tasks) for (const round of task.agentSnapshots ?? []) {
-        const existing = restored[round.project] ?? emptySnapshotState
-        const checkpoints = [...existing.checkpoints, round.before, round.after].filter((checkpoint, index, items) => items.findIndex(item => item.hash === checkpoint.hash) === index)
-          .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
-        restored[round.project] = { ...existing, checkpoints }
+        let checkpoints = checkpointsByProject.get(round.project)
+        if (!checkpoints) { checkpoints = new Map(); checkpointsByProject.set(round.project, checkpoints) }
+        for (const checkpoint of [round.before, round.after]) if (!checkpoints.has(checkpoint.hash)) checkpoints.set(checkpoint.hash, checkpoint)
+      }
+      // 一次去重、一次排序，避免每恢复一轮都扫描并重建项目的全部快照。
+      for (const [root, checkpoints] of checkpointsByProject) {
+        restored[root] = { ...emptySnapshotState, checkpoints: [...checkpoints.values()].sort((left, right) => left.createdAt.localeCompare(right.createdAt)) }
       }
       setSnapshotsByProject(restored)
       setSelectedId(state.selectedId)
@@ -148,9 +168,10 @@ export function useProjectWorkspace() {
   }
 
   const addTask = (root: string): void => {
-    const task = createTask(root)
+    const task = createTask(root, tasks)
     setTasks(items => [task, ...items])
     setSelectedId(task.id)
+    setComposerFocusTaskId(task.id)
     // 新建对话时自动展开所属项目
     setCollapsedProjects(items => items.includes(root) ? items.filter(item => item !== root) : items)
     setQuery('')
@@ -221,6 +242,7 @@ export function useProjectWorkspace() {
   const removeProject = (root: string): void => {
     void runAction(async () => {
       await window.piAgenda.removeProject(root)
+      setReadyProjects(current => new Set([...current].filter(item => item !== root)))
       const remainingProjects = readProjectList().filter(item => item !== root)
       setSavedProjects(remainingProjects)
       persistProjects(remainingProjects)
@@ -252,11 +274,25 @@ export function useProjectWorkspace() {
 
   const saveProjectEdit = (root: string, next: { name: string; directory: string; prompt: string }): Promise<boolean> => {
     if (!loaded || isBusy) return Promise.resolve(false)
+    delete failedProjectDirectories.current[root]
     return runAction(async () => {
       let target = root
       const directory = next.directory.trim()
-      if (directory && directory !== root) {
-        target = await window.piAgenda.rebindProject(root, directory)
+      if (isChatBusy) {
+        // 先保存信息；当前轮次继续使用原目录，队列等待目录切换后再发送。
+        const pending = { ...pendingProjectDirectories }
+        if (directory && directory !== root) pending[root] = directory
+        else delete pending[root]
+        localStorage.setItem('pi-agenda.pending-project-directories', JSON.stringify(pending))
+        setPendingProjectDirectories(pending)
+      } else if (directory && directory !== root) {
+        // 目录迁移期间，已经打开的后台会话也必须停止启动新一轮。
+        setReadyProjects(current => new Set([...current].filter(item => item !== root)))
+        try { target = await window.piAgenda.rebindProject(root, directory) }
+        catch (error) {
+          setReadyProjects(current => new Set([...current, root]))
+          throw error
+        }
         if (project && project !== root) await window.piAgenda.openProject(project)
       }
       const projects = readProjectList().map(item => item === root ? target : item)
@@ -281,6 +317,7 @@ export function useProjectWorkspace() {
       })
 
       if (target !== root) {
+        setReadyProjects(current => new Set([...current].filter(item => item !== root).concat(target)))
         setTasks(items => items.map(item => item.project === root ? { ...item, project: target } : item))
         setSnapshotsByProject(current => {
           if (!current[root]) return current
@@ -291,8 +328,26 @@ export function useProjectWorkspace() {
         setCollapsedProjects(items => items.map(item => item === root ? target : item))
       }
       if (project === root) setProject(target)
+      if (!isChatBusy && pendingProjectDirectories[root]) {
+        const pending = { ...pendingProjectDirectories }
+        delete pending[root]
+        localStorage.setItem('pi-agenda.pending-project-directories', JSON.stringify(pending))
+        setPendingProjectDirectories(pending)
+      }
     })
   }
+
+  useEffect(() => {
+    if (!loaded || isBusy || isChatBusy) return
+    const entry = Object.entries(pendingProjectDirectories).find(([root, directory]) => failedProjectDirectories.current[root] !== directory)
+    if (!entry) return
+    const [root, directory] = entry
+    const meta = projectMeta[root]
+    void saveProjectEdit(root, { directory, name: meta?.name ?? '', prompt: meta?.prompt ?? '' }).then(saved => {
+      // 失败时保留待切换目录，允许用户修正后重试，不继续发送到旧目录。
+      if (!saved) failedProjectDirectories.current[root] = directory
+    })
+  }, [loaded, isBusy, isChatBusy, pendingProjectDirectories])
 
   const captureCheckpoint = (): void => {
     void runAction(async () => {
@@ -314,6 +369,7 @@ export function useProjectWorkspace() {
 
   return {
     project,
+    readyProjects,
     savedProjects,
     projectMeta,
     isBusy,
@@ -324,10 +380,13 @@ export function useProjectWorkspace() {
     pendingProjectRemoval,
     setPendingProjectRemoval,
     busyTasks,
+    pendingProjectDirectories,
     setBusyTasks,
     tasks,
     setTasks,
     currentTask,
+    composerFocusTaskId,
+    setComposerFocusTaskId,
     query,
     setQuery,
     collapsedProjects,

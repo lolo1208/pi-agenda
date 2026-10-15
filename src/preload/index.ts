@@ -2,6 +2,15 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { IPC_CHANNELS, type PiAgendaApi } from '../shared/api'
 
 const api: PiAgendaApi = {
+  readCodePreview: (project, path, ranges) => ipcRenderer.invoke(IPC_CHANNELS.codePreview, project, path, ranges),
+  getSkills: () => ipcRenderer.invoke(IPC_CHANNELS.skillsList),
+  installSkill: source => ipcRenderer.invoke(IPC_CHANNELS.skillsInstall, source),
+  getSkillsDirectory: () => ipcRenderer.invoke(IPC_CHANNELS.skillsDirectory),
+  openSkillsDirectory: () => ipcRenderer.invoke(IPC_CHANNELS.skillsOpenDirectory),
+  setSkillEnabled: (id, enabled) => ipcRenderer.invoke(IPC_CHANNELS.skillsEnable, id, enabled),
+  deleteSkill: id => ipcRenderer.invoke(IPC_CHANNELS.skillsDelete, id),
+  exportSkill: id => ipcRenderer.invoke(IPC_CHANNELS.skillsExport, id),
+  refreshSkills: () => ipcRenderer.invoke(IPC_CHANNELS.skillsRefresh),
   performFileAction: (project, path, action) => ipcRenderer.invoke(IPC_CHANNELS.fileAction, project, path, action),
   getSandboxStatus: () => ipcRenderer.invoke(IPC_CHANNELS.sandboxStatus),
   ensureSandbox: () => ipcRenderer.invoke(IPC_CHANNELS.sandboxEnsure),
@@ -53,6 +62,8 @@ const api: PiAgendaApi = {
   },
   cancelModelRequest: requestId => ipcRenderer.invoke(IPC_CHANNELS.modelCancel, requestId),
   connectOllama: baseUrl => ipcRenderer.invoke(IPC_CHANNELS.ollamaConnect, baseUrl),
+  connectOpenrouter: apiKey => ipcRenderer.invoke(IPC_CHANNELS.openrouterConnect, apiKey),
+  getOpenrouterUsage: () => ipcRenderer.invoke(IPC_CHANNELS.openrouterUsage),
   getOllamaModelInfo: (baseUrl, model) => ipcRenderer.invoke(IPC_CHANNELS.ollamaInfo, baseUrl, model),
   minimizeWindow: () => ipcRenderer.invoke(IPC_CHANNELS.windowMinimize),
   toggleMaximizeWindow: () => ipcRenderer.invoke(IPC_CHANNELS.windowToggleMaximize),

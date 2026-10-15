@@ -6,14 +6,14 @@ import { ModelRuntime } from '@earendil-works/pi-coding-agent'
 import type { ModelProfile, ModelRateLimit } from '../../shared/models'
 import type { PiAttachments } from './pi-attachments'
 import { ollamaFetch } from './pi-ollama'
-import { safePiStream } from './pi-stream'
+import { requestPiStream } from './pi-stream'
 import type { ChatgptService } from './chatgpt-service'
 import { ModelError } from './model-validation'
 
-export async function createPiProvider(profile: ModelProfile, apiKey: string, attachments: PiAttachments, responses: boolean, onLimits: (limits: ModelRateLimit[]) => void, fetchRequest: typeof fetch = fetch, chatgpt?: ChatgptService) {
+export async function createPiProvider(profile: ModelProfile, apiKey: string, attachments: PiAttachments, responses: boolean, onLimits: (limits: ModelRateLimit[]) => void, fetchRequest: typeof fetch = fetch, chatgpt?: ChatgptService, onModelRequestActive: (active: boolean) => void = () => {}) {
   if (profile.provider === 'chatgpt') {
     if (!chatgpt) throw new ModelError('ChatGPT 订阅服务尚未初始化，请重启应用')
-    return chatgpt.createProvider(profile, attachments)
+    return chatgpt.createProvider(profile, attachments, onModelRequestActive)
   }
   const runtime = await ModelRuntime.create({ credentials: new InMemoryCredentialStore(), modelsPath: null, refreshOnCreate: false })
   const provider = `pi-agenda-${profile.id}`
@@ -26,13 +26,13 @@ export async function createPiProvider(profile: ModelProfile, apiKey: string, at
   }
   runtime.registerProvider(provider, {
     api, baseUrl: profile.baseUrl, apiKey: apiKey || 'pi-agenda-local',
-    models: [{ id: profile.model, name: profile.name, input: ['text', 'image'], reasoning: profile.thinking === true,
+    models: [{ id: profile.model, name: profile.name, input: ['text', 'image'], reasoning: profile.provider === 'openrouter' ? profile.supportedParameters?.includes('reasoning') === true : profile.thinking === true,
       contextWindow: profile.contextTokens ?? Math.max(32768, profile.maxTokens * 2), maxTokens: profile.maxTokens,
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-      ...(api === 'openai-completions' ? { compat: { maxTokensField: profile.tokenParameter, supportsDeveloperRole: profile.provider === 'openai', supportsStore: false, supportsReasoningEffort: profile.provider === 'openai' } } : {}) }],
+      ...(api === 'openai-completions' ? { compat: { maxTokensField: profile.tokenParameter, supportsDeveloperRole: profile.provider === 'openai', supportsStore: false, supportsReasoningEffort: profile.provider === 'openai' || profile.provider === 'openrouter', ...(profile.provider === 'openrouter' ? { thinkingFormat: 'openrouter' as const } : {}) } } : {}) }],
     streamSimple: (model: Model<Api>, context: TranscriptContext, options?: SimpleStreamOptions) => {
       const controller = new AbortController()
-      return safePiStream(implementation.streamSimple(model, context, {
+      return requestPiStream(() => implementation.streamSimple(model, context, {
       ...options, apiKey: apiKey || 'pi-agenda-local', maxTokens: profile.maxTokens,
       signal: options?.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal,
       ...(profile.temperature !== null ? { temperature: profile.temperature } : {}),
@@ -43,6 +43,12 @@ export async function createPiProvider(profile: ModelProfile, apiKey: string, at
         const body = attachments.replacePayload(modified, profile.provider === 'ollama' ? { ...profile, provider: 'custom' } : profile, responses) as Record<string, unknown>
         if (responses) body.store = false
         if (profile.temperature === null) delete body.temperature
+        if (profile.provider === 'openrouter') {
+          if (!profile.supportedParameters?.includes('temperature')) delete body.temperature
+          delete body.reasoning_effort
+          if (profile.thinkingLevel != null) body.reasoning = profile.thinkingLevel === 'off' ? { enabled: false } : { effort: profile.thinkingLevel }
+          else delete body.reasoning
+        }
         return body
       },
       onResponse: async (response, target) => {
@@ -58,7 +64,7 @@ export async function createPiProvider(profile: ModelProfile, apiKey: string, at
         }
         onLimits(limits)
       }
-    }), apiKey, () => controller.abort())
+    }), apiKey, () => controller.abort(), onModelRequestActive)
     }
   })
   return { runtime, model: runtime.getModel(provider, profile.model)!, thinkingLevel: profile.thinking === true || profile.ollamaThinkingLevel != null ? 'medium' as const : 'off' as const }

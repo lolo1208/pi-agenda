@@ -33,6 +33,7 @@ function IntegerParameterInput({ value, onValueChange, ...props }: Omit<InputPro
 export function ModelProfileFields({ profile, savedProfile, settings, modelInfo, infoLoading, apiKey, removeKey, onFieldChange, onApiKeyChange, onRemoveKeyChange, children }: ModelProfileFieldsProps): React.JSX.Element {
   const local = profile.provider === 'ollama'
   const subscription = profile.provider === 'chatgpt'
+  const router = profile.provider === 'openrouter'
   const fieldId = useId()
   const contextTokens = profile.contextTokens ?? modelInfo?.maxContextTokens
   const thinkingValues = modelInfo?.thinking?.values ?? []
@@ -51,10 +52,10 @@ export function ModelProfileFields({ profile, savedProfile, settings, modelInfo,
       {profile.contextTokens != null && modelInfo?.maxContextTokens != null && profile.contextTokens > modelInfo.maxContextTokens && <p className="error">设置超过模型支持的最大上下文。</p>}
       <Label htmlFor={`${fieldId}-max-tokens`}>{subscription ? '回复预留 Token' : '输出 Token 上限'}</Label>
       <div className="model-parameter-row">
-        <IntegerParameterInput id={`${fieldId}-max-tokens`} min="1" max={Math.min(profile.contextTokens ?? 131072, 131072)} value={profile.maxTokens ?? 2048} placeholder="2048" aria-describedby={`${fieldId}-max-tokens-help`} onValueChange={value => onFieldChange('maxTokens', value)} />
+        <IntegerParameterInput id={`${fieldId}-max-tokens`} min="1" max={Math.min(profile.contextTokens ?? 131072, modelInfo?.maxOutputTokens ?? 131072, 131072)} value={profile.maxTokens ?? 2048} placeholder="2048" aria-describedby={`${fieldId}-max-tokens-help`} onValueChange={value => onFieldChange('maxTokens', value)} />
         <p id={`${fieldId}-max-tokens-help`} className="hint">{subscription ? '本地预算，实际输出由服务决定。' : '单次回复的最大 Token 数。'}</p>
       </div>
-      {!subscription && <>
+      {!subscription && (!router || modelInfo?.supportedParameters?.includes('temperature')) && <>
         <Label htmlFor={`${fieldId}-temperature`}>温度（Temperature）</Label>
         <div className="model-parameter-row">
           <IntegerParameterInput id={`${fieldId}-temperature`} min="0" max={profile.protocol === 'anthropic' ? 1 : 2} value={profile.temperature ?? 1} placeholder="1" aria-describedby={`${fieldId}-temperature-help`} onValueChange={value => onFieldChange('temperature', value)} />
@@ -66,18 +67,18 @@ export function ModelProfileFields({ profile, savedProfile, settings, modelInfo,
         <IntegerParameterInput id={`${fieldId}-timeout`} min="5" max="300" value={profile.timeoutSeconds ?? (local ? 120 : 60)} placeholder={local ? '120' : '60'} aria-describedby={`${fieldId}-timeout-help`} onValueChange={value => onFieldChange('timeoutSeconds', value)} />
         <p id={`${fieldId}-timeout-help`} className="hint">请求的最长等待时间。</p>
       </div>
-      {(local || subscription) && showThinking && <div className="model-thinking-field">
+      {(local || subscription || router) && showThinking && <div className="model-thinking-field">
         <p id={`${fieldId}-thinking`}>{subscription ? '默认推理强度' : '推理模式'}</p>
         <RadioGroup className="model-thinking-options" aria-labelledby={`${fieldId}-thinking`} value={selectedThinking} onValueChange={value => {
           const raw = thinkingOptions.find(option => option.value === value)?.raw
-          if (subscription) { onFieldChange('thinkingLevel', typeof raw === 'string' ? raw as ModelProfile['thinkingLevel'] : null); onFieldChange('thinking', null) }
+          if (subscription || router) { onFieldChange('thinkingLevel', typeof raw === 'string' ? raw as ModelProfile['thinkingLevel'] : null); onFieldChange('thinking', null) }
           else { onFieldChange('ollamaThinkingLevel', typeof raw === 'string' ? raw : null); onFieldChange('thinking', typeof raw === 'boolean' ? raw : null) }
         }}>
           {thinkingOptions.map(option => <RadioGroupItem key={option.value} variant="segmented" className="model-thinking-option" value={option.value}>{option.label}</RadioGroupItem>)}
         </RadioGroup>
       </div>}
       <Button type="button" variant="ghost" size="sm" className="model-reset" onClick={() => { onFieldChange('contextTokens', null); onFieldChange('temperature', 1); onFieldChange('thinking', null); onFieldChange('thinkingLevel', null); onFieldChange('ollamaThinkingLevel', null); onFieldChange('maxTokens', 2048); onFieldChange('timeoutSeconds', local ? 120 : 60) }}>恢复默认参数</Button>
-      {!local && !subscription && <details className="provider-advanced"><summary>连接与认证</summary>
+      {!local && !subscription && !router && <details className="provider-advanced"><summary>连接与认证</summary>
         <Label>Base URL<Input type="url" value={profile.baseUrl} onChange={event => onFieldChange('baseUrl', event.target.value)} /></Label>
         <Label>模型 ID<Input value={profile.model} maxLength={200} onChange={event => onFieldChange('model', event.target.value)} /></Label>
         {!settings.encryptionAvailable && <p className="error" role="status">系统安全存储不可用，暂时不能保存或读取 API Key。</p>}
@@ -94,7 +95,7 @@ export function ModelProfileFields({ profile, savedProfile, settings, modelInfo,
         <div><dt>输出类型</dt><dd>{modelInfo ? modelInfo.capabilities.includes('completion') ? '文字' : modelInfo.capabilities.includes('embedding') ? '向量' : '未提供' : '未提供'}</dd></div>
         <div><dt>支持能力</dt><dd>{modelInfo?.capabilities.length ? modelInfo.capabilities.map(value => capabilityLabels[value] ?? value).join('、') : '服务未提供'}</dd></div>
       </dl>
-      {modelInfo?.capabilities.includes('vision') && <p className="hint">模型支持图片输入，当前对话界面仅发送文字。</p>}
+      {modelInfo?.capabilities.includes('vision') && <p className="hint">模型支持图片输入，可在对话中添加图片附件。</p>}
       <h4>规格</h4><dl>
         <div><dt>最大上下文</dt><dd>{modelInfo?.maxContextTokens?.toLocaleString() ?? '未提供'}{modelInfo?.maxContextTokens ? ' tokens' : ''}</dd></div>
         <div><dt>参数规模</dt><dd>{modelInfo?.parameterSize ?? '未提供'}</dd></div>

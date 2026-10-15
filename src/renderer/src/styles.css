@@ -13,9 +13,22 @@
 @import './styles/modal.css';
 @import './styles/file-context-menu.css';
 @import './styles/plan.css';
+@import './styles/code-preview.css';
+@import './styles/syntax.css';
 @import './styles/sandbox.css';
 @import './styles/settings.css';
+@import './styles/skills.css';
 @import './styles/project-picker.css';
 @import './styles/responsive.css';
 
-/* 聚焦样式由各组件自行声明：shadcn 输入类组件使用主色边框 + 2px 主色光环，其余控件使用 base.css 的主色外框。 */
+/* 全局取消非文字输入控件的焦点外框及 Tailwind 光环，保留输入框及其容器的蓝色焦点样式。 */
+:focus:not(:where(textarea, input:not([type="button"], [type="submit"], [type="reset"], [type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"], [type="image"], [type="hidden"]), [contenteditable="true"])) {
+  outline: none !important;
+  --tw-ring-shadow: 0 0 #0000 !important;
+  --tw-ring-offset-shadow: 0 0 #0000 !important;
+}
+
+/* 下拉选择器不是文字输入框，聚焦时保持常规边框。 */
+[data-slot="select-trigger"]:focus {
+  border-color: var(--border) !important;
+}

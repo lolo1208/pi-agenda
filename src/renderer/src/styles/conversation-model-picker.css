@@ -1,6 +1,6 @@
 .conversation-model-picker {
   z-index: 50;
-  width: min(360px, calc(100vw - 24px));
+  width: min(440px, calc(100vw - 24px));
   max-height: var(--radix-popover-content-available-height);
   display: flex;
   flex-direction: column;
@@ -112,6 +112,18 @@
 /* 当前会话模型以名称加粗标识，不再使用勾选标记。 */
 .conversation-model-name.is-current { font-weight: 600; }
 
+.conversation-model-name-tooltip {
+  z-index: 110;
+  max-width: min(440px, calc(100vw - 24px));
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #3c4043;
+  color: #f5f5f5;
+  font-size: calc(12rem / 14);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
 .conversation-model-meta {
   display: flex;
   flex: none;
@@ -140,6 +152,7 @@
 }
 
 .conversation-model-reasoning-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: calc(11.5rem / 14); color: var(--muted); }
+.conversation-model-reasoning-head > span { flex: none; white-space: nowrap; }
 .conversation-model-reasoning-head strong { min-width: 0; overflow: hidden; color: var(--text); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
 .conversation-model-thinking { display: flex; flex-wrap: wrap; gap: 3px; padding: 3px; border-radius: 14px; background: var(--hover); }
 .conversation-model-thinking-option { flex: 1 0 auto; min-width: 34px; border: 0; padding: 4px 8px; border-radius: 11px; text-align: center; font-size: calc(12rem / 14); color: var(--muted); background: transparent; cursor: pointer; }

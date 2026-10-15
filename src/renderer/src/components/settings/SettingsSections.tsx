@@ -5,12 +5,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Slider } from '@/components/ui/slider'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
-import { ArrowRightToLine, Monitor, Moon, RotateCcw, Sun } from 'lucide-react'
+import { ArrowRightToLine, Check, Copy, GitCompare, Lock, Monitor, Moon, RotateCcw, ShieldCheck, Sliders, Sun } from 'lucide-react'
 import type { Preferences, ThemePreference } from '../../preferences'
 import { useLayoutEffect, useRef, useState } from 'react'
-import { MAX_CUSTOM_PROMPT_LENGTH, PROVIDER_PRESETS, type ModelSettings } from '../../../../shared/models'
+import { findModelDescriptor, MAX_CUSTOM_PROMPT_LENGTH, PROVIDER_PRESETS, type ModelSettings } from '../../../../shared/models'
 import { unwrapModelResult } from '../../model-result'
 import { ModelIcon } from '../chat/ModelIcon'
+import { ModelPriceTag } from '../ModelPriceTag'
 
 interface PreferencesSectionProps {
   preferences: Preferences
@@ -51,7 +52,7 @@ export function GeneralSettingsSection({ preferences, onPreferences, isMac, sett
     <p className="section-description">调整工作台的默认行为。</p>
     <section className="settings-card custom-prompt-setting">
       <Label htmlFor="custom-prompt">全局提示词</Label>
-      <p id="custom-prompt-description" className="hint">每次发送消息时都会附带这些指令，对所有模型和会话生效。留空则不附加。</p>
+      <p id="custom-prompt-description" className="hint">每次发送消息时都会附带这些指令，对所有模型和会话生效。留空则不附加，修改从下一轮对话生效。</p>
       <div className="custom-prompt-input" data-suggestion-visible={showPromptSuggestion}>
         <Textarea ref={promptRef} id="custom-prompt" aria-describedby={showPromptSuggestion ? 'custom-prompt-description custom-prompt-shortcut' : 'custom-prompt-description'} rows={1} maxLength={MAX_CUSTOM_PROMPT_LENGTH} value={preferences.customPrompt} placeholder={CUSTOM_PROMPT_PLACEHOLDER}
           onFocus={() => setPromptFocused(true)} onBlur={() => setPromptFocused(false)}
@@ -73,7 +74,7 @@ export function GeneralSettingsSection({ preferences, onPreferences, isMac, sett
         <div><h3>默认模型</h3><p>新建会话时使用，可在会话中单独切换。</p></div>
         <div className="settings-select-control settings-model-select"><Select value={usableProfiles.some(item => item.id === settings?.activeProfileId) ? settings!.activeProfileId! : ''} disabled={saving || !usableProfiles.length} onValueChange={id => { void changeDefault(id) }}>
           <SelectTrigger aria-label="默认模型"><SelectValue placeholder={settings ? '请先在模型供应商中启用模型' : '正在读取模型…'} /></SelectTrigger>
-          <SelectContent>{usableProfiles.map(item => <SelectItem key={item.id} value={item.id} textValue={`${item.name} · ${PROVIDER_PRESETS.find(provider => provider.id === item.provider)?.label ?? item.provider}`}><span className="model-name-with-icon"><span aria-hidden="true"><ModelIcon model={item.model} provider={item.provider} /></span><span>{item.name} · {PROVIDER_PRESETS.find(provider => provider.id === item.provider)?.label ?? item.provider}</span></span></SelectItem>)}</SelectContent>
+          <SelectContent>{usableProfiles.map(item => <SelectItem key={item.id} value={item.id} textValue={`${item.name} · ${PROVIDER_PRESETS.find(provider => provider.id === item.provider)?.label ?? item.provider}`}><span className="model-name-with-icon model-priced-name"><span aria-hidden="true"><ModelIcon model={item.model} provider={item.provider} /></span><span className="model-price-name-text">{item.name} · {PROVIDER_PRESETS.find(provider => provider.id === item.provider)?.label ?? item.provider}</span><ModelPriceTag descriptor={findModelDescriptor(settings?.providers, item)} /></span></SelectItem>)}</SelectContent>
         </Select></div>
       </div>
       {saving && <p className="hint" role="status">正在保存默认模型…</p>}
@@ -143,13 +144,98 @@ export function AppearanceSettingsSection({ preferences, onPreferences }: Prefer
 }
 
 export function AboutSettingsSection(): React.JSX.Element {
-  return <>
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = async (): Promise<void> => {
+    try {
+      await navigator.clipboard.writeText('Pi Agenda · 行动派 0.1.0')
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      // 忽略剪贴板写入失败
+    }
+  }
+
+  return <div className="about-section">
     <h2>关于 Pi Agenda · 行动派</h2>
-    <section className="settings-card">
-      <h3>Pi Agenda · 行动派 <span className="muted">0.1.0</span></h3>
-      <p>本地桌面 AI 编程助手</p>
-      <p className="hint">已支持模型文本对话、手动快照与代码差异。文件浏览器、终端和浏览器将在后续版本实现。</p>
-      <p className="hint">模型配置由本地存储管理，API Key 使用系统安全存储加密。当前对话不会自动上传项目文件。</p>
+    <p className="section-description">面向本地桌面的 AI 编程助手与安全受控开发环境。</p>
+
+    <section className="settings-card about-header-card">
+      <div className="about-brand-row">
+        <div className="about-brand-logo">
+          <img src="./icons/app-icon.png" alt="Pi Agenda 图标" draggable={false} />
+        </div>
+        <div className="about-brand-info">
+          <div className="about-title-row">
+            <h3>Pi Agenda · 行动派</h3>
+            <span className="about-version-badge">0.1.0</span>
+          </div>
+          <p className="about-tagline">本地桌面 AI 编程助手，让代码改动透明受控、清晰可溯。</p>
+        </div>
+        <div className="about-actions">
+          <Button variant="outline" size="sm" onClick={handleCopy} className="about-copy-btn">
+            {copied ? <Check size={14} /> : <Copy size={14} />}
+            <span>{copied ? '已复制' : '复制版本'}</span>
+          </Button>
+        </div>
+      </div>
     </section>
-  </>
+
+    <div className="about-features-grid">
+      <div className="about-feature-item">
+        <div className="about-feature-icon"><ShieldCheck size={18} /></div>
+        <div className="about-feature-content">
+          <h4>系统级隔离沙箱</h4>
+          <p>终端命令严格约束在受限系统沙箱中执行，拦截越界访问与高危操作。</p>
+        </div>
+      </div>
+      <div className="about-feature-item">
+        <div className="about-feature-icon"><Sliders size={18} /></div>
+        <div className="about-feature-content">
+          <h4>细粒度安全审批</h4>
+          <p>支持受限自动与每次询问多级模式，关键文件改动与执行操作透明可控。</p>
+        </div>
+      </div>
+      <div className="about-feature-item">
+        <div className="about-feature-icon"><GitCompare size={18} /></div>
+        <div className="about-feature-content">
+          <h4>差异比对与快照</h4>
+          <p>内置代码差异检查与历史快照，每轮会话的代码修改均清晰透明。</p>
+        </div>
+      </div>
+      <div className="about-feature-item">
+        <div className="about-feature-icon"><Lock size={18} /></div>
+        <div className="about-feature-content">
+          <h4>本地优先与加密</h4>
+          <p>模型凭证使用系统安全存储加密，项目文件与会话数据保存在本地。</p>
+        </div>
+      </div>
+    </div>
+
+    <section className="settings-card about-specs-card">
+      <div className="about-spec-row">
+        <span className="about-spec-label">程序版本</span>
+        <span className="about-spec-value">0.1.0</span>
+      </div>
+      <div className="about-spec-divider" />
+      <div className="about-spec-row">
+        <span className="about-spec-label">运行架构</span>
+        <span className="about-spec-value">Electron · React · TypeScript</span>
+      </div>
+      <div className="about-spec-divider" />
+      <div className="about-spec-row">
+        <span className="about-spec-label">差异对比</span>
+        <span className="about-spec-value">git-diff-view</span>
+      </div>
+      <div className="about-spec-divider" />
+      <div className="about-spec-row">
+        <span className="about-spec-label">存储安全</span>
+        <span className="about-spec-value">系统安全凭证加密 · 本地持久化</span>
+      </div>
+    </section>
+
+    <footer className="about-footer">
+      <p>© 2026 Pi Agenda · 保留所有权利</p>
+    </footer>
+  </div>
 }

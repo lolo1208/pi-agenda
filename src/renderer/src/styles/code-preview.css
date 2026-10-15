@@ -1,0 +1,45 @@
+.chat-markdown .code-reference {
+  display: inline;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 3px;
+  overflow-wrap: anywhere;
+}
+.chat-markdown .code-reference code { margin-right: .35em; padding: 0; border-radius: 0; background: transparent; }
+.chat-markdown .code-reference:hover { background: transparent; }
+.code-reference:hover, .code-reference:focus-visible { text-decoration: underline; text-underline-offset: 3px; }
+.code-reference:focus-visible { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.code-preview-dialog {
+  width: min(88vw, calc(100vw - 40px));
+  height: min(84dvh, calc(100dvh - var(--titlebar-height, 0px) - 40px));
+  max-height: calc(100dvh - var(--titlebar-height, 0px) - 40px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+@media (min-width: 1440px) {
+  .code-preview-dialog {
+    width: 76vw;
+    height: min(78dvh, calc(100dvh - var(--titlebar-height, 0px) - 40px));
+  }
+}
+.code-preview-dialog .modal-heading { flex: none; margin-bottom: 8px; }
+.code-preview-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.code-preview-title svg { flex: none; }
+.code-preview-title span { overflow-wrap: anywhere; }
+.code-preview-dialog .modal-description { flex: none; margin-bottom: 14px; }
+.code-preview-scroll { flex: 1; overflow: auto; min-height: 0; background: var(--surface, var(--bg)); border: 1px solid var(--border); border-radius: 8px; }
+.code-preview-lines { margin: 0; padding: 8px 0; font-family: var(--font-mono); font-size: 13px; line-height: 1.65; tab-size: 4; }
+.code-preview-line { display: flex; min-width: max-content; padding-right: 16px; white-space: pre; }
+.code-preview-line.is-selected { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.code-preview-number { display: inline-block; position: sticky; left: 0; width: 6ch; flex: none; margin-right: 16px; padding-right: 12px; text-align: right; user-select: none; color: var(--text); background: var(--bg); }
+.is-selected .code-preview-number { color: var(--accent); font-weight: 600; }
+.code-preview-gap { padding: 8px 16px; color: var(--muted); font-size: 12px; border-block: 1px solid var(--border); }
+.code-preview-state { padding: 24px 0; }
+.code-preview-virtual-line { padding: 0; }
+.code-preview-state p { margin: 0 0 12px; }

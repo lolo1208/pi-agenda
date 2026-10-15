@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import type { ChatgptUsage, ChatImage, ChatMessage, ModelProfile, ModelProfileView, ModelProviderConnection, ModelReply, ModelSettings, ProviderId } from '../../shared/models'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { QueueEditState } from '../../shared/conversations'
+import type { ChatgptUsage, OpenrouterUsage, ChatImage, ChatMessage, ModelProfile, ModelProfileView, ModelProviderConnection, ModelReply, ModelSettings, ProviderId } from '../../shared/models'
 import { unwrapModelResult } from './model-result'
 import { ChatComposer } from './components/chat/ChatComposer'
 import type { QueuedMessage } from './components/chat/MessageQueue'
@@ -18,6 +19,7 @@ import { PlanDialog } from './components/chat/PlanDialog'
 import { Button } from './components/ui/button'
 import type { IntentMode, PlanInteraction } from '../../shared/models'
 import { LoaderCircle } from 'lucide-react'
+import { PagedList } from './components/PagedList'
 
 interface Props {
   snapshots?: import('../../shared/models').AgentSnapshot[]
@@ -27,12 +29,15 @@ interface Props {
   onPermissionChange?(mode: PermissionMode): void
   active?: boolean
   projectReady?: boolean
+  projectCurrent?: boolean
   conversationId?: string
   initialMessages?: ChatMessage[]; initialDraft?: string; initialDraftImages?: ChatImage[]
-  onDraftChange?(draft: string, images: ChatImage[]): void
+  initialDraftSkillIds?: string[]
+  onDraftChange?(draft: string, images: ChatImage[], skillIds: string[]): void
   initialQueue?: QueuedMessage[]
   initialQueuePaused?: boolean
-  onQueueChange?(queue: QueuedMessage[], paused: boolean): void
+  initialQueueEdit?: QueueEditState
+  onQueueChange?(queue: QueuedMessage[], paused: boolean, edit?: QueueEditState): void
   profiles?: ModelProfileView[]
   customPrompt?: string
   compressionThreshold?: number; initialCompaction?: ContextCompaction
@@ -45,10 +50,10 @@ interface Props {
   project?: string | null; providers?: ModelProviderConnection[]
   /** 快捷面板改完推理档位后回传新的模型设置，由顶层刷新。 */
   onModelSettingsChange?(settings: ModelSettings): void
-  profile: ModelProfileView | undefined; onBusyChange(busy: boolean): void; onOpenSettings(): void
+  profile: ModelProfileView | undefined; onBusyChange(busy: boolean): void; onOpenSettings(section?: 'models' | 'skills'): void
   onMessagesChange?(messages: ChatMessage[], restored?: boolean): void; settingsDisabled?: boolean; sendWithCtrlEnter?: boolean
 }
-export default function ModelChat({ snapshots, initialIntentMode = 'execute', onIntentChange, initialPermissionMode = 'default', onPermissionChange, active = true, projectReady = true, conversationId, initialMessages = [], initialDraft = '', initialDraftImages = [], initialQueue = [], initialQueuePaused = false, onQueueChange, initialCompaction, onCompactionChange, compressionThreshold = 90, onDraftChange, profile: defaultProfile, profiles, project, providers, onModelSettingsChange, onBusyChange, onReplyComplete, onWaitingForInputChange, onOpenSettings, onMessagesChange, initialModelId, onModelChange, settingsDisabled, sendWithCtrlEnter = true, customPrompt = '' }: Props): React.JSX.Element {
+export default function ModelChat({ snapshots, initialIntentMode = 'execute', onIntentChange, initialPermissionMode = 'default', onPermissionChange, active = true, projectReady = true, projectCurrent = true, conversationId, initialMessages = [], initialDraft = '', initialDraftImages = [], initialDraftSkillIds = [], initialQueue = [], initialQueuePaused = false, initialQueueEdit, onQueueChange, initialCompaction, onCompactionChange, compressionThreshold = 90, onDraftChange, profile: defaultProfile, profiles, project, providers, onModelSettingsChange, onBusyChange, onReplyComplete, onWaitingForInputChange, onOpenSettings, onMessagesChange, initialModelId, onModelChange, settingsDisabled, sendWithCtrlEnter = true, customPrompt = '' }: Props): React.JSX.Element {
   const [permissionMode, setPermissionMode] = useState(initialPermissionMode)
   const [intentMode, setIntentMode] = useState<IntentMode>(initialIntentMode)
   const intentCallback = useRef(onIntentChange)
@@ -89,20 +94,25 @@ export default function ModelChat({ snapshots, initialIntentMode = 'execute', on
   const [compaction, setCompaction] = useState(initialCompaction)
   const [prompt, setPrompt] = useState(initialDraft)
   const [images, setImages] = useState<ChatImage[]>(initialDraftImages)
+  const [skillIds, setSkillIds] = useState<string[]>(initialDraftSkillIds)
   const [queue, setQueue] = useState<QueuedMessage[]>(initialQueue)
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [queuePaused, setQueuePaused] = useState(initialQueuePaused)
-  const savedDraft = useRef<{ prompt: string; images: ChatImage[] } | null>(null)
+  const [editingId, setEditingId] = useState<string | null>(() => initialQueue.find(item => item.id === initialQueueEdit?.id)?.id ?? null)
+  const [queuePaused, setQueuePaused] = useState(initialQueueEdit?.paused ?? initialQueuePaused)
+  const savedDraft = useRef<QueueEditState['draft'] | null>(initialQueueEdit?.draft ?? null)
+  const queueEdit = useMemo<QueueEditState | undefined>(() => editingId && savedDraft.current
+    ? { id: editingId, draft: savedDraft.current, paused: queuePaused } : undefined, [editingId, queuePaused])
   const restoreDraft = (): void => {
     setPrompt(savedDraft.current?.prompt ?? ''); setImages(savedDraft.current?.images ?? [])
+    setSkillIds(savedDraft.current?.skillIds ?? [])
     savedDraft.current = null; setEditingId(null)
   }
   const editQueued = (id: string): void => {
     const item = queue.find(item => item.id === id)
     if (!item) return
     if (editingId) return
-    savedDraft.current = { prompt, images }
+    savedDraft.current = { prompt, images, skillIds }
     setEditingId(id); setPrompt(item.content); setImages(item.images ?? [])
+    setSkillIds(item.skillIds ?? [])
   }
   const deleteQueued = (id: string): void => {
     setQueue(items => items.filter(item => item.id !== id))
@@ -119,13 +129,15 @@ export default function ModelChat({ snapshots, initialIntentMode = 'execute', on
     })
   }
   const submit = (): void => {
-    if (!profile || permissionChanging || settingsDisabled || !projectReady || (!prompt.trim() && !images.length)) return
+    if (!prompt.trim() && !images.length) return
     if (editingId) {
-      setQueue(items => items.map(item => item.id === editingId ? { ...item, content: prompt.trim(), images } : item))
+      setQueue(items => items.map(item => item.id === editingId ? { ...item, content: prompt.trim(), images, skillIds } : item))
       restoreDraft()
     } else {
-      setQueue(items => [...items, { id: crypto.randomUUID(), role: 'user', content: prompt.trim(), ...(images.length ? { images } : {}) }])
+      if (!profile || permissionChanging || settingsDisabled || !projectReady) return
+      setQueue(items => [...items, { id: crypto.randomUUID(), role: 'user', content: prompt.trim(), ...(images.length ? { images } : {}), ...(skillIds.length ? { skillIds } : {}) }])
       setPrompt(''); setImages([])
+      setSkillIds([])
     }
   }
   const [error, setError] = useState('')
@@ -142,10 +154,10 @@ export default function ModelChat({ snapshots, initialIntentMode = 'execute', on
   }, [conversationId, onPermissionChange])
   /** 快捷面板内的推理修改：按设置页的字段归一规则只重写推理相关字段，其余参数原样保存。 */
   const changeThinking = useCallback(async (target: ModelProfileView, value: boolean | string | null): Promise<void> => {
-    if (target.provider !== 'chatgpt' && target.provider !== 'ollama') return
+    if (target.provider !== 'chatgpt' && target.provider !== 'ollama' && target.provider !== 'openrouter') return
     const { hasApiKey: _hasApiKey, available: _available, ...base } = target
     const next: ModelProfile = { ...base,
-      thinkingLevel: target.provider === 'chatgpt' && typeof value === 'string' ? value as ModelProfile['thinkingLevel'] : null,
+      thinkingLevel: (target.provider === 'chatgpt' || target.provider === 'openrouter') && typeof value === 'string' ? value as ModelProfile['thinkingLevel'] : null,
       ollamaThinkingLevel: target.provider === 'ollama' && typeof value === 'string' ? value : null,
       thinking: typeof value === 'boolean' ? value : null }
     try {
@@ -160,7 +172,7 @@ export default function ModelChat({ snapshots, initialIntentMode = 'execute', on
   }, [pendingFullAccess, requestId, changePermission])
   useEffect(() => {
     if (!project || !window.piAgenda.getSandboxStatus) { setSandboxState(null); return }
-    if (!projectReady) return
+    if (!projectReady || !projectCurrent || !active) return
     let current = true
     const automatic = permissionMode === 'auto' && active && Boolean(window.piAgenda.ensureSandbox)
     let timer: ReturnType<typeof setTimeout> | undefined, watchdog: ReturnType<typeof setTimeout> | undefined
@@ -187,7 +199,7 @@ export default function ModelChat({ snapshots, initialIntentMode = 'execute', on
     }
     read()
     return () => { current = false; if (timer) clearTimeout(timer); if (watchdog) clearTimeout(watchdog) }
-  }, [project, permissionMode, active, projectReady, requestId, sandboxRefresh])
+  }, [project, permissionMode, active, projectReady, projectCurrent, requestId, sandboxRefresh])
   useEffect(() => window.piAgenda.onSandboxState?.(state => {
     if (!project || !sameSandboxProject(state.project, project)) return
     setSandboxState(previous => mergeSandboxState(previous, state))
@@ -202,6 +214,7 @@ export default function ModelChat({ snapshots, initialIntentMode = 'execute', on
   const [execution, setExecution] = useState<{ model: string; provider: ProviderId; startedAt: number; firstMessage: number }>()
   const activeRequest = useRef<string | null>(null)
   const nativeHistory = useRef(false)
+  const [historyReady, setHistoryReady] = useState(!conversationId || !window.piAgenda.getAgentHistory)
   const messagesCallback = useRef(onMessagesChange)
   messagesCallback.current = onMessagesChange
   // 请求期间可以切换会话，完成时必须使用当前的查看状态。
@@ -211,7 +224,9 @@ export default function ModelChat({ snapshots, initialIntentMode = 'execute', on
     if (!conversationId || !window.piAgenda.getAgentHistory) return
     let active = true
     void window.piAgenda.getAgentHistory(conversationId).then(unwrapModelResult).then(history => {
-      if (active && !busyRef.current && history) { nativeHistory.current = true; setMessages(history); messagesCallback.current?.(history, true) }
+      if (!active) return
+      if (history) { nativeHistory.current = true; setMessages(history); messagesCallback.current?.(history, true) }
+      setHistoryReady(true)
     }).catch(() => { if (active) setError('代理会话恢复失败，请检查本地会话文件后重试') })
     return () => { active = false }
   }, [conversationId])
@@ -243,6 +258,28 @@ export default function ModelChat({ snapshots, initialIntentMode = 'execute', on
   const [statistics, setStatistics] = useState<{ profileId: string; reply: ModelReply } | null>(null)
   const matchingStatistics = statistics && statistics.profileId === profile?.id ? statistics : null
   const [subscriptionUsage, setSubscriptionUsage] = useState<ChatgptUsage>()
+  const [openrouterUsage, setOpenrouterUsage] = useState<OpenrouterUsage>()
+  useEffect(() => {
+    setOpenrouterUsage(undefined)
+    if (!active || profile?.provider !== 'openrouter') return
+    let disposed = false
+    let loading = false
+    const refresh = async (): Promise<void> => {
+      if (loading) return
+      loading = true
+      try {
+        const value = unwrapModelResult(await window.piAgenda.getOpenrouterUsage())
+        if (!disposed) setOpenrouterUsage(value)
+      } catch (error) {
+        if (!disposed) setOpenrouterUsage({ fetchedAt: 0, error: error instanceof Error ? error.message : 'OpenRouter 额度读取失败，将自动重试' })
+      } finally { loading = false }
+    }
+    void refresh()
+    const timer = setInterval(() => void refresh(), 60000)
+    const onFocus = (): void => { void refresh() }
+    window.addEventListener('focus', onFocus)
+    return () => { disposed = true; clearInterval(timer); window.removeEventListener('focus', onFocus) }
+  }, [active, profile?.provider, profile?.model, requestId])
   useEffect(() => {
     if (!active || profile?.provider !== 'chatgpt') return
     let disposed = false
@@ -259,21 +296,29 @@ export default function ModelChat({ snapshots, initialIntentMode = 'execute', on
   const busyRef = useRef(false)
   const draftCallback = useRef(onDraftChange)
   draftCallback.current = onDraftChange
-  useEffect(() => { draftCallback.current?.(prompt, images) }, [prompt, images])
+  useEffect(() => { draftCallback.current?.(prompt, images, skillIds) }, [prompt, images, skillIds])
   const queueCallback = useRef(onQueueChange)
   queueCallback.current = onQueueChange
-  // 编辑尚未保存时，刷新后保留原队列并暂停，避免直接发送旧内容。
-  useEffect(() => { queueCallback.current?.(queue, queuePaused || Boolean(editingId)) }, [queue, queuePaused, editingId])
+  // 原队列、编辑内容和原草稿分别保存，刷新后继续编辑，避免直接发送旧内容。
+  useEffect(() => { queueCallback.current?.(queue, queuePaused || Boolean(editingId), queueEdit) }, [queue, queuePaused, queueEdit])
+  const stopRequest = async (): Promise<void> => {
+    if (!requestId) return
+    // 立即暂停，即使取消与正常完成同时发生，也不能启动下一条。
+    setQueuePaused(true)
+    unwrapModelResult(await window.piAgenda.cancelModelRequest(requestId))
+  }
   const send = async (item: QueuedMessage): Promise<void> => {
     if (!profile || busyRef.current) return
     const { id: _queueId, ...message } = item
     setQueue(items => items.filter(queued => queued.id !== item.id))
     setScrollToLatestRequest(value => value + 1)
-    busyRef.current = true; onBusyChange(true); setError(''); setNotice(''); setPending({ message, firstMessage: messages.length }); setStreamedText(''); setAgentStatus('正在连接模型…')
+    busyRef.current = true; setError(''); setNotice(''); setPending({ message, firstMessage: messages.length }); setStreamedText(''); setAgentStatus('正在连接模型…')
     const id = crypto.randomUUID(); setRequestId(id); activeRequest.current = id
     setExecution({ model: profile.model, provider: profile.provider, startedAt: performance.now(), firstMessage: messages.length })
     const next: ChatMessage[] = [...messages, message]
+    let replyReceived = false
     try {
+      onBusyChange(true)
       const instruction = customPrompt.trim()
       const requestContext = { threshold: compressionThreshold, usage: statistics?.profileId === profile.id ? statistics.reply.usage : undefined }
       const requestMessages = (conversationId ? nativeHistory.current ? [message] : next : contextMessages(next, compaction))
@@ -281,6 +326,7 @@ export default function ModelChat({ snapshots, initialIntentMode = 'execute', on
       const reply = unwrapModelResult(await (conversationId
         ? window.piAgenda.chatWithModel(profile.id, id, requestMessages, instruction || undefined, requestContext, { conversationId, project, ...(intentMode !== 'execute' ? { intentMode } : {}) })
         : window.piAgenda.chatWithModel(profile.id, id, requestMessages, instruction || undefined, requestContext)))
+      replyReceived = true
       setStatistics({ profileId: profile.id, reply })
       if (reply.messages) nativeHistory.current = true
       const completed: ChatMessage[] = (reply.messages ?? [...next, { role: 'assistant' as const, content: reply.text }]).map((message, index) =>
@@ -291,16 +337,21 @@ export default function ModelChat({ snapshots, initialIntentMode = 'execute', on
         const updated = { ...reply.compaction, coveredMessages: reply.compaction.coveredMessages + (compaction ? compaction.coveredMessages - 1 : 0) }
         setCompaction(updated); onCompactionChange?.(updated)
       } else if (conversationId) { setCompaction(undefined); onCompactionChange?.(undefined) }
-      setNotice([reply.compaction ? '已自动压缩上下文，完整记录已保留' : '', reply.truncated ? '已达到输出上限，可在设置中调整' : ''].filter(Boolean).join(' · '))
+      setNotice([reply.compaction ? '已自动压缩上下文，完整记录已保留' : '', reply.truncated ? '已达到输出上限，可在设置中调整' : '', ...(reply.warnings ?? [])].filter(Boolean).join(' · '))
     } catch (e) {
+      if (replyReceived) { setNotice('回复已完成，但界面收尾失败，请重新打开会话查看结果'); return }
       setError(e instanceof Error ? e.message : '模型请求失败，请重试')
       setQueue(items => [item, ...items]); setQueuePaused(true)
     }
-    finally { busyRef.current = false; activeRequest.current = null; setRequestId(null); setPending(null); setStreamedText(''); setAgentStatus(''); setApprovals([]); setFullConfirmation(null); setInteraction(null); setPlanProgress(''); onBusyChange(false) }
+    finally {
+      busyRef.current = false; activeRequest.current = null; setRequestId(null); setPending(null); setStreamedText(''); setAgentStatus(''); setApprovals([]); setFullConfirmation(null); setInteraction(null); setPlanProgress('')
+      try { onBusyChange(false) }
+      catch { setNotice('界面运行状态更新失败，请重新打开会话') }
+    }
   }
   // 等历史更新后再执行下一条，确保下一轮使用完整上下文。编辑时暂缓队列执行。
   useEffect(() => {
-    if (requestId || busyRef.current || editingId || queuePaused || permissionChanging || settingsDisabled || !projectReady || pendingFullAccess || !profile || !queue.length) return
+    if (requestId || busyRef.current || editingId || queuePaused || permissionChanging || settingsDisabled || !projectReady || !historyReady || pendingFullAccess || !profile || !queue.length) return
     void send(queue[0])
   })
   return <section className="model-chat" aria-label="模型对话">
@@ -310,10 +361,11 @@ export default function ModelChat({ snapshots, initialIntentMode = 'execute', on
       setSandboxRefresh(value => value + 1)
     }} onStop={async () => { unwrapModelResult(await window.piAgenda.stopSandbox()) }} onFullAccess={() => {
       if (!requestId) { setSandboxOpen(false); void changePermission('full'); return }
-      void window.piAgenda.cancelModelRequest(requestId).then(unwrapModelResult).then(() => setPendingFullAccess(true)).catch(e => setError(e instanceof Error ? e.message : '停止任务失败，请重试'))
+      setPendingFullAccess(true)
+      void stopRequest().catch(e => { setPendingFullAccess(false); setError(e instanceof Error ? e.message : '停止任务失败，请重试') })
     }} />}
     {active && interaction && interactionOpen && <PlanDialog key={interaction.id} interaction={interaction} onDismiss={() => setInteractionOpen(false)} onCancel={() => {
-      if (requestId) void window.piAgenda.cancelModelRequest(requestId).then(unwrapModelResult).catch(() => setError('取消计划失败，请重试'))
+      void stopRequest().catch(() => setError('取消计划失败，请重试'))
     }} onRespond={async response => {
       if (!requestId || !conversationId) throw new Error('计划交互已失效')
       const progress = response.answers ? '已提交回答，正在与模型沟通…' : response.decision === 'revise' ? '已提交修改意见，正在完善计划…' : ''
@@ -322,27 +374,27 @@ export default function ModelChat({ snapshots, initialIntentMode = 'execute', on
         unwrapModelResult(await window.piAgenda.respondPlanInteraction(requestId, conversationId, interaction.id, response))
       } catch (e) { setPlanProgress(''); throw e }
     }} />}
-    {fullConfirmation && conversationId && <FullAccessDialog key={fullConfirmation.approval.id} onRespond={async allow => {
+    {active && fullConfirmation && conversationId && <FullAccessDialog key={fullConfirmation.approval.id} onRespond={async allow => {
       try { unwrapModelResult(await window.piAgenda.respondToolApproval(fullConfirmation.requestId, conversationId, fullConfirmation.approval.id, allow)) }
       catch (e) { setError(e instanceof Error ? e.message : '权限确认失败，请重试') }
     }} />}
-    <ChatTranscript active={active} scrollToLatestRequest={scrollToLatestRequest} snapshots={snapshots} messages={messages} pendingMessage={pending?.message ?? null} streamedText={streamedText} agentStatus={agentStatus} isBusy={Boolean(requestId)} execution={execution} hasProfile={Boolean(profile)} settingsDisabled={settingsDisabled} onOpenSettings={onOpenSettings} />
-    <div className="composer-wrap">
+    <ChatTranscript project={project} active={active} scrollToLatestRequest={scrollToLatestRequest} snapshots={snapshots} messages={messages} pendingMessage={pending?.message ?? null} streamedText={streamedText} agentStatus={agentStatus} isBusy={Boolean(requestId)} execution={execution} hasProfile={Boolean(profile)} settingsDisabled={settingsDisabled} onOpenSettings={onOpenSettings} />
+    <div className="composer-wrap" hidden={!active}>
       {requestId && !interaction && planProgress && <div className="plan-waiting plan-progress" role="status"><LoaderCircle size={18} className="plan-progress-spinner" aria-hidden="true" /><span>{planProgress}</span></div>}
       {interaction && <div className="plan-waiting"><span>{interaction.kind === 'questions' ? '计划正在等待你的回答' : '计划已准备好，等待你的批准'}</span><Button variant="outline" onClick={() => setInteractionOpen(true)}>{interaction.kind === 'questions' ? '回答问题' : '审阅计划'}</Button></div>}
-      {approvals.map(approval => <ToolApprovalCard key={approval.id} approval={approval} onViewDetails={() => setApprovalDetailsOpen(true)} onRespond={async allow => {
+      <PagedList items={approvals} pageSize={10} label="待审批请求">{page => page.map(approval => <ToolApprovalCard key={approval.id} approval={approval} onViewDetails={() => setApprovalDetailsOpen(true)} onRespond={async allow => {
         if (!requestId || !conversationId) return
         try { unwrapModelResult(await window.piAgenda.respondToolApproval(requestId, conversationId, approval.id, allow)) }
         catch (e) { setError(e instanceof Error ? e.message : '审批回应失败，请重试') }
-      }} />)}
-      <ToolApprovalDiffDialog open={approvalDetailsOpen} onOpenChange={setApprovalDetailsOpen} approvals={approvals} getPreview={getApprovalPreview} />
-      {error && <p className="error" role="alert">{error}</p>}
-      {notice && <p className="request-notice" role="status">{notice}</p>}
+      }} />)}</PagedList>
+      <ToolApprovalDiffDialog open={active && approvalDetailsOpen} onOpenChange={setApprovalDetailsOpen} approvals={approvals} getPreview={getApprovalPreview} />
+      {active && error && <p className="error" role="alert">{error}</p>}
+      {active && notice && <p className="request-notice" role="status">{notice}</p>}
       {active && project && <SandboxStatus key={project} visible={permissionMode === 'auto'} state={currentSandboxState} onInspect={() => setSandboxOpen(true)} />}
-      <ChatComposer queue={queue} editingId={editingId} queuePaused={queuePaused} onResumeQueue={() => setQueuePaused(false)} onCancelEdit={restoreDraft} onEditQueued={editQueued} onDeleteQueued={deleteQueued} onReorderQueued={reorderQueued} intentMode={intentMode} onIntentChange={changeIntent} permissionMode={permissionMode} onPermissionChange={conversationId ? changePermission : undefined} profile={profile} profiles={availableProfiles} providers={providers} onSelectModel={id => { setSelectedModelId(id); onModelChange?.(id) }} onThinkingChange={changeThinking} prompt={prompt} images={images} onImagesChange={setImages} isBusy={Boolean(requestId)} hasMessages={messages.length > 0} settingsDisabled={settingsDisabled || permissionChanging || !projectReady} sendWithCtrlEnter={sendWithCtrlEnter} onPromptChange={setPrompt} onOpenSettings={onOpenSettings} onSend={submit} onCancel={() => { if (requestId) void window.piAgenda.cancelModelRequest(requestId).then(unwrapModelResult).catch(() => setError('取消请求失败，请重试')) }} />
-      <ComposerStatus latestReply={matchingStatistics?.reply} subscriptionUsage={subscriptionUsage} compressionThreshold={compressionThreshold} project={project} profile={profile} contextLimit={providers?.find(item => item.provider === profile?.provider && item.baseUrl === profile?.baseUrl)?.models.find(item => item.id === profile?.model)?.maxContextTokens} messages={contextMessages(messages, compaction)} prompt={prompt} imageCount={images.length} attachments={images} usage={matchingStatistics?.reply.usage} rateLimits={matchingStatistics?.reply.rateLimits} onOpenProject={() => {
+      <ChatComposer active={active} queue={queue} editingId={editingId} queuePaused={queuePaused} onResumeQueue={() => setQueuePaused(false)} onCancelEdit={restoreDraft} onEditQueued={editQueued} onDeleteQueued={deleteQueued} onReorderQueued={reorderQueued} intentMode={intentMode} onIntentChange={changeIntent} permissionMode={permissionMode} onPermissionChange={conversationId ? changePermission : undefined} profile={profile} profiles={availableProfiles} providers={providers} onSelectModel={id => { setSelectedModelId(id); onModelChange?.(id) }} onThinkingChange={changeThinking} prompt={prompt} images={images} skillIds={skillIds} onSkillsChange={setSkillIds} onImagesChange={setImages} isBusy={Boolean(requestId)} hasMessages={messages.length > 0} settingsDisabled={settingsDisabled || permissionChanging || !projectReady} sendWithCtrlEnter={sendWithCtrlEnter} onPromptChange={setPrompt} onOpenSettings={onOpenSettings} onSend={submit} onCancel={() => { void stopRequest().catch(() => setError('取消请求失败，请重试')) }} />
+      {active && <ComposerStatus latestReply={matchingStatistics?.reply} subscriptionUsage={subscriptionUsage} openrouterUsage={openrouterUsage} compressionThreshold={compressionThreshold} project={project} profile={profile} contextLimit={providers?.find(item => item.provider === profile?.provider && item.baseUrl === profile?.baseUrl)?.models.find(item => item.id === profile?.model)?.maxContextTokens} messages={contextMessages(messages, compaction)} prompt={prompt} imageCount={images.length} attachments={images} usage={matchingStatistics?.reply.usage} rateLimits={matchingStatistics?.reply.rateLimits} onOpenProject={() => {
         if (project) void window.piAgenda.openProjectDirectory(project).catch(() => setError('无法打开项目目录，请检查目录是否存在后重试'))
-      }} />
+      }} />}
     </div>
   </section>
 }

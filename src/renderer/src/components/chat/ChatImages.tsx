@@ -4,14 +4,15 @@ import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/modal'
 import type { ChatImage } from '../../../../shared/models'
 import { attachmentKind, attachmentSize, attachmentText, formatAttachmentSize } from '../../../../shared/attachments'
+import { useTranscriptOverlay, useTranscriptState } from './TranscriptState'
 
 interface Props { images: ChatImage[]; onRemove?: (id: string) => void; disabled?: boolean }
 
 export function ChatImages({ images, onRemove, disabled }: Props): React.JSX.Element {
-  const [preview, setPreview] = useState<ChatImage | null>(null)
-  const [unreadable, setUnreadable] = useState<Set<string>>(new Set())
-  const kind = preview ? attachmentKind(preview) : null
+  const { showOverlay, overlay } = useTranscriptOverlay()
+  const [unreadable, setUnreadable] = useTranscriptState('unreadable-attachments', () => new Set<string>())
   const markUnreadable = (id: string): void => setUnreadable(items => new Set([...items, id]))
+  const setPreview = (image: ChatImage): void => showOverlay(close => <AttachmentPreview image={image} onClose={close} onUnreadable={() => markUnreadable(image.id)} />)
   return <>
     <div className="chat-images" aria-label="文件附件">
       {images.map(image => {
@@ -30,17 +31,24 @@ export function ChatImages({ images, onRemove, disabled }: Props): React.JSX.Ele
         </div>
       })}
     </div>
-    <Modal open={Boolean(preview)} onOpenChange={open => { if (!open) setPreview(null) }} title={`${kind === 'image' ? '图片' : '附件'}预览：${preview?.name}`}
+    {overlay}
+  </>
+}
+
+function AttachmentPreview({ image: preview, onClose, onUnreadable }: { image: ChatImage; onClose: () => void; onUnreadable: () => void }): React.JSX.Element {
+  const kind = attachmentKind(preview)
+  const [unreadable, setUnreadable] = useState(false)
+  const markUnreadable = (): void => { setUnreadable(true); onUnreadable() }
+  return <Modal open onOpenChange={open => { if (!open) onClose() }} title={`${kind === 'image' ? '图片' : '附件'}预览：${preview.name}`}
       bare closeOnBackdropClick contentClassName={`image-preview-content${kind !== 'image' ? ' file-preview-content' : ''}`} closeClassName="image-preview-close"
       closeLabel={kind === 'image' ? '关闭图片预览' : '关闭附件预览'}>
-      {preview && (unreadable.has(preview.id) ? <p role="alert">此文件无法预览，请检查文件格式或内容。</p>
-        : kind === 'image' ? <img src={preview.dataUrl} alt={preview.name} onError={() => markUnreadable(preview.id)} />
+      {unreadable ? <p role="alert">此文件无法预览，请检查文件格式或内容。</p>
+        : kind === 'image' ? <img src={preview.dataUrl} alt={preview.name} onError={markUnreadable} />
         : kind === 'text' ? <>
           <p className="file-preview-title">{preview.name}</p>
           <pre className="file-preview-text">{attachmentText(preview)}</pre>
         </>
-        : kind === 'audio' ? <audio src={preview.dataUrl} controls aria-label={preview.name} onError={() => markUnreadable(preview.id)} />
-        : kind === 'video' ? <video src={preview.dataUrl} controls playsInline aria-label={preview.name} onError={() => markUnreadable(preview.id)} /> : null)}
+        : kind === 'audio' ? <audio src={preview.dataUrl} controls aria-label={preview.name} onError={markUnreadable} />
+        : kind === 'video' ? <video src={preview.dataUrl} controls playsInline aria-label={preview.name} onError={markUnreadable} /> : null}
     </Modal>
-  </>
 }

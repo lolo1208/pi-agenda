@@ -1,0 +1,52 @@
+/* 语法颜色使用独立变量，主题切换时无需重新解析代码。 */
+:root {
+  --syntax-keyword: #a6263b;
+  --syntax-title: #7041a6;
+  --syntax-literal: #075ca8;
+  --syntax-string: #17552c;
+  --syntax-builtin: #97420a;
+  --syntax-comment: #58615f;
+  --syntax-tag: #096268;
+}
+:root[data-theme='dark'] {
+  --syntax-keyword: #ff8b9b;
+  --syntax-title: #d2b0ff;
+  --syntax-literal: #8bc9ff;
+  --syntax-string: #a4dca8;
+  --syntax-builtin: #ffbf8e;
+  --syntax-comment: #a4aaa7;
+  --syntax-tag: #84d7dd;
+}
+.syntax-code .hljs-keyword,
+.syntax-code .hljs-doctag,
+.syntax-code .hljs-type,
+.syntax-code .hljs-template-tag,
+.syntax-code .hljs-template-variable { color: var(--syntax-keyword); }
+.syntax-code .hljs-title,
+.syntax-code .hljs-section { color: var(--syntax-title); }
+.syntax-code .hljs-attr,
+.syntax-code .hljs-attribute,
+.syntax-code .hljs-literal,
+.syntax-code .hljs-meta,
+.syntax-code .hljs-number,
+.syntax-code .hljs-variable,
+.syntax-code .hljs-selector-attr,
+.syntax-code .hljs-selector-class,
+.syntax-code .hljs-selector-id { color: var(--syntax-literal); }
+.syntax-code .hljs-string,
+.syntax-code .hljs-regexp { color: var(--syntax-string); }
+.syntax-code .hljs-built_in,
+.syntax-code .hljs-symbol { color: var(--syntax-builtin); }
+.syntax-code .hljs-comment,
+.syntax-code .hljs-code,
+.syntax-code .hljs-formula { color: var(--syntax-comment); }
+.syntax-code .hljs-name,
+.syntax-code .hljs-tag,
+.syntax-code .hljs-quote,
+.syntax-code .hljs-selector-tag,
+.syntax-code .hljs-selector-pseudo { color: var(--syntax-tag); }
+.syntax-code .hljs-subst { color: var(--text); }
+.syntax-code .hljs-emphasis { font-style: italic; }
+.syntax-code .hljs-strong { font-weight: 600; }
+.syntax-code .hljs-addition { color: var(--syntax-string); }
+.syntax-code .hljs-deletion { color: var(--syntax-keyword); }

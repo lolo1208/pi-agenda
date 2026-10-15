@@ -1,4 +1,5 @@
 import { parseThinkingControls, type ModelDescriptor } from '../../shared/models'
+import { ollamaModelPricing } from '../../shared/model-pricing'
 import { asRecord, ModelError, normalizeOllamaUrl, requiredString } from './model-validation'
 
 /** 读取有大小和超时限制的 JSON，避免模型元数据拖住主进程。 */
@@ -35,7 +36,8 @@ function descriptor(id: string, data: Record<string, unknown>): ModelDescriptor 
     sizeBytes: typeof data.size === 'number' && data.size >= 0 ? data.size : undefined,
     parameterSize: typeof details.parameter_size === 'string' ? details.parameter_size.slice(0, 80) : undefined,
     quantization: typeof details.quantization_level === 'string' ? details.quantization_level.slice(0, 80) : undefined,
-    ...(thinking ? { thinking } : {})
+    ...(thinking ? { thinking } : {}),
+    pricing: ollamaModelPricing(id, data),
   }
 }
 export class OllamaClient {

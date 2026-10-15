@@ -66,7 +66,7 @@ export function highRiskFileMutation(target: string): boolean {
 }
 
 export function commandApprovalReason(mode: PermissionMode, command: string): string | undefined {
-  if (mode === 'default') return '默认权限下，终端命令需要逐次确认。未隔离的 Shell 命令获准后可能访问项目外文件或网络'
+  if (mode === 'default') return '“每次询问”模式下，终端命令需要逐次确认。未隔离的 Shell 命令获准后可能访问项目外文件或网络'
   if (safeLocationCommand(command) || safeFileCommand(command)) return undefined
   if (mode === 'auto') return '当前命令没有可用的项目系统沙箱。获准后将使用本机权限，可能访问项目外文件或网络'
   // 间接执行与组合语法无法保证没有隐藏的高风险动作，完全访问也保留确认。

@@ -5,8 +5,8 @@ import { Button } from '@/components/ui/button'
 import type { PermissionMode } from '../../../../shared/models'
 
 const modes = [
-  { value: 'default' as const, label: '默认权限', icon: ShieldQuestion, description: '项目内只读工具直接执行；写文件、终端命令和项目外访问需要逐次确认。' },
-  { value: 'auto' as const, label: '自动审批', icon: ShieldCheck, description: '项目内文件和目录操作及系统沙箱中的终端命令自动执行；项目外访问、联网或沙箱不可用时需要确认。' },
+  { value: 'default' as const, label: '每次询问', icon: ShieldQuestion, description: '项目内读取和搜索直接执行；每次修改文件、执行终端命令或访问项目外内容前，都会询问你是否允许。' },
+  { value: 'auto' as const, label: '受限自动', icon: ShieldCheck, description: '项目内文件和目录操作自动允许；终端命令在隔离环境中运行，限制项目外访问和联网。隔离失败时停止终端执行，可排查或切换完全访问。' },
   { value: 'full' as const, label: '完全访问', icon: ShieldAlert, description: '允许访问项目外文件和执行普通命令。高风险或无法确定安全的操作仍需确认。' }
 ]
 
