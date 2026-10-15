@@ -5,6 +5,7 @@ import { parseThinkingControls, selectedModelThinking, type ModelDescriptor, typ
 import { parseModelPricing } from '../../shared/model-pricing'
 import { asRecord, ModelError, normalizeOllamaUrl, parseProfile, parseSaveProfile, profileId, requiredString } from './model-validation'
 import { OPENROUTER_BASE_URL } from '../../shared/openrouter'
+import { automaticOutputTokens, systemOutputTokens } from '../../shared/output-tokens'
 
 export interface CredentialCipher {
   isAvailable(): boolean
@@ -60,6 +61,7 @@ export class ModelSettingsStore {
               sizeBytes: typeof model.sizeBytes === 'number' ? model.sizeBytes : undefined, parameterSize: typeof model.parameterSize === 'string' ? model.parameterSize : undefined,
               quantization: typeof model.quantization === 'string' ? model.quantization : undefined,
               pricing: parseModelPricing(model.pricing),
+              ...(model.cachePricingChecked === true ? { cachePricingChecked: true } : {}),
               ...(parseThinkingControls(model.thinking) ? { thinking: parseThinkingControls(model.thinking) } : {}) }
           })
           if (entry.provider === 'chatgpt' && entry.baseUrl !== 'https://chatgpt.com/backend-api') throw new Error()
@@ -86,7 +88,12 @@ export class ModelSettingsStore {
   private view(settings: SettingsFile): ModelSettings {
     return { activeProfileId: settings.activeProfileId, encryptionAvailable: this.cipher.isAvailable(),
       providers: (settings.providers ?? []).map(connection => ({ ...connection, ...(connection.provider === 'openrouter' ? { hasApiKey: Boolean(settings.encryptedOpenrouterApiKey) } : {}) })),
-      profiles: settings.profiles.map(item => ({ ...item.profile, hasApiKey: Boolean(item.profile.provider === 'openrouter' ? settings.encryptedOpenrouterApiKey : item.encryptedApiKey), available: this.available(settings, item.profile) })) }
+      profiles: settings.profiles.map(item => ({ ...this.resolvedOutput(settings, item.profile), hasApiKey: Boolean(item.profile.provider === 'openrouter' ? settings.encryptedOpenrouterApiKey : item.encryptedApiKey), available: this.available(settings, item.profile) })) }
+  }
+  private resolvedOutput(settings: SettingsFile, profile: ModelProfile): ModelProfile {
+    if (!systemOutputTokens(profile.provider)) return { ...profile }
+    const descriptor = settings.providers?.find(item => item.provider === profile.provider && item.baseUrl === profile.baseUrl)?.models.find(item => item.id === profile.model)
+    return { ...profile, autoMaxTokens: true, maxTokens: automaticOutputTokens(profile, descriptor) }
   }
   private available(settings: SettingsFile, profile: ModelProfile): boolean {
     const connection = settings.providers?.find(item => item.provider === profile.provider && item.baseUrl === profile.baseUrl)
@@ -177,6 +184,7 @@ export class ModelSettingsStore {
       const existing = settings.profiles.find(item => item.profile.id === profile.id)
       if (!existing && settings.profiles.length >= 200) throw new ModelError('最多保存 200 个模型配置')
       const descriptor = settings.providers?.find(item => item.provider === profile.provider && item.baseUrl === profile.baseUrl)?.models.find(item => item.id === profile.model)
+      profile.maxTokens = this.resolvedOutput(settings, profile).maxTokens
       if (profile.provider === 'openrouter' && (!settings.encryptedOpenrouterApiKey || !descriptor?.capabilities.includes('tools'))) throw new ModelError('请先连接 OpenRouter，并选择支持工具调用的模型')
       if (descriptor?.maxOutputTokens && profile.maxTokens > descriptor.maxOutputTokens) throw new ModelError('输出 Token 上限不能超过模型支持的最大输出')
       if (descriptor?.maxContextTokens && profile.contextTokens && profile.contextTokens > descriptor.maxContextTokens) throw new ModelError('上下文上限不能超过模型支持的最大上下文')
@@ -228,7 +236,7 @@ export class ModelSettingsStore {
       }
       if (!apiKey && ['openai', 'anthropic', 'deepseek', 'openrouter'].includes(entry.profile.provider)) throw new ModelError('请先保存该服务的 API Key')
       const descriptor = settings.providers?.find(item => item.provider === entry.profile.provider && item.baseUrl === entry.profile.baseUrl)?.models.find(item => item.id === entry.profile.model)
-      const profile = { ...entry.profile, contextTokens: entry.profile.contextTokens ?? descriptor?.maxContextTokens }
+      const profile = { ...this.resolvedOutput(settings, entry.profile), contextTokens: entry.profile.contextTokens ?? descriptor?.maxContextTokens }
       if (profile.provider === 'openrouter') {
         profile.supportedParameters = descriptor?.supportedParameters
         profile.maxTokens = Math.min(profile.maxTokens, descriptor?.maxOutputTokens ?? profile.maxTokens)

@@ -33,7 +33,7 @@ export async function createPiProvider(profile: ModelProfile, apiKey: string, at
     streamSimple: (model: Model<Api>, context: TranscriptContext, options?: SimpleStreamOptions) => {
       const controller = new AbortController()
       return requestPiStream(() => implementation.streamSimple(model, context, {
-      ...options, apiKey: apiKey || 'pi-agenda-local', maxTokens: profile.maxTokens,
+      ...options, apiKey: apiKey || 'pi-agenda-local', maxTokens: Math.min(options?.maxTokens ?? profile.maxTokens, profile.maxTokens),
       signal: options?.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal,
       ...(profile.temperature !== null ? { temperature: profile.temperature } : {}),
       timeoutMs: profile.timeoutSeconds * 1000, maxRetries: 0,

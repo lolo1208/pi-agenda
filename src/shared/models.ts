@@ -17,6 +17,8 @@ export interface ModelProfile {
   model: string
   temperature: number | null
   maxTokens: number
+  /** 系统管理的输出额度标记，兼容旧配置；对应供应商不再接受手动额度。 */
+  autoMaxTokens?: boolean
   tokenParameter: 'max_tokens' | 'max_completion_tokens'
   timeoutSeconds: number
   /** 模型独立的上下文上限；留空时使用服务默认值。 */
@@ -41,6 +43,8 @@ export interface ModelDescriptor {
   maxContextTokens: number | null
   thinking?: { values: (boolean | string)[]; default?: boolean | string }
   pricing?: import('./model-pricing').ModelPricing
+  /** OpenRouter 目录已读取缓存定价；无价格也保留标记，避免重复刷新。 */
+  cachePricingChecked?: boolean
 }
 export function parseThinkingControls(value: unknown): ModelDescriptor['thinking'] {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
@@ -104,7 +108,7 @@ export interface ChatAttachment { id: string; name: string; dataUrl: string }
 export type ChatImage = ChatAttachment
 export interface ChatExecution { model: string; provider?: ProviderId; elapsedMs?: number; roundId?: string }
 export interface ChatWorkItem { id: string; kind: 'thinking' | 'tool'; name?: string; args?: Record<string, unknown>; content: string; isError?: boolean; completed?: boolean }
-export interface ChatCall { elapsedMs?: number; work: ChatWorkItem[] }
+export interface ChatCall { elapsedMs?: number; usage?: ModelUsage; work: ChatWorkItem[] }
 export interface ChatMessage { role: 'user' | 'assistant'; content: string; images?: ChatImage[]; skillIds?: string[]; execution?: ChatExecution; call?: ChatCall; snapshotHash?: string }
 export interface ModelUsage { inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheWriteTokens?: number }
 export interface ModelRateLimit { kind: 'requests' | 'tokens'; limit: number; remaining: number; reset?: string }

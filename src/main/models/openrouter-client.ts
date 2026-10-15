@@ -72,6 +72,7 @@ export class OpenrouterClient {
           supportedParameters: parameters, capabilities: ['completion', ...(parameters.includes('tools') ? ['tools'] : []), ...(inputs.includes('image') ? ['vision'] : []), ...(architecture.output_modalities.includes('image') ? ['image-generation'] : []), ...(parameters.includes('reasoning') ? ['thinking'] : [])],
           ...(thinking ? { thinking } : {}),
           pricing: openrouterPricing(item.pricing, checkedAt),
+          cachePricingChecked: true,
         })
       }
       if (!models.length) throw new ModelError('OpenRouter 未返回可调用的文本模型，请稍后刷新目录')

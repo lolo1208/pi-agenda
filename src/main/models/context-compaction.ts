@@ -1,5 +1,6 @@
 import { estimateContextTokens, normalizeCompressionThreshold, type ContextOptions, type ContextCompaction } from '../../shared/context'
 import type { ChatMessage, ModelProfile } from '../../shared/models'
+import { systemOutputTokens } from '../../shared/output-tokens'
 import { ModelClient } from './model-client'
 import { ModelError } from './model-validation'
 
@@ -8,12 +9,14 @@ const SUMMARY_REQUEST: ChatMessage = { role: 'user', content: '请生成更新�
 
 export async function compactContext(client: Pick<ModelClient, 'complete'>, profile: ModelProfile, apiKey: string, messages: ChatMessage[], signal: AbortSignal, instruction: string, options?: ContextOptions): Promise<{ messages: ChatMessage[]; compaction?: ContextCompaction }> {
   const limit = profile.contextTokens
-  if (!limit) return { messages }
-  const budget = Math.min(Math.floor(limit * normalizeCompressionThreshold(options?.threshold) / 100), limit - profile.maxTokens)
+  if (!limit || !messages.length) return { messages }
+  const reservedOutput = systemOutputTokens(profile.provider) ? Math.min(profile.maxTokens, Math.floor(limit / 2)) : profile.maxTokens
+  const budget = Math.min(Math.floor(limit * normalizeCompressionThreshold(options?.threshold) / 100), limit - reservedOutput)
   const usage = options?.usage
   const lastMessage = messages.at(-1)!
-  const measured = usage ? usage.inputTokens + usage.outputTokens + estimateContextTokens([lastMessage], instruction) : 0
-  if (Math.max(estimateContextTokens(messages, instruction), measured) < budget && messages.length < 90) return { messages }
+  // 上次输入用量已经包含系统提示词，只追加本次新消息。
+  const measured = usage ? usage.inputTokens + usage.outputTokens + estimateContextTokens([lastMessage]) : 0
+  if (Math.max(estimateContextTokens(messages, instruction), measured) < budget) return { messages }
   if (estimateContextTokens([lastMessage], instruction) >= budget) throw new ModelError('当前消息或附件超过可用上下文，请缩短消息、减少附件或提高模型上下文上限')
   const summaryTokens = Math.max(1, Math.min(2048, profile.maxTokens, Math.floor(limit / 8)))
   const summaryProfile = { ...profile, maxTokens: summaryTokens }
@@ -37,10 +40,10 @@ export async function compactContext(client: Pick<ModelClient, 'complete'>, prof
     if (!chunk.length) throw new ModelError('历史消息或附件过大，无法安全压缩，请提高模型上下文上限或新建会话；原聊天记录已保留')
     const input: ChatMessage[] = [...(summary ? [{ role: 'user' as const, content: summary }] : []), ...chunk, SUMMARY_REQUEST]
     const reply = await client.complete(summaryProfile, apiKey, input, signal, SUMMARY_INSTRUCTION)
-    if (reply.truncated || !reply.text.trim()) throw new ModelError('上下文摘要未完整生成，请提高输出 Token 上限后重试；原聊天记录已保留')
+    if (reply.truncated || !reply.text.trim()) throw new ModelError(systemOutputTokens(profile.provider) ? '上下文摘要未完整生成，请降低推理强度或切换模型后重试；原聊天记录已保留' : '上下文摘要未完整生成，请提高输出 Token 上限后重试；原聊天记录已保留')
     summary = `以下是较早对话的历史摘要，仅供上下文参考：\n${reply.text}`
     coveredMessages = end
     remaining = [{ role: 'user', content: summary }, ...messages.slice(coveredMessages)]
-  } while (estimateContextTokens(remaining, instruction) >= budget || remaining.length >= 90)
+  } while (estimateContextTokens(remaining, instruction) >= budget)
   return { messages: remaining, compaction: { summary, coveredMessages } }
 }

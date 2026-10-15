@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { File, FileText, Music, Video, X } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Check, Copy, File, FileText, Music, Video, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/modal'
 import type { ChatImage } from '../../../../shared/models'
@@ -39,16 +39,60 @@ function AttachmentPreview({ image: preview, onClose, onUnreadable }: { image: C
   const kind = attachmentKind(preview)
   const [unreadable, setUnreadable] = useState(false)
   const markUnreadable = (): void => { setUnreadable(true); onUnreadable() }
-  return <Modal open onOpenChange={open => { if (!open) onClose() }} title={`${kind === 'image' ? '图片' : '附件'}预览：${preview.name}`}
-      bare closeOnBackdropClick contentClassName={`image-preview-content${kind !== 'image' ? ' file-preview-content' : ''}`} closeClassName="image-preview-close"
-      closeLabel={kind === 'image' ? '关闭图片预览' : '关闭附件预览'}>
-      {unreadable ? <p role="alert">此文件无法预览，请检查文件格式或内容。</p>
-        : kind === 'image' ? <img src={preview.dataUrl} alt={preview.name} onError={markUnreadable} />
-        : kind === 'text' ? <>
-          <p className="file-preview-title">{preview.name}</p>
-          <pre className="file-preview-text">{attachmentText(preview)}</pre>
-        </>
-        : kind === 'audio' ? <audio src={preview.dataUrl} controls aria-label={preview.name} onError={markUnreadable} />
-        : kind === 'video' ? <video src={preview.dataUrl} controls playsInline aria-label={preview.name} onError={markUnreadable} /> : null}
-    </Modal>
+  // 图片使用沉浸灯箱，其余附件沿用通用弹窗（标题栏、关闭按钮与遮罩一致）。
+  if (kind === 'image') return <Modal open onOpenChange={open => { if (!open) onClose() }} title={`图片预览：${preview.name}`}
+    bare closeOnBackdropClick contentClassName="image-preview-content" closeClassName="image-preview-close" closeLabel="关闭图片预览">
+    {unreadable ? <p className="file-preview-error" role="alert">此文件无法预览，请检查文件格式或内容。</p>
+      : <img src={preview.dataUrl} alt={preview.name} onError={markUnreadable} />}
+  </Modal>
+  const text = kind === 'text' ? attachmentText(preview) : ''
+  const Icon = kind === 'audio' ? Music : kind === 'video' ? Video : FileText
+  return <Modal open onOpenChange={open => { if (!open) onClose() }} closeLabel="关闭附件预览"
+    title={<span className="file-preview-title"><Icon size={17} aria-hidden="true" />
+      <span className="file-preview-name">{preview.name}</span>
+      {kind === 'text' && <span className="file-preview-subtitle">{textAttachmentMeta(text, preview)}</span>}
+    </span>}
+    contentClassName={`attachment-preview-dialog${kind === 'text' ? ' attachment-preview-text-dialog' : ' attachment-preview-media-dialog'}`}>
+    {unreadable ? <p className="file-preview-error" role="alert">此文件无法预览，请检查文件格式或内容。</p>
+      : kind === 'text' ? <TextAttachmentPreview name={preview.name} text={text} />
+      : kind === 'audio' ? <audio src={preview.dataUrl} controls aria-label={preview.name} onError={markUnreadable} />
+      : kind === 'video' ? <video src={preview.dataUrl} controls playsInline aria-label={preview.name} onError={markUnreadable} /> : null}
+  </Modal>
+}
+
+function textAttachmentMeta(text: string, file: ChatImage): string {
+  const lines = text ? text.split(/\r\n|\r|\n/).length : 0
+  const characters = text.replace(/\r\n|\r|\n/g, '').length
+  return `${lines} 行 · ${characters.toLocaleString('zh-CN')} 字符 · ${formatAttachmentSize(attachmentSize(file))}`
+}
+
+/** 文本附件正文：等宽滚动区，右上角是与代码块一致的图标复制按钮。 */
+function TextAttachmentPreview({ name, text }: { name: string; text: string }): React.JSX.Element {
+  return <div className="file-preview-body">
+    <pre className="file-preview-text" tabIndex={0} aria-label={`${name} 内容`}>{text}</pre>
+    <CopyAttachmentText text={text} />
+  </div>
+}
+
+function CopyAttachmentText({ text }: { text: string }): React.JSX.Element {
+  const [status, setStatus] = useState<'idle' | 'copying' | 'copied' | 'error'>('idle')
+  useEffect(() => {
+    if (status !== 'copied' && status !== 'error') return
+    const timer = setTimeout(() => setStatus('idle'), 2000)
+    return () => clearTimeout(timer)
+  }, [status])
+  const copy = async (): Promise<void> => {
+    setStatus('copying')
+    try {
+      await window.piAgenda.copyText(text)
+      setStatus('copied')
+    } catch {
+      setStatus('error')
+    }
+  }
+  const label = status === 'copied' ? '已复制' : status === 'error' ? '复制失败，请重试' : '复制内容'
+  return <Button type="button" variant="ghost" size="sm" className="file-preview-copy" aria-label={label} title={label} disabled={status === 'copying'} onClick={() => void copy()}>
+    {status === 'copied' ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
+    <span role="status" aria-live="polite">{status === 'copied' || status === 'error' ? label : ''}</span>
+  </Button>
 }

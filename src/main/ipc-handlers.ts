@@ -123,6 +123,10 @@ export function registerIpcHandlers(dependencies: IpcHandlerDependencies): void 
     return result.canceled ? null : source === 'zip' ? skills.installZip(result.filePaths[0]) : skills.install(result.filePaths[0])
   }))
   handle(IPC_CHANNELS.fileAction, (project, file, action) => performFileAction(parseString(project), parseString(file), parseString(action) as FileAction))
+  handle(IPC_CHANNELS.copyText, text => {
+    if (typeof text !== 'string') throw new ModelError('复制内容格式无效')
+    clipboard.writeText(text)
+  })
   handle(IPC_CHANNELS.codePreview, (project, file, ranges) => readCodePreview(parseString(project), parseString(file), ranges))
   const sandbox = (): SandboxService => {
     const service = dependencies.getSandboxService?.()

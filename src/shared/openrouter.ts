@@ -1,6 +1,11 @@
 import type { ModelDescriptor } from './models'
+import { automaticOutputTokens } from './output-tokens'
 
 export const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1'
+/** 优先使用模型声明的输出能力，未知时以 64K 兜底；实际请求还需为输入留出空间。 */
+export function defaultOpenrouterMaxTokens(model?: Pick<ModelDescriptor, 'maxOutputTokens' | 'maxContextTokens'> | null): number {
+  return automaticOutputTokens({ provider: 'openrouter' }, model)
+}
 export const OPENROUTER_MANUFACTURERS: Record<string, string> = {
   openai: 'OpenAI', anthropic: 'Anthropic', google: 'Google', deepseek: 'DeepSeek',
   qwen: '通义千问', 'z-ai': '智谱', moonshotai: '月之暗面', xai: 'xAI',

@@ -1,19 +1,21 @@
 .settings-layout {
   --settings-description-color: var(--muted);
-  grid-template-columns: 270px minmax(0, 1fr);
+  grid-template-columns: var(--task-sidebar-width) minmax(0, 1fr);
   height: calc(100dvh - var(--titlebar-height));
   min-height: 0;
   display: grid;
 }
 
 .settings-nav {
-  padding: 48px 25px 24px;
+  padding: 48px 20px 24px;
   overflow: auto;
 }
 
 .settings-back {
   background: none;
   border: 0;
+  border-radius: 22px;
+  width: 100%;
   justify-content: flex-start;
   gap: 18px;
   margin-bottom: 22px;
@@ -21,8 +23,10 @@
 }
 
 .settings-back:not(:disabled):hover,
-.settings-back:not(:disabled):focus-visible {
-  background: var(--hover);
+.settings-back:not(:disabled):focus-visible,
+.settings-nav nav button:not(:disabled):hover,
+.settings-nav nav button:not(:disabled):focus-visible {
+  background: color-mix(in srgb, var(--text) 7%, var(--bg));
 }
 
 .settings-back:not(:disabled):hover > svg {
@@ -369,19 +373,26 @@
 
 .model-configuration-dialog { width: min(820px, calc(100vw - 32px)); }
 .model-configuration-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; }
-.model-configuration-grid h4 { margin: 0 0 16px; font-size: calc(13rem / 14); font-weight: 500; color: var(--muted); }
+.model-configuration-grid h4 { margin: 0 0 4px; font-size: calc(13rem / 14); font-weight: 500; color: var(--muted); }
 .model-configuration-fields { min-width: 0; }
+.model-configuration-fields > label:first-child { margin-top: 0; }
 .model-specifications { border-left: 1px solid var(--border); padding-left: 24px; min-width: 0; }
+.model-specifications h4 { font-weight: 600; }
 .model-specifications h4:not(:first-child) { margin-top: 28px; }
 .model-specifications dl { margin: 0; font-size: calc(12rem / 14); }
 .model-specifications dl > div { display: flex; justify-content: space-between; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--border); }
 .model-specifications dt { color: var(--muted); flex-shrink: 0; }
 .model-specifications dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
+.model-specifications .model-pricing-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.model-pricing-heading > span { font-size: calc(12rem / 14); font-weight: 400; }
+.model-specifications dl[aria-label="模型价格"] dd { font-variant-numeric: tabular-nums; }
 .model-specifications .hint, .model-configuration-fields .hint { line-height: 1.8; }
 .model-reset { margin-top: 8px; }
 .model-parameter-row { display: flex; align-items: center; gap: 12px; }
 .model-settings .model-parameter-row > input { width: 120px; flex-shrink: 0; }
 .model-parameter-row > .hint { margin: 0; min-width: 0; }
+.model-output-value { display: flex; align-items: center; width: 120px; flex-shrink: 0; border: 1px solid var(--border); background: var(--hover); color: var(--muted); font-variant-numeric: tabular-nums; }
+.model-output-row > .hint { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .model-context-input { position: relative; width: 120px; flex-shrink: 0; }
 .model-context-input input { padding-right: 32px; }
 .model-context-input > span { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: calc(12rem / 14); pointer-events: none; }

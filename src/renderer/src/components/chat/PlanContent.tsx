@@ -37,7 +37,7 @@ function renderTokens(tokens: Token[], prefix = 'plan', onCodeReference?: (refer
       case 'em': return <em key={key}>{children}</em>
       case 'del': return <del key={key}>{children}</del>
       case 'codespan': return <SyntaxCode key={key} code={token.text} inline />
-      case 'code': return <SyntaxCode key={key} code={token.text} language={(token as Tokens.Code).lang} />
+      case 'code': return <SyntaxCode key={key} code={token.text} language={(token as Tokens.Code).lang} copyable={(token as Tokens.Code).codeBlockStyle !== 'indented'} />
       case 'br': return <br key={key} />
       case 'hr': return <hr key={key} />
       case 'blockquote': return <blockquote key={key}>{children}</blockquote>

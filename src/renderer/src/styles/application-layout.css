@@ -1,6 +1,6 @@
 .window-shell {
   --titlebar-height: calc(44rem / 14);
-  --task-sidebar-width: 260px;
+  --task-sidebar-width: clamp(210px, 19vw, 300px);
   background: var(--bg);
   flex-direction: column;
   width: 100%;

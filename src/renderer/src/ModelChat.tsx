@@ -6,7 +6,7 @@ import { ChatComposer } from './components/chat/ChatComposer'
 import type { QueuedMessage } from './components/chat/MessageQueue'
 import { ChatTranscript } from './components/chat/ChatTranscript'
 import { ComposerStatus } from './components/chat/ComposerStatus'
-import { contextMessages, type ContextCompaction } from '../../shared/context'
+import { DEFAULT_COMPRESSION_THRESHOLD, contextMessages, type ContextCompaction } from '../../shared/context'
 import type { PermissionMode, ToolApproval } from '../../shared/models'
 import { ToolApprovalCard } from './components/chat/ToolApprovalCard'
 import { ToolApprovalDiffDialog } from './components/chat/ToolApprovalDiffDialog'
@@ -53,7 +53,7 @@ interface Props {
   profile: ModelProfileView | undefined; onBusyChange(busy: boolean): void; onOpenSettings(section?: 'models' | 'skills'): void
   onMessagesChange?(messages: ChatMessage[], restored?: boolean): void; settingsDisabled?: boolean; sendWithCtrlEnter?: boolean
 }
-export default function ModelChat({ snapshots, initialIntentMode = 'execute', onIntentChange, initialPermissionMode = 'default', onPermissionChange, active = true, projectReady = true, projectCurrent = true, conversationId, initialMessages = [], initialDraft = '', initialDraftImages = [], initialDraftSkillIds = [], initialQueue = [], initialQueuePaused = false, initialQueueEdit, onQueueChange, initialCompaction, onCompactionChange, compressionThreshold = 90, onDraftChange, profile: defaultProfile, profiles, project, providers, onModelSettingsChange, onBusyChange, onReplyComplete, onWaitingForInputChange, onOpenSettings, onMessagesChange, initialModelId, onModelChange, settingsDisabled, sendWithCtrlEnter = true, customPrompt = '' }: Props): React.JSX.Element {
+export default function ModelChat({ snapshots, initialIntentMode = 'execute', onIntentChange, initialPermissionMode = 'default', onPermissionChange, active = true, projectReady = true, projectCurrent = true, conversationId, initialMessages = [], initialDraft = '', initialDraftImages = [], initialDraftSkillIds = [], initialQueue = [], initialQueuePaused = false, initialQueueEdit, onQueueChange, initialCompaction, onCompactionChange, compressionThreshold = DEFAULT_COMPRESSION_THRESHOLD, onDraftChange, profile: defaultProfile, profiles, project, providers, onModelSettingsChange, onBusyChange, onReplyComplete, onWaitingForInputChange, onOpenSettings, onMessagesChange, initialModelId, onModelChange, settingsDisabled, sendWithCtrlEnter = true, customPrompt = '' }: Props): React.JSX.Element {
   const [permissionMode, setPermissionMode] = useState(initialPermissionMode)
   const [intentMode, setIntentMode] = useState<IntentMode>(initialIntentMode)
   const intentCallback = useRef(onIntentChange)
@@ -257,6 +257,9 @@ export default function ModelChat({ snapshots, initialIntentMode = 'execute', on
   }), [conversationId])
   const [statistics, setStatistics] = useState<{ profileId: string; reply: ModelReply } | null>(null)
   const matchingStatistics = statistics && statistics.profileId === profile?.id ? statistics : null
+  const lastAssistant = messages.filter(message => message.role === 'assistant').at(-1)
+  const contextUsage = nativeHistory.current && lastAssistant?.execution?.model === profile?.model
+    ? lastAssistant?.call?.usage : matchingStatistics?.reply.usage
   const [subscriptionUsage, setSubscriptionUsage] = useState<ChatgptUsage>()
   const [openrouterUsage, setOpenrouterUsage] = useState<OpenrouterUsage>()
   useEffect(() => {
@@ -320,7 +323,7 @@ export default function ModelChat({ snapshots, initialIntentMode = 'execute', on
     try {
       onBusyChange(true)
       const instruction = customPrompt.trim()
-      const requestContext = { threshold: compressionThreshold, usage: statistics?.profileId === profile.id ? statistics.reply.usage : undefined }
+      const requestContext = { threshold: compressionThreshold, usage: contextUsage }
       const requestMessages = (conversationId ? nativeHistory.current ? [message] : next : contextMessages(next, compaction))
         .map(({ execution: _execution, snapshotHash: _snapshotHash, ...message }) => message)
       const reply = unwrapModelResult(await (conversationId
@@ -392,7 +395,7 @@ export default function ModelChat({ snapshots, initialIntentMode = 'execute', on
       {active && notice && <p className="request-notice" role="status">{notice}</p>}
       {active && project && <SandboxStatus key={project} visible={permissionMode === 'auto'} state={currentSandboxState} onInspect={() => setSandboxOpen(true)} />}
       <ChatComposer active={active} queue={queue} editingId={editingId} queuePaused={queuePaused} onResumeQueue={() => setQueuePaused(false)} onCancelEdit={restoreDraft} onEditQueued={editQueued} onDeleteQueued={deleteQueued} onReorderQueued={reorderQueued} intentMode={intentMode} onIntentChange={changeIntent} permissionMode={permissionMode} onPermissionChange={conversationId ? changePermission : undefined} profile={profile} profiles={availableProfiles} providers={providers} onSelectModel={id => { setSelectedModelId(id); onModelChange?.(id) }} onThinkingChange={changeThinking} prompt={prompt} images={images} skillIds={skillIds} onSkillsChange={setSkillIds} onImagesChange={setImages} isBusy={Boolean(requestId)} hasMessages={messages.length > 0} settingsDisabled={settingsDisabled || permissionChanging || !projectReady} sendWithCtrlEnter={sendWithCtrlEnter} onPromptChange={setPrompt} onOpenSettings={onOpenSettings} onSend={submit} onCancel={() => { void stopRequest().catch(() => setError('取消请求失败，请重试')) }} />
-      {active && <ComposerStatus latestReply={matchingStatistics?.reply} subscriptionUsage={subscriptionUsage} openrouterUsage={openrouterUsage} compressionThreshold={compressionThreshold} project={project} profile={profile} contextLimit={providers?.find(item => item.provider === profile?.provider && item.baseUrl === profile?.baseUrl)?.models.find(item => item.id === profile?.model)?.maxContextTokens} messages={contextMessages(messages, compaction)} prompt={prompt} imageCount={images.length} attachments={images} usage={matchingStatistics?.reply.usage} rateLimits={matchingStatistics?.reply.rateLimits} onOpenProject={() => {
+      {active && <ComposerStatus latestReply={matchingStatistics?.reply} subscriptionUsage={subscriptionUsage} openrouterUsage={openrouterUsage} compressionThreshold={compressionThreshold} project={project} profile={profile} contextLimit={providers?.find(item => item.provider === profile?.provider && item.baseUrl === profile?.baseUrl)?.models.find(item => item.id === profile?.model)?.maxContextTokens} messages={contextMessages(messages, compaction)} prompt={prompt} instruction={customPrompt} attachments={images} usage={contextUsage} rateLimits={matchingStatistics?.reply.rateLimits} onOpenProject={() => {
         if (project) void window.piAgenda.openProjectDirectory(project).catch(() => setError('无法打开项目目录，请检查目录是否存在后重试'))
       }} />}
     </div>

@@ -13,16 +13,17 @@ import { unwrapModelResult } from './model-result'
 import { ChatgptAuthorization } from './components/ChatgptAuthorization'
 import { OpenrouterCatalog } from './components/OpenrouterCatalog'
 import { ModelPriceTag } from './components/ModelPriceTag'
-import { callableOpenrouterModels } from '../../shared/openrouter'
+import { callableOpenrouterModels, defaultOpenrouterMaxTokens } from '../../shared/openrouter'
+import { automaticOutputTokens, systemOutputTokens } from '../../shared/output-tokens'
 import { PagedList } from './components/PagedList'
 
 function newProfile(provider: ProviderId): ModelProfile {
   const preset = PROVIDER_PRESETS.find(item => item.id === provider)!
   return { id: crypto.randomUUID(), name: preset.label, provider, protocol: preset.protocol, baseUrl: preset.baseUrl,
-    model: '', temperature: null, maxTokens: 2048, tokenParameter: provider === 'openai' ? 'max_completion_tokens' : 'max_tokens', timeoutSeconds: 60 }
+    model: '', temperature: null, maxTokens: provider === 'openrouter' ? defaultOpenrouterMaxTokens() : 2048, ...(provider === 'openrouter' ? { autoMaxTokens: true } : {}), tokenParameter: provider === 'openai' ? 'max_completion_tokens' : 'max_tokens', timeoutSeconds: provider === 'openrouter' ? 120 : 60 }
 }
 function providerName(provider: ProviderId): string { return PROVIDER_PRESETS.find(item => item.id === provider)!.label }
-const PROFILE_EDIT_FIELDS = ['name', 'provider', 'protocol', 'baseUrl', 'model', 'temperature', 'maxTokens', 'tokenParameter', 'timeoutSeconds', 'contextTokens', 'thinking', 'thinkingLevel', 'ollamaThinkingLevel'] as const
+const PROFILE_EDIT_FIELDS = ['name', 'provider', 'protocol', 'baseUrl', 'model', 'temperature', 'maxTokens', 'autoMaxTokens', 'tokenParameter', 'timeoutSeconds', 'contextTokens', 'thinking', 'thinkingLevel', 'ollamaThinkingLevel'] as const
 function profileEdited(profile: ModelProfile, saved: ModelProfileView): boolean {
   return PROFILE_EDIT_FIELDS.some(field => profile[field] !== saved[field])
 }
@@ -52,6 +53,9 @@ export default function ModelSettingsPanel({ settings, onChange, onBusyChange }:
   const [infoLoading, setInfoLoading] = useState(false)
   const [infoError, setInfoError] = useState('')
   const [infoRevision, setInfoRevision] = useState(0)
+  const openrouterPricingRefresh = useRef<{ revision: number; request: Promise<ModelSettings> } | null>(null)
+  const latestSettings = useRef(settings)
+  latestSettings.current = settings
   const [test, setTest] = useState<{ status: 'idle' | 'running' | 'success' | 'failure'; message?: string }>({ status: 'idle' })
   const [savedFlash, setSavedFlash] = useState(false)
   const testTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -85,7 +89,26 @@ export default function ModelSettingsPanel({ settings, onChange, onBusyChange }:
   useEffect(() => {
     if (dialog !== 'configure' || !editing || !['ollama', 'chatgpt', 'openrouter'].includes(profile.provider)) { setModelInfo(null); setInfoError(''); setInfoLoading(false); return }
     if (profile.provider === 'openrouter') {
-      setModelInfo(openrouterConnection?.models.find(item => item.id === profile.model) ?? null); setInfoError(''); setInfoLoading(false); return
+      const cached = openrouterConnection?.models.find(item => item.id === profile.model)
+      setModelInfo(cached ?? null); setInfoError(''); setInfoLoading(false)
+      if (!cached || !openrouterConnection?.hasApiKey || cached.cachePricingChecked) return
+      let disposed = false
+      setInfoLoading(true)
+      // 升级前的目录未保存缓存定价；一次刷新补齐全部模型，缺失值不触发重复刷新。
+      if (!openrouterPricingRefresh.current || openrouterPricingRefresh.current.revision !== infoRevision) {
+        openrouterPricingRefresh.current = { revision: infoRevision, request: Promise.resolve().then(() => window.piAgenda.connectOpenrouter()).then(unwrapModelResult) }
+      }
+      void openrouterPricingRefresh.current.request.then(next => {
+        if (disposed) return
+        const connection = next.providers?.find(item => item.provider === 'openrouter')
+        if (!connection) throw new Error('OpenRouter 未返回模型目录，请重试')
+        setModelInfo(connection.models.find(item => item.id === profile.model) ?? cached)
+        // 只更新目录，保留刷新期间用户保存的模型参数和启停状态。
+        onChange({ ...latestSettings.current, providers: latestSettings.current.providers?.map(item => item.provider === 'openrouter' ? { ...item, models: connection.models } : item) })
+      }).catch(error => {
+        if (!disposed) setInfoError(error instanceof Error ? error.message : 'OpenRouter 价格读取失败，请重试')
+      }).finally(() => { if (!disposed) setInfoLoading(false) })
+      return () => { disposed = true }
     }
     let disposed = false
     const cached = profile.provider === 'chatgpt' ? settings.providers?.find(item => item.provider === 'chatgpt')?.models.find(item => item.id === profile.model) : ollamaConnection?.baseUrl === profile.baseUrl.replace(/\/v1\/?$/, '') ? ollamaConnection.models.find(item => item.id === profile.model) : undefined
@@ -112,7 +135,8 @@ export default function ModelSettingsPanel({ settings, onChange, onBusyChange }:
     const normalizedProfile = { ...profile,
       contextTokens: contextTokens == null ? null : Math.floor(contextTokens / 1000) * 1000,
       temperature: profile.provider === 'chatgpt' || (profile.provider === 'openrouter' && profile.temperature === null) ? null : Math.floor(profile.temperature ?? 1),
-      maxTokens: Math.floor(profile.maxTokens ?? 2048),
+      maxTokens: systemOutputTokens(profile.provider) ? automaticOutputTokens({ ...profile, contextTokens: contextTokens == null ? null : Math.floor(contextTokens / 1000) * 1000 }, modelInfo) : Math.floor(profile.maxTokens ?? 2048),
+      ...(systemOutputTokens(profile.provider) ? { autoMaxTokens: true } : {}),
       timeoutSeconds: Math.floor(profile.timeoutSeconds ?? (profile.provider === 'ollama' ? 120 : 60)) }
     const selected = selectedModelThinking(profile, modelInfo?.thinking)
     if (profile.provider === 'chatgpt' || profile.provider === 'openrouter') {
@@ -207,7 +231,7 @@ export default function ModelSettingsPanel({ settings, onChange, onBusyChange }:
       headingExtra={!editing && <div className="provider-steps" aria-label="添加进度"><span data-active={dialog === 'choose'}>1 选择供应商</span><ChevronRight size={13} /><span data-active={dialog === 'configure'}>2 配置连接</span></div>}
       onCloseAutoFocus={event => { event.preventDefault(); document.querySelector<HTMLButtonElement>('.provider-add')?.focus() }}>
       <div className="provider-dialog-body model-settings">
-          <p className="provider-dialog-description">{dialog === 'choose' ? '选择要连接的账号、API 或本地服务。' : subscription ? '通过 ChatGPT 订阅账号使用 OpenAI 模型。' : connectingOllama ? '连接本机运行的 Ollama，自动获取已安装的模型。' : connectingOpenrouter ? '输入 OpenRouter API Key，自动读取所有可调用模型。连接后展开厂商分组，配置并启用需要的模型。' : `${providerName(profile.provider)} · 此处设置仅用于当前模型。`}</p>
+          {!editing && <p className="provider-dialog-description">{dialog === 'choose' ? '选择要连接的账号、API 或本地服务。' : subscription ? '通过 ChatGPT 订阅账号使用 OpenAI 模型。' : connectingOllama ? '连接本机运行的 Ollama，自动获取已安装的模型。' : connectingOpenrouter ? '输入 OpenRouter API Key，自动读取所有可调用模型。连接后展开厂商分组，配置并启用需要的模型。' : ''}</p>}
           {dialog === 'choose' ? <>
             <div className="search-field"><Search size={15} /><Input aria-label="搜索供应商" placeholder="搜索供应商…" value={providerQuery} onChange={event => setProviderQuery(event.target.value)} /></div>
             <div className="provider-options">{options.map(provider => <Button variant="ghost" key={provider} onClick={() => configure(provider)}><ProviderIcon provider={provider} /><span><strong>{providerName(provider)}</strong><small>{provider === 'chatgpt' ? '浏览器授权 · 支持复制链接' : provider === 'openrouter' ? 'API Key 连接 · 全部可调用模型' : '本地运行，连接 Ollama 服务'}</small></span><ChevronRight size={17} /></Button>)}</div>

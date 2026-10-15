@@ -15,6 +15,7 @@ export interface PiAgendaApi {
   exportSkill(id: string): Promise<ModelResult<string | null>>
   refreshSkills(): Promise<ModelResult<import('./skills').LocalSkill[]>>
   performFileAction(project: string, path: string, action: FileAction): Promise<void>
+  copyText(text: string): Promise<void>
   getSandboxStatus(): Promise<ModelResult<import('./sandbox').SandboxState>>
   ensureSandbox(): Promise<ModelResult<import('./sandbox').SandboxState>>
   startSandbox(action: 'configure' | 'diagnose' | 'check'): Promise<ModelResult<import('./sandbox').SandboxState>>
@@ -70,6 +71,7 @@ export const IPC_CHANNELS = {
   skillsExport: 'models:skills-export',
   skillsList: 'models:skills-list', skillsInstall: 'models:skills-install', skillsEnable: 'models:skills-enable', skillsDelete: 'models:skills-delete', skillsRefresh: 'models:skills-refresh', skillsDirectory: 'models:skills-directory', skillsOpenDirectory: 'models:skills-open-directory',
   fileAction: 'files:action',
+  copyText: 'clipboard:copy-text',
   sandboxStatus: 'models:sandbox-status', sandboxEnsure: 'models:sandbox-ensure', sandboxStart: 'models:sandbox-start', sandboxStop: 'models:sandbox-stop', sandboxState: 'sandbox:state',
   planInteraction: 'models:plan-interaction',
   toolApprovalPreview: 'models:tool-approval-preview',

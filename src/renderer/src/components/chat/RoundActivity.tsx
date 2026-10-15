@@ -6,6 +6,7 @@ import { ExecutionLabel, formatExecutionDuration } from './ExecutionLabel'
 import { ChatMarkdown } from './ChatMarkdown'
 import { TranscriptScope, useTranscriptState } from './TranscriptState'
 import { TranscriptPagedList } from './TranscriptPagedList'
+import { hasPlanResult, PlanResultCard } from './PlanResultCard'
 
 const toolLabels: Record<string, string> = { bash: '运行命令', read: '读取文件', write: '写入文件', edit: '编辑文件', delete: '删除文件', mkdir: '创建目录', rmdir: '删除目录', move: '移动或重命名', copy: '复制文件或目录', stat: '查看文件或目录信息', ls: '查看目录', find: '查找文件或目录', grep: '搜索内容', ask_user_question: '确认需求', submit_plan: '提交计划' }
 
@@ -55,14 +56,18 @@ export function RoundActivity({ project, messages, execution, startedAt, status,
     if (disclosure.busy !== busy) setDisclosure({ busy, open: busy })
   }, [busy, disclosure.busy, setDisclosure])
   const final = messages.at(-1)
+  const hasPlanCards = messages.some(message => message.call?.work.some(hasPlanResult))
   return <>
     <Button variant="ghost" className="chat-round-toggle" aria-expanded={open} onClick={() => setDisclosure({ busy, open: !open })}>
       <ExecutionLabel execution={execution ?? final?.execution} startedAt={startedAt} status={status} busy={busy} /><ChevronRight size={14} className={open ? 'chat-disclosure-chevron open' : 'chat-disclosure-chevron'} />
     </Button>
     {open && <div className="chat-round-calls"><TranscriptPagedList preferLatest={busy} items={messages} label="调用记录">{(page, start) => page.map((message, offset) => { const index = start + offset; return <TranscriptScope id={`call:${index}`} key={index}><div className="chat-call-section">
       <CallActivity message={message} executing={busy && index === messages.length - 1} />
-      {message.content && (busy || index < messages.length - 1) && <ChatMarkdown project={project} content={message.content} />}
+      {!hasPlanCards && message.content && (busy || index < messages.length - 1) && <ChatMarkdown project={project} content={message.content} />}
     </div></TranscriptScope> })}</TranscriptPagedList></div>}
-    {!busy && final?.content && <div className="chat-round-result"><ChatMarkdown project={project} content={final.content} /></div>}
+    {hasPlanCards ? <div className="chat-round-result plan-round-results">{messages.map((message, index) => <TranscriptScope key={index} id={`plan-call:${index}`}>
+      {message.content && <ChatMarkdown project={project} content={message.content} />}
+      {message.call?.work.filter(hasPlanResult).map(item => <TranscriptScope key={item.id} id={`plan-result:${item.id}`}><PlanResultCard item={item} project={project} /></TranscriptScope>)}
+    </TranscriptScope>)}</div> : !busy && final?.content && <div className="chat-round-result"><ChatMarkdown project={project} content={final.content} /></div>}
   </>
 }

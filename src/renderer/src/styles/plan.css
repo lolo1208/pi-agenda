@@ -44,6 +44,15 @@
 .plan-document pre { background: var(--code); padding: 12px; overflow-x: auto; border-radius: 8px; }
 .plan-document code { font-family: Consolas, monospace; font-size: .92em; background: var(--code); border-radius: 4px; padding: 2px 5px; }
 .plan-document pre code { padding: 0; background: none; border-radius: 0; }
+.markdown-code-block { position: relative; margin: 12px 0; }
+.markdown-code-block > pre { margin: 0; padding-right: 48px; }
+.markdown-code-copy { position: absolute; top: 6px; right: 6px; gap: 6px; min-width: 28px; min-height: 28px; padding: 5px 6px; opacity: 0; pointer-events: none; }
+.markdown-code-copy { border-color: transparent; background: transparent; box-shadow: none; color: var(--muted); transition: background-color 150ms ease, color 150ms ease; }
+.markdown-code-copy:hover { border-color: transparent; background: var(--hover); color: var(--text); }
+.markdown-code-copy > span:empty { display: none; }
+.markdown-code-block:hover > .markdown-code-copy,
+.markdown-code-copy:focus-visible { opacity: 1; pointer-events: auto; }
+@media (hover: none) { .markdown-code-copy { opacity: 1; pointer-events: auto; } }
 .plan-document strong { font-weight: 600; }
 .plan-document em { font-style: italic; }
 .plan-document a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
@@ -60,6 +69,31 @@
 .plan-review-footer textarea { min-height: calc(64rem / 14); max-height: calc(120rem / 14); }
 .plan-waiting { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border: 1px solid var(--border); border-radius: 10px; margin-bottom: 12px; background: var(--surface); }
 .plan-progress { justify-content: flex-start; }
+.plan-round-results { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.plan-result-card { min-width: 0; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); overflow-wrap: anywhere; }
+.plan-answers-card { padding: 4px 16px; }
+.plan-answers-card dl { margin: 0; }
+.plan-answer-row { padding: 12px 0; }
+.plan-answer-row + .plan-answer-row { border-top: 1px solid var(--border); }
+.plan-answer-row dt, .plan-answer-row dd { display: flex; align-items: baseline; gap: 12px; line-height: 1.7; }
+.plan-answer-row dt { color: var(--muted); font-size: calc(12rem / 14); }
+.plan-answer-row dt > span { flex: 0 0 14px; font-size: calc(11rem / 14); }
+.plan-answer-row dd { margin: 5px 0 0; font-size: calc(13rem / 14); color: var(--text); }
+.plan-answer-row dd > svg { flex: 0 0 14px; align-self: flex-start; margin-top: .35em; }
+.plan-summary-card { padding: 18px 20px 14px; }
+.plan-card-heading { display: flex; align-items: center; gap: 8px; font-size: calc(12rem / 14); font-weight: 500; }
+.plan-card-status { padding: 2px 7px; border-radius: 5px; background: var(--hover); font-size: calc(11rem / 14); line-height: 1.5; }
+.plan-card-title { margin: 12px 0 10px; font-size: calc(18rem / 14); font-weight: 600; line-height: 1.5; }
+.plan-card-content { max-height: 110px; overflow: hidden; mask-image: linear-gradient(to bottom, #000 60%, transparent); }
+.plan-card-content.expanded { max-height: none; overflow: visible; mask-image: none; }
+.plan-card-content .plan-document > :first-child { margin-top: 0; }
+.plan-card-content .plan-document > :last-child { margin-bottom: 0; }
+.plan-card-toggle.ui-button { justify-content: flex-start; min-height: 30px; height: auto; margin: 4px 0 0 -6px; padding: 4px 6px; gap: 4px; border: 0; color: var(--muted); background: transparent; font-size: calc(12rem / 14); font-weight: 400; }
+.plan-card-toggle.ui-button:hover { background: var(--hover); color: var(--text); }
+.plan-card-feedback { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); font-size: calc(13rem / 14); }
+.plan-card-feedback > span { font-size: calc(12rem / 14); color: var(--muted); }
+.plan-card-feedback p { margin: 6px 0 0; white-space: pre-wrap; }
+@media (max-width: 640px) { .plan-summary-card { padding: 16px; } .plan-card-title { font-size: calc(17rem / 14); } }
 .plan-progress-spinner { flex-shrink: 0; color: var(--accent); animation: plan-progress-spin 1s linear infinite; }
 @keyframes plan-progress-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .plan-progress-spinner { animation: none; } }

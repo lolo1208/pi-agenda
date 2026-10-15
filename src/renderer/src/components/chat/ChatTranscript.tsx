@@ -16,6 +16,8 @@ const NO_SNAPSHOTS: AgentSnapshot[] = []
 const RESIZE_SETTLE_MS = 100
 const USER_SCROLL_PAUSE_MS = 150
 const bubbleText = (content: string): string => content.replace(/^\s+|\s+$/g, '')
+// 折叠摘要中的完整正文仍参与 DOM 布局，但不能用作用户的阅读位置。
+const canAnchorReading = (element: HTMLElement): boolean => element.isConnected && !element.closest('[inert], [hidden], [aria-hidden="true"]')
 
 interface ChatTranscriptProps {
   project?: string | null
@@ -196,12 +198,15 @@ function VirtualTranscript({ rows, position, lastLatestRequest, changes, onRange
     }
     // 非 React 的尺寸变化（例如字体和资源解码）也只在用户未移动时补偿。
     const pending = resizingAnchor.current
-    if (pending && (!pending.element.isConnected || performance.now() > pending.until)) resizingAnchor.current = null
+    if (pending && (!canAnchorReading(pending.element) || performance.now() > pending.until)) resizingAnchor.current = null
     const savedLayout = resizingAnchor.current ?? layoutAnchor.current
-    const preserving = initialized.current && !followLatest.current && (resizingAnchor.current || el.scrollTop === measuredScrollTop.current)
+    // 用户滚动期间，只补偿已确认的内容增高；虚拟列表自己的占位校正不能再次补偿。
+    // 静止时仍维护锚点，让会话重开、异步测量完成后保持原来的阅读位置。
+    const idle = !dragging.current && performance.now() > userInputUntil.current
+    const preserving = initialized.current && !followLatest.current && (resizingAnchor.current || idle && el.scrollTop === measuredScrollTop.current)
     if (preserving) {
       const saved = savedLayout
-      if (saved?.element.isConnected) {
+      if (saved && canAnchorReading(saved.element)) {
         const delta = saved.element.getBoundingClientRect().top - bounds.top - saved.offset
         if (Math.abs(delta) > 0.5) {
           el.scrollTop += delta
@@ -234,9 +239,10 @@ function VirtualTranscript({ rows, position, lastLatestRequest, changes, onRange
     position.current = saved
     measuredScrollTop.current = el.scrollTop
     // 行内的卡片也可能变高；优先锚定屏内实际文字，不能只保存整行顶部。
-    const candidates = el.querySelectorAll<HTMLElement>('.chat-message :is(p, pre, h1, h2, h3, h4, h5, h6, li, tr), .chat-round-toggle, .chat-call-toggle, .chat-work-toggle, .round-changes-file')
+    const candidates = el.querySelectorAll<HTMLElement>('.chat-message :is(p, pre, h1, h2, h3, h4, h5, h6, li, tr), .plan-answer-row, .plan-card-toggle, .chat-round-toggle, .chat-call-toggle, .chat-work-toggle, .round-changes-file')
     let block: HTMLElement | undefined
     for (const candidate of candidates) {
+      if (!canAnchorReading(candidate)) continue
       const rect = candidate.getBoundingClientRect()
       if (rect.top >= bounds.top && rect.top < bounds.bottom) { block = candidate; break }
       if (!block && rect.bottom > bounds.top && rect.top < bounds.bottom) block = candidate
@@ -272,7 +278,7 @@ function VirtualTranscript({ rows, position, lastLatestRequest, changes, onRange
       if (changed && initialized.current && !followLatest.current
         && (el.scrollTop === measuredScrollTop.current || !dragging.current && performance.now() > userInputUntil.current)) {
         const saved = resizingAnchor.current ?? layoutAnchor.current
-        if (saved?.element.isConnected) resizingAnchor.current = { ...saved, until: performance.now() + RESIZE_SETTLE_MS }
+        if (saved && canAnchorReading(saved.element)) resizingAnchor.current = { ...saved, until: performance.now() + RESIZE_SETTLE_MS }
       }
     }
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => { resized(); measureRef.current() })

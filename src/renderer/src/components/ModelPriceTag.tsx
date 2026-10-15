@@ -1,10 +1,10 @@
 import { Tooltip } from 'radix-ui'
 import { BadgeDollarSign } from 'lucide-react'
 import type { ModelDescriptor } from '../../../shared/models'
-import { modelPriceTier, parseModelPricing } from '../../../shared/model-pricing'
+import { modelPriceTier, openrouterCacheWritePrice, parseModelPricing } from '../../../shared/model-pricing'
 
 const tierLabels = ['零调用费', '很便宜', '便宜', '适中', '较贵', '昂贵']
-const formatPrice = (value: number): string => `$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 6 })}`
+const formatPrice = (value: number | undefined): string => value == null ? '未知' : `$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 7 })}`
 
 function PriceDetails({ descriptor }: { descriptor?: ModelDescriptor }): React.JSX.Element {
   const pricing = parseModelPricing(descriptor?.pricing)
@@ -15,6 +15,7 @@ function PriceDetails({ descriptor }: { descriptor?: ModelDescriptor }): React.J
   </>
   const local = pricing.kind === 'local'
   const reference = pricing.kind === 'api-reference'
+  const cacheWrite = pricing.kind === 'catalog' ? openrouterCacheWritePrice(descriptor!.id, pricing) : pricing.cacheWrite
   const source = local ? 'Ollama 本地' : reference ? 'OpenAI 官方' : pricing.kind === 'cloud' ? 'Ollama 官方' : 'OpenRouter 目录'
   return <>
     <div className="model-price-tooltip-heading"><strong>{local ? '本地运行' : reference ? 'API 参考价' : '模型单价'}</strong><span>{tierLabels[tier]}</span></div>
@@ -23,10 +24,10 @@ function PriceDetails({ descriptor }: { descriptor?: ModelDescriptor }): React.J
       <dl className="model-price-tooltip-rates">
         <div><dt>输入</dt><dd>{formatPrice(pricing.input)}</dd></div>
         <div><dt>输出</dt><dd>{formatPrice(pricing.output)}</dd></div>
+        <div><dt>缓存读取</dt><dd className={pricing.cacheRead == null ? 'model-price-unknown' : undefined}>{formatPrice(pricing.cacheRead)}</dd></div>
+        <div><dt>缓存写入</dt><dd className={cacheWrite == null ? 'model-price-unknown' : undefined}>{formatPrice(cacheWrite)}</dd></div>
       </dl>
       <div className="model-price-tooltip-rating"><span>价格等级 <b>{tier} / 5</b></span><span>参考成本 {formatPrice(pricing.input * 0.75 + pricing.output * 0.25)}</span></div>
-      <p className="model-price-tooltip-note">按输入 / 输出 3:1 评级，不含缓存折扣和附加费用。</p>
-      {reference && <p className="model-price-tooltip-note">标准模式、短上下文参考价，不代表订阅实际费用。</p>}
       {pricing.kind === 'cloud' && <p className="model-price-tooltip-note">采用常规时段单价。</p>}
     </>}
     <div className="model-price-tooltip-footer"><span>{source}</span><time dateTime={pricing.checkedAt}>{pricing.checkedAt.slice(0, 10)}</time></div>

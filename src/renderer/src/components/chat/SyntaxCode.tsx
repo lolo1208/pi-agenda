@@ -1,4 +1,6 @@
-import { Fragment, type ReactNode } from 'react'
+import { Fragment, useEffect, useState, type ReactNode } from 'react'
+import { Check, Copy } from 'lucide-react'
+import { Button } from '../ui/button'
 import { useSyntaxHighlight } from '../../hooks/useSyntaxHighlight'
 import type { SyntaxToken } from '../../lib/syntax-types'
 
@@ -7,9 +9,37 @@ export function SyntaxTokens({ tokens }: { tokens: SyntaxToken[] }): ReactNode {
 }
 
 /** 行内和多行代码共享着色，原始文本始终作为加载与失败回退。 */
-export function SyntaxCode({ code, language, inline = false }: { code: string; language?: string; inline?: boolean }): React.JSX.Element {
+export function SyntaxCode({ code, language, inline = false, copyable = false }: { code: string; language?: string; inline?: boolean; copyable?: boolean }): React.JSX.Element {
   const highlighted = useSyntaxHighlight({ code, language, inline })
   const content = highlighted ? highlighted.lines.map((line, index) => <Fragment key={index}><SyntaxTokens tokens={line.tokens} />{line.ending}</Fragment>) : code
   const element = <code className="syntax-code" data-language={highlighted?.language ?? language}>{content}</code>
-  return inline ? element : <pre>{element}</pre>
+  if (inline) return element
+  return copyable ? <CopyableCodeBlock code={code}><pre>{element}</pre></CopyableCodeBlock> : <pre>{element}</pre>
+}
+
+function CopyableCodeBlock({ code, children }: { code: string; children: ReactNode }): React.JSX.Element {
+  const [status, setStatus] = useState<'idle' | 'copying' | 'copied' | 'error'>('idle')
+  useEffect(() => {
+    if (status !== 'copied' && status !== 'error') return
+    const timer = setTimeout(() => setStatus('idle'), 2000)
+    return () => clearTimeout(timer)
+  }, [status])
+
+  const copy = async (): Promise<void> => {
+    setStatus('copying')
+    try {
+      await window.piAgenda.copyText(code)
+      setStatus('copied')
+    } catch {
+      setStatus('error')
+    }
+  }
+  const label = status === 'copied' ? '已复制' : status === 'error' ? '复制失败，请重试' : '复制内容'
+  return <div className="markdown-code-block">
+    {children}
+    <Button type="button" variant="ghost" size="sm" className="markdown-code-copy" aria-label={label} title={label} disabled={status === 'copying'} onClick={() => void copy()}>
+      {status === 'copied' ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
+      <span role="status" aria-live="polite">{status === 'copied' || status === 'error' ? label : ''}</span>
+    </Button>
+  </div>
 }

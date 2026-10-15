@@ -12,6 +12,7 @@ const api: PiAgendaApi = {
   exportSkill: id => ipcRenderer.invoke(IPC_CHANNELS.skillsExport, id),
   refreshSkills: () => ipcRenderer.invoke(IPC_CHANNELS.skillsRefresh),
   performFileAction: (project, path, action) => ipcRenderer.invoke(IPC_CHANNELS.fileAction, project, path, action),
+  copyText: text => ipcRenderer.invoke(IPC_CHANNELS.copyText, text),
   getSandboxStatus: () => ipcRenderer.invoke(IPC_CHANNELS.sandboxStatus),
   ensureSandbox: () => ipcRenderer.invoke(IPC_CHANNELS.sandboxEnsure),
   startSandbox: action => ipcRenderer.invoke(IPC_CHANNELS.sandboxStart, action),

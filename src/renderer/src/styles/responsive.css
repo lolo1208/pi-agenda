@@ -6,14 +6,6 @@
 }
 
 @media (max-width: 1100px) {
-.window-shell {
-  --task-sidebar-width: 220px;
-}
-
-.window-shell.tools-open {
-  --task-sidebar-width: 200px;
-}
-
 .app {
   grid-template-columns: var(--task-sidebar-width) minmax(0, 1fr);
 }
@@ -22,24 +14,13 @@
   grid-template-columns: var(--task-sidebar-width) minmax(300px, 1fr) 330px;
 }
 
-.settings-layout {
-  grid-template-columns: 240px minmax(0, 1fr);
-}
-
 .settings-content {
   padding: 40px 30px;
 }
 
-.settings-nav {
-  padding: 40px 20px;
-}
 }
 
 @media (max-width: 850px) {
-.window-shell.tools-open {
-  --task-sidebar-width: 220px;
-}
-
 .app.tools-open {
   grid-template-columns: var(--task-sidebar-width) minmax(0, 1fr);
 }
@@ -67,7 +48,7 @@
 
 @media (max-width: 600px) {
 .window-shell, .window-shell.tools-open {
-  --task-sidebar-width: 165px;
+  --task-sidebar-width: clamp(160px, 28vw, 184px);
 }
 
 .window-titlebar-drag {

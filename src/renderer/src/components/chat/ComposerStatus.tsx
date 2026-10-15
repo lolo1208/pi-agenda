@@ -2,7 +2,8 @@ import { Tooltip } from 'radix-ui'
 import { Monitor } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { ChatAttachment, ChatMessage, ModelProfileView, ModelRateLimit, ModelReply, ModelUsage } from '../../../../shared/models'
-import { attachmentKind, attachmentText } from '../../../../shared/attachments'
+import { DEFAULT_COMPRESSION_THRESHOLD, estimateContextTokens } from '../../../../shared/context'
+export { estimateTextTokens } from '../../../../shared/context'
 import { SubscriptionLimits } from './SubscriptionLimits'
 import { OpenrouterLimits } from './OpenrouterLimits'
 
@@ -12,7 +13,7 @@ interface Props {
   contextLimit?: number | null
   messages: ChatMessage[]
   prompt: string
-  imageCount: number
+  instruction?: string
   attachments?: ChatAttachment[]
   compressionThreshold?: number
   usage?: ModelUsage
@@ -23,25 +24,22 @@ interface Props {
   onOpenProject(): void
 }
 
-// 文本估算仅用于未返回用量的服务；图片开销由服务端统计。
-export function estimateTextTokens(text: string): number {
-  const wide = Array.from(text).filter(character => /[^\x00-\x7F]/.test(character)).length
-  return Math.ceil(wide + (text.length - wide) / 4)
-}
 const compact = (value: number): string => value >= 1000 ? `${Number((value / 1000).toFixed(1))}K` : String(value)
 const number = (value: number): string => value.toLocaleString('en-US')
 
-const attachmentTokens = (files: ChatAttachment[] = []): number => files.reduce((total, file) => total + (attachmentKind(file) === 'text' ? estimateTextTokens(`附件：${file.name}\n${attachmentText(file)}`) : 0), 0)
-
-export function ComposerStatus({ project, profile, contextLimit, messages, prompt, imageCount, attachments, usage, latestReply, rateLimits, subscriptionUsage, openrouterUsage, compressionThreshold = 90, onOpenProject }: Props): React.JSX.Element {
-  const used = (usage ? usage.inputTokens + usage.outputTokens : messages.reduce((total, message) => total + estimateTextTokens(message.content) + attachmentTokens(message.images) + 4, 0))
-    + (prompt ? estimateTextTokens(prompt) + 4 : 0)
-    + attachmentTokens(attachments)
+export function ComposerStatus({ project, profile, contextLimit, messages, prompt, instruction = '', attachments, usage, latestReply, rateLimits, subscriptionUsage, openrouterUsage, compressionThreshold = DEFAULT_COMPRESSION_THRESHOLD, onOpenProject }: Props): React.JSX.Element {
+  const measured = usage && usage.inputTokens + usage.outputTokens > 0 ? usage : undefined
+  const lastAssistantIndex = messages.map(message => message.role).lastIndexOf('assistant')
+  const trailing = measured && lastAssistantIndex >= 0 ? messages.slice(lastAssistantIndex + 1) : []
+  const used = (measured ? measured.inputTokens + measured.outputTokens : estimateContextTokens(messages, instruction))
+    + estimateContextTokens(trailing)
+    + (prompt || attachments?.length ? estimateContextTokens([{ role: 'user', content: prompt, images: attachments }]) : 0)
   const limit = profile?.contextTokens ?? contextLimit
   const percent = limit ? Math.round(used / limit * 100) : null
   const projectName = project?.split(/[\\/]/).filter(Boolean).at(-1) ?? project
-  const hasImages = imageCount > 0 || (!usage && messages.some(message => message.images?.length))
-  const estimated = !usage || Boolean(prompt) || imageCount > 0
+  const estimated = !measured || trailing.length > 0 || Boolean(prompt) || Boolean(attachments?.length)
+  const warning = percent !== null && percent >= compressionThreshold
+  const meterWidth = percent === null ? 0 : Math.min(percent, 100)
 
   return <Tooltip.Provider delayDuration={180}>
     <div className="composer-status" aria-label="会话信息">
@@ -61,15 +59,16 @@ export function ComposerStatus({ project, profile, contextLimit, messages, promp
           </Tooltip.Content></Tooltip.Portal>
         </Tooltip.Root>}
         <Tooltip.Root>
-          <Tooltip.Trigger asChild><Button type="button" variant="ghost" className={`composer-context${percent !== null && percent >= compressionThreshold ? ' context-warning' : ''}`} aria-label="当前会话上下文信息">
-            <svg width="18" height="18" viewBox="0 0 20 20" aria-hidden="true"><circle className="context-ring-track" cx="10" cy="10" r="8" /><circle className="context-ring-value" cx="10" cy="10" r="8" pathLength="100" strokeDasharray={`${Math.min(percent ?? 0, 100)} 100`} transform="rotate(-90 10 10)" /></svg>
+          <Tooltip.Trigger asChild><Button type="button" variant="ghost" className={`composer-context${warning ? ' context-warning' : ''}`} aria-label="当前会话上下文信息">
+            <svg width="18" height="18" viewBox="0 0 20 20" aria-hidden="true"><circle className="context-ring-track" cx="10" cy="10" r="8" /><circle className="context-ring-value" cx="10" cy="10" r="8" pathLength="100" strokeDasharray={`${meterWidth} 100`} transform="rotate(-90 10 10)" /></svg>
             <span>{percent === null ? `${compact(used)} tokens` : `${percent}%`}</span>
           </Button></Tooltip.Trigger>
-          <Tooltip.Portal><Tooltip.Content className="composer-status-tooltip" side="top" align="end" sideOffset={8} collisionPadding={12}>
-            <strong>Context — {estimated ? '约 ' : ''}{compact(used)} / {limit ? compact(limit) : '未知'}{percent !== null ? ` (${percent}%)` : ''}</strong>
-            <div>{limit ? `总窗口 ${number(limit)} · 可用 ${number(Math.max(0, limit - used))} tokens` : '上下文上限未配置，使用服务默认值。'}</div>
-            <div>{estimated ? '文本用量为估算值。' : '用量来自模型服务最近一次响应。'}{hasImages ? '非文本附件的 Token 开销由模型服务统计。' : ''}</div>
-            <div>{limit ? `自动压缩阈值 ${compressionThreshold}%，发送前检测；为回复预留空间时可能提前压缩。完整聊天记录保留。` : '配置模型上下文上限后，将按阈值自动压缩。'}</div>
+          <Tooltip.Portal><Tooltip.Content className="composer-status-tooltip context-tooltip" side="top" align="end" sideOffset={8} collisionPadding={12}>
+            <div className="context-tooltip-heading"><span>上下文占用</span><b className={warning ? 'is-warning' : undefined}>{percent === null ? '—' : `${percent}%`}</b></div>
+            <div aria-hidden="true" className="context-tooltip-meter"><div className={warning ? 'is-warning' : undefined} style={{ width: `${meterWidth}%` }} /></div>
+            <div className="context-tooltip-figures"><span>{estimated ? '≈ ' : ''}{number(used)} tokens</span>{limit ? <span>/ {number(limit)}</span> : null}</div>
+            {!limit && <div className="context-tooltip-note context-tooltip-note-plain">该模型未配置上下文上限。</div>}
+            {warning && <div className="context-tooltip-note">达到 {compressionThreshold}% 后发送前自动压缩历史。</div>}
           </Tooltip.Content></Tooltip.Portal>
         </Tooltip.Root>
       </div>

@@ -1,5 +1,6 @@
 import { ModelRuntime } from '@earendil-works/pi-coding-agent'
 import { getSupportedThinkingLevels } from '@earendil-works/pi-ai'
+import { automaticOutputTokens } from '../../shared/output-tokens'
 import type { Api, Model, AuthPrompt, CredentialStore, SimpleStreamOptions, TranscriptContext } from '@earendil-works/pi-ai'
 import { selectedModelThinking, type ChatgptAuthStatus, type ChatgptUsage, type ModelDescriptor, type ModelProfile, type ResetCredits, type SubscriptionWindow } from '../../shared/models'
 import { chatgptReferencePricing } from '../../shared/model-pricing'
@@ -165,6 +166,8 @@ export class ChatgptService {
         const base = known ?? fallback[0]
         if (!base) return []
         const window = typeof item.context_window === 'number' && Number.isSafeInteger(item.context_window) && item.context_window > 0 && item.context_window <= 2097152 ? item.context_window : base.contextWindow
+        const maxTokens = automaticOutputTokens({ provider: 'chatgpt' }, { maxContextTokens: window,
+          maxOutputTokens: typeof item.max_output_tokens === 'number' && Number.isSafeInteger(item.max_output_tokens) && item.max_output_tokens > 0 ? item.max_output_tokens : known?.maxTokens })
         const modalities = Array.isArray(item.input_modalities) ? item.input_modalities : base.input
         const declared = Array.isArray(item.supported_reasoning_levels)
           ? [...new Set(item.supported_reasoning_levels.flatMap(value => { const level = parseThinkingLevel(typeof value === 'string' ? value : record(value).effort); return level ? [level] : [] }))]
@@ -172,7 +175,7 @@ export class ChatgptService {
         const thinkingLevelMap = Object.fromEntries(thinkingLevels.map(level => [level, declared.includes(level) ? level === 'off' ? 'none' : level : null]))
         const preferred = parseThinkingLevel(item.default_reasoning_level)
         const defaultThinkingLevel = preferred && declared.includes(preferred) ? preferred : declared.includes('medium') ? 'medium' : declared[0]
-        return [{ ...base, id, name: typeof item.display_name === 'string' ? item.display_name : id, contextWindow: window, input: modalities.includes('image') ? ['text', 'image'] as const : ['text'] as const,
+        return [{ ...base, id, name: typeof item.display_name === 'string' ? item.display_name : id, contextWindow: window, maxTokens, input: modalities.includes('image') ? ['text', 'image'] as const : ['text'] as const,
           reasoning: declared.some(level => level !== 'off'), thinkingLevelMap, defaultThinkingLevel }]
       })
       if (!models.length) throw new Error()
@@ -187,7 +190,7 @@ export class ChatgptService {
     this.models = [...new Map(models.map(model => [model.id, model])).values()].sort((a, b) => (a.id === 'gpt-6.1-sol' ? -1 : b.id === 'gpt-6.1-sol' ? 1 : a.id.localeCompare(b.id)))
     const descriptors: ModelDescriptor[] = this.models.map(model => {
       const values = actualThinkingLevels(model)
-      return { id: model.id, maxContextTokens: model.contextWindow, capabilities: ['completion', 'tools', ...(model.reasoning ? ['thinking'] : []), ...(model.input.includes('image') ? ['vision'] : [])],
+      return { id: model.id, maxContextTokens: model.contextWindow, maxOutputTokens: model.maxTokens, capabilities: ['completion', 'tools', ...(model.reasoning ? ['thinking'] : []), ...(model.input.includes('image') ? ['vision'] : [])],
         pricing: chatgptReferencePricing(model.id),
         thinking: { values, default: model.defaultThinkingLevel ?? (values.includes('medium') ? 'medium' : values[0]) } }
     })
@@ -229,7 +232,9 @@ export class ChatgptService {
     if (!model) { await this.refreshModels(); model = this.models.find(model => model.id === profile.model) }
     if (!model) throw new ModelError('订阅模型已不可用，请刷新模型列表后重新选择')
     if (!this.models.some(item => item.id === profile.model)) {
-      const cached = (await this.settings.list()).providers?.find(item => item.provider === 'chatgpt')?.models.find(item => item.id === profile.model)?.thinking
+      const cachedModel = (await this.settings.list()).providers?.find(item => item.provider === 'chatgpt')?.models.find(item => item.id === profile.model)
+      model = { ...model, contextWindow: cachedModel?.maxContextTokens ?? model.contextWindow, maxTokens: cachedModel?.maxOutputTokens ?? model.maxTokens }
+      const cached = cachedModel?.thinking
       if (cached) {
         const levels = cached.values.flatMap(value => { const level = parseThinkingLevel(value); return level ? [level] : [] })
         const preferred = parseThinkingLevel(cached.default)
@@ -237,12 +242,13 @@ export class ChatgptService {
           defaultThinkingLevel: preferred && levels.includes(preferred) ? preferred : levels.includes('medium') ? 'medium' : levels[0] }
       }
     }
-    const configured = { ...model, contextWindow: profile.contextTokens ?? model.contextWindow, maxTokens: profile.maxTokens }
+    const configured = { ...model, contextWindow: profile.contextTokens ?? model.contextWindow,
+      maxTokens: automaticOutputTokens(profile, { maxOutputTokens: model.maxTokens > 0 ? model.maxTokens : undefined, maxContextTokens: model.contextWindow }) }
     runtime.registerNativeProvider({ ...original, getModels: () => [configured], getAllModels: () => [configured],
       streamSimple: (target: Model<Api>, context: TranscriptContext, options?: SimpleStreamOptions) => {
         const controller = new AbortController()
         this.invalidateUsage()
-        return requestPiStream(() => original.streamSimple(target, context, { ...options, transport: 'sse', maxTokens: profile.maxTokens, temperature: undefined, timeoutMs: profile.timeoutSeconds * 1000, maxRetries: 0,
+        return requestPiStream(() => original.streamSimple(target, context, { ...options, transport: 'sse', maxTokens: Math.min(options?.maxTokens ?? configured.maxTokens, configured.maxTokens), temperature: undefined, timeoutMs: profile.timeoutSeconds * 1000, maxRetries: 0,
           signal: options?.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal,
           fetch: (url, init) => this.fetchRequest(url, { ...init, redirect: 'error' }),
           onPayload: async (payload, target) => attachments.replacePayload(await options?.onPayload?.(payload, target) ?? payload, profile, true)

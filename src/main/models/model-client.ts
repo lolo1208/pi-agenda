@@ -117,7 +117,7 @@ export class ModelClient {
         text = message.content
         truncated = choice.finish_reason === 'length'
       }
-      if (!text.trim()) throw new ModelError(isOllama ? '模型未返回正文，请提高输出 Token 上限，或在模型配置中关闭推理模式后重试' : '模型未返回文本，请检查模型能力或提高输出 Token 上限')
+      if (!text.trim()) throw new ModelError(isOllama ? '模型未返回正文，请降低推理强度或关闭推理模式，或拆分任务后重试' : '模型未返回文本，请检查模型能力或提高输出 Token 上限')
       if (apiKey) text = text.split(apiKey).join('[已隐藏密钥]')
       const usageRecord = result.usage && typeof result.usage === 'object' && !Array.isArray(result.usage) ? result.usage as Record<string, unknown> : {}
       const inputTokens = tokenCount(isOllama ? result.prompt_eval_count : isAnthropic || isResponses ? usageRecord.input_tokens : usageRecord.prompt_tokens)

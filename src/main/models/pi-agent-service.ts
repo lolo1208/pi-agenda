@@ -1,10 +1,11 @@
 import { mkdir, readdir, rm } from 'node:fs/promises'
 import path from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
-import { createAgentSession, createExtensionRuntime, SessionManager, SettingsManager, type AgentSession, type ResourceLoader, type ToolDefinition } from '@earendil-works/pi-coding-agent'
+import { createAgentSession, createExtensionRuntime, estimateTokens as estimatePiTokens, SessionManager, SettingsManager, type AgentSession, type ResourceLoader, type ToolDefinition } from '@earendil-works/pi-coding-agent'
 import type { AssistantMessage, Usage } from '@earendil-works/pi-ai'
 import type { ChatExecution, ChatMessage, ModelProfile, ModelReply, ModelRateLimit, AgentRequestOptions, AgentEvent } from '../../shared/models'
-import type { ContextOptions } from '../../shared/context'
+import { systemOutputTokens } from '../../shared/output-tokens'
+import { estimateContextTokens, estimateTextTokens, normalizeCompressionThreshold, type ContextOptions } from '../../shared/context'
 import type { Checkpoint } from '../../shared/api'
 import { ShadowGitManager } from '../snapshot/shadow-git-manager'
 import { PiAttachments } from './pi-attachments'
@@ -125,7 +126,6 @@ export class PiAgentService {
         const content = entry.message.content
         if (typeof content === 'string' ? content.trim() : content.some(block => block.type === 'text' && block.text.trim())) lastMessageId = entry.id
       }
-      if (entry.type === 'custom' && entry.customType === 'pi-agenda-plan-message') lastMessageId = entry.id
       if (entry.type === 'custom' && entry.customType === 'pi-agenda-snapshot' && lastMessageId) {
         const data = entry.data as import('../../shared/models').AgentSnapshot
         snapshotHashes.set(lastMessageId, data.after.hash)
@@ -139,7 +139,7 @@ export class PiAgentService {
       const data = entry.data as { id: string; message: ChatMessage }; attachments.set(data.id, data.message)
     }
     return manager.getBranch().flatMap(entry => {
-      if (entry.type === 'custom' && entry.customType === 'pi-agenda-plan-message') return [{ ...entry.data as ChatMessage, ...(snapshotHashes.has(entry.id) ? { snapshotHash: snapshotHashes.get(entry.id) } : {}) }]
+      // 问答与审阅由工具记录生成卡片，旧版辅助文字仍保留在会话文件中，避免重复展示。
       if (entry.type !== 'message' || (entry.message.role !== 'user' && entry.message.role !== 'assistant')) return []
       const message = entry.message
       const content = typeof message.content === 'string' ? message.content : message.content.filter(block => block.type === 'text').map(block => block.text).join('\n')
@@ -147,6 +147,9 @@ export class PiAgentService {
       const execution = executions.get(entry.id)
       const call = message.role === 'assistant' ? {
         elapsedMs: durations.get(String(message.timestamp)),
+        ...(message.stopReason !== 'error' && message.stopReason !== 'aborted' && message.usage.input + message.usage.output + message.usage.cacheRead + message.usage.cacheWrite > 0 ? {
+          usage: { inputTokens: message.usage.input + message.usage.cacheRead + message.usage.cacheWrite, outputTokens: message.usage.output }
+        } : {}),
         work: message.content.flatMap((block, index): import('../../shared/models').ChatWorkItem[] => {
           if (block.type === 'thinking') return [{ id: `${entry.id}-${index}`, kind: 'thinking', content: block.thinking }]
           if (block.type !== 'toolCall') return []
@@ -253,9 +256,10 @@ export class PiAgentService {
         manager.appendMessage({ role: 'user', content: [{ type: 'text', text: prepared.text }, ...prepared.images], timestamp: Date.now() })
       } else manager.appendMessage({ role: 'assistant', content: [{ type: 'text', text: message.content }], timestamp: Date.now(), api: provider.model.api, provider: provider.model.provider, model: profile.model, usage: emptyUsage(), stopReason: 'stop' })
     }
-    const threshold = context?.threshold ?? 90
+    const threshold = normalizeCompressionThreshold(context?.threshold)
     const window = provider.model.contextWindow
-    const reserveTokens = Math.max(profile.maxTokens, Math.ceil(window * (1 - threshold / 100)))
+    // 模型输出能力可能等于整个上下文；压缩预留不能因此挤掉全部输入空间。
+    const reserveTokens = Math.max(Math.min(provider.model.maxTokens, Math.floor(window / 2)), Math.ceil(window * (1 - threshold / 100)))
     const settingsManager = SettingsManager.inMemory({ compaction: { enabled: !isTest, reserveTokens, keepRecentTokens: Math.max(128, Math.min(20000, Math.floor(window * .25))) }, retry: { enabled: false, provider: { maxRetries: 0 } }, cacheWarming: 'off', images: { autoResize: false }, enableAnalytics: false, enableInstallTelemetry: false })
     const resourceLoader: ResourceLoader = {
       getExtensions: () => ({ extensions: [], errors: [], runtime: createExtensionRuntime() }), getSkills: () => ({ skills: [], diagnostics: [] }),
@@ -381,6 +385,28 @@ export class PiAgentService {
         if (event.type === 'agent_end') { modelStatus = '正在整理回复…'; refreshStatus() }
       })
       const prepared = attachments.prepare(messages.at(-1)!)
+      if (!isTest) {
+        // SDK 的 prompt 检查发生在新消息入队之前；补算新消息及中文历史，
+        // 避免上一轮尚未到阈值、本轮长输入却直接溢出。
+        const pendingTokens = estimateContextTokens([messages.at(-1)!])
+        const budget = window - reserveTokens
+        if (estimateTextTokens(session.systemPrompt) + pendingTokens >= budget) throw new ModelError('当前消息或附件超过可用上下文，请缩短消息、减少附件或提高模型上下文上限')
+        const estimatedHistory = session.messages.reduce((total, message) => {
+          if (!('content' in message)) return total + 4 + estimateTextTokens(JSON.stringify(message))
+          const tokens = typeof message.content === 'string' ? estimateTextTokens(message.content)
+            : message.content.reduce((sum, block) => sum + (block.type === 'image' ? 1024 : estimateTextTokens(JSON.stringify(block))), 0)
+          return total + 4 + tokens
+        }, estimateTextTokens(session.systemPrompt))
+        const measuredHistory = session.getContextUsage()?.tokens ?? 0
+        if (session.messages.length && Math.max(estimatedHistory, measuredHistory) + pendingTokens >= budget) {
+          // SDK 按文本长度选取保留边界；固定保留窗口的 25% 可能吞下全部
+          // 可见历史，尤其是真实用量包含大量系统提示词或中文时。
+          const visibleTokens = session.messages.reduce((total, message) => total + estimatePiTokens(message), 0)
+          settingsManager.applyOverrides({ compaction: { keepRecentTokens: Math.max(1, Math.min(20000, Math.floor(window * .25), Math.floor(visibleTokens * .25))) } })
+          await session.compact('请使用中文，保留用户目标、约束、关键事实、已完成事项和待办事项。')
+          signal.throwIfAborted()
+        }
+      }
       session.setAutoCompactionEnabled(!isTest)
       await session.prompt(prepared.text, { images: prepared.images, expandPromptTemplates: false })
       // 模型只输出正文会让 SDK 自然结束；由应用检查阶段，补充隐藏指令继续流程。
@@ -390,7 +416,7 @@ export class PiAgentService {
         signal.throwIfAborted()
         const last = session.messages.filter((message): message is AssistantMessage => message.role === 'assistant').at(-1)
         if (!last || last.stopReason === 'error' || last.stopReason === 'aborted') throw new ModelError('计划生成失败，请检查模型服务及工具调用能力后重试')
-        if (last.stopReason === 'length') throw new ModelError('计划生成达到输出上限，尚未完成确认与审批，请提高输出 Token 上限后重试')
+        if (last.stopReason === 'length') throw new ModelError(systemOutputTokens(profile.provider) ? '计划生成达到系统输出额度，尚未完成确认与审批。请降低推理强度、缩小任务范围或切换模型后重试' : '计划生成达到输出上限，尚未完成确认与审批，请提高输出 Token 上限后重试')
         // 技能已交付只读文字结果并报告用途时，本轮自然结束。
         // 已发起的计划交互或被拦截的修改仍需完成原有审批流程。
         if (!clarified && interactionVersion === 0 && !planningMutationAttempted && usedSkills.size > 0
@@ -430,7 +456,12 @@ export class PiAgentService {
       const final = session.messages.filter((message): message is AssistantMessage => message.role === 'assistant').at(-1)
       if (!final || final.stopReason === 'error' || final.stopReason === 'aborted') throw new ModelError(profile.provider === 'chatgpt' ? 'ChatGPT 订阅请求失败，请检查授权、模型权限与订阅额度后重试' : '模型请求失败，请检查接口、密钥和模型工具调用能力后重试')
       let text = session.getLastAssistantText() ?? ''
-      if (!text.trim()) throw new ModelError('模型未返回正文，请提高输出 Token 上限后重试')
+      if (!text.trim()) {
+        if (final.stopReason === 'length') throw new ModelError(systemOutputTokens(profile.provider)
+          ? '模型在生成正文前已达到本次输出额度（包含思考与正文，受模型能力及剩余上下文限制）。额度由系统自动管理，请降低推理强度、拆分任务或切换模型后重试'
+          : `模型在生成正文前已达到本次输出上限（${profile.maxTokens} Token，包含思考与正文）。请在模型设置中提高输出 Token 上限，或降低推理强度后重试`)
+        throw new ModelError('模型已结束响应，但未返回正文。请重试，或切换模型及服务节点；本次未报告达到输出 Token 上限')
+      }
       if (usedSkills.size) {
         const plain = (value: string): string => value.replace(/\s+/g, ' ').trim().slice(0, 200).replace(/[\\`*_{}\[\]<>#|]/g, '\\$&')
         const task = plain(messages.at(-1)?.content ?? '')

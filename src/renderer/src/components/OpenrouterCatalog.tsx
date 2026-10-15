@@ -4,7 +4,7 @@ import { Switch } from '@/components/ui/switch'
 import { ModelIcon } from './chat/ModelIcon'
 import { ModelPriceTag } from './ModelPriceTag'
 import { CountryFlag } from './CountryFlag'
-import { callableOpenrouterModels, OPENROUTER_BASE_URL, openrouterManufacturer, openrouterManufacturerCountry } from '../../../shared/openrouter'
+import { callableOpenrouterModels, defaultOpenrouterMaxTokens, OPENROUTER_BASE_URL, openrouterManufacturer, openrouterManufacturerCountry } from '../../../shared/openrouter'
 import type { ModelDescriptor, ModelProfileView, ModelSettings } from '../../../shared/models'
 import { useState, type ReactNode } from 'react'
 import { PagedList } from './PagedList'
@@ -70,7 +70,7 @@ export function OpenrouterCatalog({ settings, query, busy, getThinkingLabel, onC
   }
   const modelProfile = (model: ModelDescriptor): ModelProfileView => profiles.get(model.id) ?? {
     id: crypto.randomUUID(), name: model.name ?? model.id, provider: 'openrouter', protocol: 'openai-compatible', baseUrl: OPENROUTER_BASE_URL,
-    model: model.id, temperature: null, contextTokens: null, maxTokens: Math.min(2048, model.maxOutputTokens ?? 2048, model.maxContextTokens ?? 2048),
+    model: model.id, temperature: null, contextTokens: null, maxTokens: defaultOpenrouterMaxTokens(model), autoMaxTokens: true,
     tokenParameter: 'max_tokens', timeoutSeconds: 120, enabled: false, hasApiKey: Boolean(settings.providers?.find(item => item.provider === 'openrouter')?.hasApiKey), available: true,
   }
   const renderModels = (models: ModelDescriptor[], label: string): React.JSX.Element => <PagedList items={models} label={label} resetKey={search}>{page => <ul className="provider-model-list">{page.map(model => {
