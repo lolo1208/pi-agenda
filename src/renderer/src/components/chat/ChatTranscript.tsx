@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Settings2 } from 'lucide-react'
 import type { AgentSnapshot, ChatMessage, ProviderId } from '../../../../shared/models'
 import { ChatImages } from './ChatImages'
+import { CopyMessageButton } from './CopyMessageButton'
 import { RoundChanges } from './RoundChanges'
 import { ExecutionLabel } from './ExecutionLabel'
 import { RoundActivity } from './RoundActivity'
@@ -394,6 +395,7 @@ const TranscriptMessage = memo(function TranscriptMessage({ row, project, isBusy
     {message.role === 'assistant' && <RoundActivity project={project} messages={row.messages} busy={busy} execution={busy ? execution : row.messages.at(-1)?.execution} startedAt={busy ? execution?.startedAt : undefined} status={busy ? activeStatus : undefined} />}
     {Boolean(message.images?.length) && <ChatImages images={message.images!} />}
     {message.role === 'user' && message.content && <p>{bubbleText(message.content)}</p>}
+    {message.role === 'user' && bubbleText(message.content) && <CopyMessageButton text={bubbleText(message.content)} />}
     {row.snapshots.map(round => {
       const key = roundChangesKey(round)
       return <TranscriptScope key={key} id={`snapshot:${key}`}><RoundChanges round={round} data={changes.data[key]} onRetry={() => changes.retry(round)} disabled={isBusy || settingsDisabled} /></TranscriptScope>

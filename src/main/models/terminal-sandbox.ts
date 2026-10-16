@@ -1,14 +1,17 @@
 import { createHash } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { createReadStream } from 'node:fs'
-import { mkdir, mkdtemp, readFile, realpath } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, realpath, rm } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import type { BashOperations } from '@earendil-works/pi-coding-agent'
 import { ModelError } from './model-validation'
+import { checkGitWorkingDirectory, retryableGitInspection } from './git-working-directory-check'
+import { prepareSandboxConfiguration } from './sandbox-configuration'
 
 export interface TerminalSandbox extends BashOperations {
   prepare(project: string, signal?: AbortSignal): Promise<void>
+  checkGitWorkingDirectory?(project: string, signal?: AbortSignal): Promise<void>
   /** 配置或隔离失败必须由用户选择后续方式，不能转成普通命令审批。 */
   failClosed?: boolean
 }
@@ -21,7 +24,8 @@ const environmentKeys = new Set(['path', 'pathext', 'systemroot', 'windir', 'com
 export function sandboxEnvironment(home: string, scratch: string, inherited: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   const env = Object.fromEntries(Object.entries(inherited).filter(([key, value]) => value !== undefined && environmentKeys.has(key.toLowerCase())))
   // Node 默认逐级 realpath 会探测项目外祖先；保留模块路径，链接目标仍由内核检查。
-  return { ...env, CODEX_HOME: home, TEMP: scratch, TMP: scratch, NODE_OPTIONS: '--preserve-symlinks --preserve-symlinks-main', npm_config_cache: path.join(scratch, 'npm-cache'), COREPACK_HOME: path.join(scratch, 'corepack'), NO_COLOR: '1' }
+  // Git 不能访问宿主用户配置；使用隔离临时区作为 HOME，避免读取 .gitconfig 时直接失败。
+  return { ...env, HOME: scratch, XDG_CONFIG_HOME: path.join(scratch, 'config'), XDG_CACHE_HOME: path.join(scratch, 'cache'), GIT_CONFIG_GLOBAL: 'NUL', GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0', CODEX_HOME: home, TEMP: scratch, TMP: scratch, NODE_OPTIONS: '--preserve-symlinks --preserve-symlinks-main', npm_config_cache: path.join(scratch, 'npm-cache'), npm_config_userconfig: path.join(scratch, 'config', 'npmrc'), npm_config_globalconfig: path.join(scratch, 'config', 'npm-globalrc'), npm_config_store_dir: path.join(scratch, 'pnpm-store'), PNPM_HOME: path.join(scratch, 'pnpm-home'), COREPACK_HOME: path.join(scratch, 'corepack'), COREPACK_ENABLE_NETWORK: '0', COREPACK_ENABLE_DOWNLOAD_PROMPT: '0', NO_COLOR: '1' }
 }
 
 export function sandboxProfile(project: string, scratch: string, protectedDirectories: string[]): string {
@@ -111,13 +115,15 @@ export class NativeTerminalSandbox implements TerminalSandbox {
     await mkdir(home, { recursive: true })
     // 原生 deny 是递归边界，临时写入区不能放在被拒绝的应用数据目录之下。
     const scratch = await realpath(await mkdtemp(path.join(os.tmpdir(), 'pi-agenda-command-')))
+    await prepareSandboxConfiguration(scratch)
     const protectedDirectories = await Promise.all([...this.options.protectedDirectories, this.options.runtimeDirectory].map(async directory => { try { return await realpath(directory) } catch { return path.resolve(directory) } }))
     const context = { home, scratch, profile: sandboxProfile(project, scratch, protectedDirectories) }
-    // 首次真正启动隔离进程；检测不支持 MXC 的设备，不能只根据系统版本猜测可用性。
-    const marker = `pi-agenda-sandbox-${createHash('sha256').update(project).digest('hex')}`
-    let output = ''
-    const result = await this.run(`Write-Output '${marker}'`, project, context, { signal, timeout: 30, onData: data => { output += data.toString('utf8') } })
-    if (result.exitCode !== 0 || !output.includes(marker)) throw new ModelError(`Windows 系统沙箱启动失败，命令尚未执行：${output.trim().slice(0, 2000)}`)
+    try {
+      await checkGitWorkingDirectory({ exec: (command, cwd, options) => this.run(command, cwd, context, options) }, project, signal)
+    } catch (error) {
+      await rm(scratch, { recursive: true, force: true })
+      throw error
+    }
     this.contexts.set(project, context)
   }
   async exec(command: string, cwd: string, options: Parameters<BashOperations['exec']>[2]): Promise<{ exitCode: number }> {
@@ -125,6 +131,14 @@ export class NativeTerminalSandbox implements TerminalSandbox {
     const context = this.contexts.get(cwd)
     if (!context) throw new ModelError('终端系统沙箱尚未就绪，不能执行命令')
     if (await realpath(cwd) !== cwd) throw new ModelError('项目路径发生变化，不能执行命令')
+    if (retryableGitInspection(command)) {
+      // 允许自动重试的查询不得写索引或启动 fsmonitor、外部 diff/textconv 程序。
+      command = command.trim().split(/;|\r?\n/).map(line => line.trim()).filter(Boolean).map(line => {
+        const args = line.split(/[ \t]+/).slice(1)
+        if (args[0] === 'diff') args.splice(1, 0, '--no-ext-diff', '--no-textconv')
+        return `git --no-optional-locks -c core.fsmonitor=false -c core.untrackedCache=false ${args.join(' ')}`
+      }).join('; ')
+    }
     return this.run(command, cwd, context, options)
   }
   private run(command: string, cwd: string, context: { home: string; scratch: string; profile: string }, options: Parameters<BashOperations['exec']>[2]): Promise<{ exitCode: number }> {

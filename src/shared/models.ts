@@ -109,7 +109,7 @@ export type ChatImage = ChatAttachment
 export interface ChatExecution { model: string; provider?: ProviderId; elapsedMs?: number; roundId?: string }
 export interface ChatWorkItem { id: string; kind: 'thinking' | 'tool'; name?: string; args?: Record<string, unknown>; content: string; isError?: boolean; completed?: boolean }
 export interface ChatCall { elapsedMs?: number; usage?: ModelUsage; work: ChatWorkItem[] }
-export interface ChatMessage { role: 'user' | 'assistant'; content: string; images?: ChatImage[]; skillIds?: string[]; execution?: ChatExecution; call?: ChatCall; snapshotHash?: string }
+export interface ChatMessage { role: 'user' | 'assistant'; content: string; images?: ChatImage[]; skillIds?: string[]; execution?: ChatExecution; call?: ChatCall; snapshotHash?: string; codeSnapshotId?: string }
 export interface ModelUsage { inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheWriteTokens?: number }
 export interface ModelRateLimit { kind: 'requests' | 'tokens'; limit: number; remaining: number; reset?: string }
 export interface ChatgptAuthStatus { state: 'signed-out' | 'authorizing' | 'signed-in'; url?: string; manualInput?: boolean; error?: string; catalogSource?: 'account' | 'sdk' }

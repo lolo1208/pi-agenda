@@ -1,12 +1,14 @@
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { MessageCirclePlus, Search, Settings, X } from 'lucide-react'
+import { ChevronDown, ChevronUp, MessageCirclePlus, Search, Settings, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Virtuoso } from 'react-virtuoso'
 import { Modal } from '@/components/ui/modal'
 import { UNLINKED_PROJECT_LABEL } from '../app-types'
 import type { Task } from '../app-types'
 import { TaskProjectHeading, TaskProjectRow } from './TaskProjectGroup'
+
+const DEFAULT_VISIBLE_TASKS = 8
 
 interface ProjectSidebarProps {
   groups: Map<string, Task[]>
@@ -40,17 +42,32 @@ interface ProjectSidebarProps {
 export function ProjectSidebar({ groups, busyProjectRoots, projectNames, hasMatchingTasks, currentTaskId, busyTaskIds, waitingTaskIds, query, searchOpen, collapsedProjects, pendingProjectRemoval, isBusy, isChatBusy, onStartTask, onToggleSearch, onQueryChange, onCloseSearch, onToggleProject, onPendingProjectRemovalChange, onEditProject, onRemoveProject, onSelectTask, onEditTask, onRemoveTask, onCreateProjectTask, onOpenSettings }: ProjectSidebarProps): React.JSX.Element {
   const [now, setNow] = useState(Date.now)
   const [deletingTask, setDeletingTask] = useState<Task | null>(null)
+  const [expandedTaskProjects, setExpandedTaskProjects] = useState<Set<string>>(() => new Set())
+  const toggleTaskExpansion = (root: string): void => {
+    setExpandedTaskProjects(previous => {
+      const next = new Set(previous)
+      if (next.has(root)) next.delete(root)
+      else next.add(root)
+      return next
+    })
+  }
   const rows = useMemo(() => {
     const collapsed = new Set(collapsedProjects)
-    const result: { key: string; root: string; tasks: Task[]; task?: Task; empty?: boolean }[] = []
+    const result: { key: string; root: string; tasks: Task[]; task?: Task; empty?: boolean; taskToggle?: boolean }[] = []
     for (const [root, tasks] of groups) {
       result.push({ key: `project:${root}`, root, tasks })
       if (collapsed.has(root)) continue
-      for (const task of tasks) result.push({ key: `task:${task.id}`, root, tasks, task })
+      for (const task of tasks.slice(0, DEFAULT_VISIBLE_TASKS)) result.push({ key: `task:${task.id}`, root, tasks, task })
+      if (tasks.length > DEFAULT_VISIBLE_TASKS) {
+        if (expandedTaskProjects.has(root)) {
+          for (const task of tasks.slice(DEFAULT_VISIBLE_TASKS)) result.push({ key: `task:${task.id}`, root, tasks, task })
+        }
+        result.push({ key: `task-toggle:${root}`, root, tasks, taskToggle: true })
+      }
       if (!tasks.length && root !== UNLINKED_PROJECT_LABEL) result.push({ key: `empty:${root}`, root, tasks, empty: true })
     }
     return result
-  }, [groups, collapsedProjects])
+  }, [groups, collapsedProjects, expandedTaskProjects])
   const deletionDisabled = isBusy || Boolean(deletingTask && busyTaskIds.includes(deletingTask.id))
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 30_000)
@@ -70,6 +87,10 @@ export function ProjectSidebar({ groups, busyProjectRoots, projectNames, hasMatc
       computeItemKey={(_, row) => row.key}
       initialTopMostItemIndex={Math.max(0, rows.findIndex(row => row.task?.id === currentTaskId))}
       itemContent={(index, row) => row.task ? <TaskProjectRow task={row.task} currentTaskId={currentTaskId} busyTaskIds={busyTaskIds} waitingTaskIds={waitingTaskIds} now={now} creationDisabled={isBusy} onSelectTask={onSelectTask} onEditTask={onEditTask} onRemoveTask={onRemoveTask} onRequestTaskRemoval={setDeletingTask} />
+        : row.taskToggle ? <Button variant="ghost" className="task-item project-task-item project-task-toggle" aria-expanded={expandedTaskProjects.has(row.root)} onClick={() => toggleTaskExpansion(row.root)}>
+          {expandedTaskProjects.has(row.root) ? <ChevronUp size={13} aria-hidden="true" /> : <ChevronDown size={13} aria-hidden="true" />}
+          <span>{expandedTaskProjects.has(row.root) ? '收起' : '查看更多'}</span>
+        </Button>
         : row.empty ? <Button className="project-start conversation-action-button" disabled={isBusy} onClick={() => onCreateProjectTask(row.root)}><MessageCirclePlus size={14} aria-hidden="true" />新建对话</Button>
         : <div style={{ paddingTop: index ? 10 : 0 }}><TaskProjectHeading
           root={row.root} tasks={row.tasks} currentTaskId={currentTaskId} busyTaskIds={busyTaskIds} waitingTaskIds={waitingTaskIds}

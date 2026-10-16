@@ -10,6 +10,8 @@ interface ModalProps {
   description?: ReactNode
   /** 标题与关闭按钮之间的附加内容（如步骤指示） */
   headingExtra?: ReactNode
+  /** 紧邻关闭按钮的操作，也适用于图片灯箱。 */
+  closeExtra?: ReactNode
   closeLabel?: string
   closeDisabled?: boolean
   /** 点击遮罩或简易模式面板的空白区域关闭。 */
@@ -27,7 +29,7 @@ interface ModalProps {
  * 通用模态弹窗：统一的背景遮罩、居中面板、标题栏和关闭按钮。
  * 默认点击遮罩不会关闭，可通过 closeOnBackdropClick 启用；Escape 关闭（busy 时可通过 closeDisabled 阻止）。
  */
-export function Modal({ open, onOpenChange, title, description, headingExtra, closeLabel = '关闭', closeDisabled = false, closeOnBackdropClick = false, closeClassName, bare = false, contentClassName, onCloseAutoFocus, children }: ModalProps): React.JSX.Element {
+export function Modal({ open, onOpenChange, title, description, headingExtra, closeExtra, closeLabel = '关闭', closeDisabled = false, closeOnBackdropClick = false, closeClassName, bare = false, contentClassName, onCloseAutoFocus, children }: ModalProps): React.JSX.Element {
   const previousElementRef = useRef<HTMLElement | null>(null)
   useEffect(() => {
     if (open) previousElementRef.current = document.activeElement as HTMLElement | null
@@ -54,11 +56,13 @@ export function Modal({ open, onOpenChange, title, description, headingExtra, cl
       >
         {bare ? <>
           <Dialog.Title className="sr-only">{title}</Dialog.Title>
+          {closeExtra}
           {closeButton}
         </> : <>
           <header className="modal-heading">
             <Dialog.Title className="modal-title">{title}</Dialog.Title>
             {headingExtra}
+            {closeExtra}
             {closeButton}
           </header>
           {description && <Dialog.Description className="modal-description">{description}</Dialog.Description>}

@@ -12,6 +12,7 @@ import { PiAttachments } from './pi-attachments'
 import { createPiProvider } from './pi-provider'
 import { piProjectTools } from './pi-tools'
 import { ModelError, profileId } from './model-validation'
+import { safeModelErrorDetail } from './model-request-error'
 import { useFileResponses } from './model-attachments'
 import type { ChatgptService } from './chatgpt-service'
 import os from 'node:os'
@@ -22,6 +23,8 @@ import { PLAN_INSTRUCTION, planTools } from './plan-tools'
 import { NativeTerminalSandbox } from './terminal-sandbox'
 import type { TerminalSandbox } from './terminal-sandbox'
 import { SkillStore } from '../skill-store'
+import { saveCodePreviewSnapshot } from '../code-preview-snapshots'
+import { collectCodeReferences } from '../../shared/code-preview'
 
 const toolActions: Record<string, string> = {
   bash: '运行命令',
@@ -119,9 +122,14 @@ export class PiAgentService {
       }
     }
     const snapshotHashes = new Map<string, string>()
+    const codeSnapshots = new Map<string, string>()
     let lastMessageId: string | undefined
     // 使用原生历史中的快照记录定位轮次，旧会话无需猜测消息序号。
     for (const entry of manager.getBranch()) {
+      if (entry.type === 'custom' && entry.customType === 'pi-agenda-code-preview') {
+        const data = entry.data as { entryId: string; snapshotId: string }
+        codeSnapshots.set(data.entryId, data.snapshotId)
+      }
       if (entry.type === 'message' && (entry.message.role === 'user' || entry.message.role === 'assistant')) {
         const content = entry.message.content
         if (typeof content === 'string' ? content.trim() : content.some(block => block.type === 'text' && block.text.trim())) lastMessageId = entry.id
@@ -159,6 +167,7 @@ export class PiAgentService {
       } : undefined
       return original ? [{ ...original, ...(snapshotHashes.has(entry.id) ? { snapshotHash: snapshotHashes.get(entry.id) } : {}) }] : content.trim() || call?.work.length ? [{ role: message.role as 'user' | 'assistant', content: content + (skillNotices.get(entry.id) ?? ''),
         ...(call ? { call } : {}),
+        ...(codeSnapshots.has(entry.id) ? { codeSnapshotId: codeSnapshots.get(entry.id) } : {}),
         ...(snapshotHashes.has(entry.id) ? { snapshotHash: snapshotHashes.get(entry.id) } : {}),
         ...(execution ? { execution } : message.role === 'assistant' ? { execution: { model: message.model } } : {}) }] : []
     })
@@ -219,6 +228,7 @@ export class PiAgentService {
     let executionTransitionPending = false, executionToolCalls = 0
     let clarified = false, interactionVersion = 0
     const manager = options ? await this.manager(options.conversationId, cwd) : SessionManager.inMemory(cwd)
+    const pendingCodeSnapshots: Promise<void>[] = []
     const attachments = new PiAttachments(manager)
     const responses = useFileResponses(profile, [...this.transcript(manager), ...messages])
     let rateLimits: ModelRateLimit[] = [], before: Checkpoint | undefined, after: Checkpoint | undefined
@@ -264,7 +274,7 @@ export class PiAgentService {
     const resourceLoader: ResourceLoader = {
       getExtensions: () => ({ extensions: [], errors: [], runtime: createExtensionRuntime() }), getSkills: () => ({ skills: [], diagnostics: [] }),
       getPrompts: () => ({ prompts: [], diagnostics: [] }), getThemes: () => ({ themes: [], diagnostics: [] }), getAgentsFiles: () => ({ agentsFiles: [] }),
-      getSystemPrompt: () => isTest ? '' : ['你是 Pi Agenda · 行动派的助手。对话、注释与日志以中文为主。', `当前权限模式：${mode}。“每次询问”模式下，文件和目录修改及命令执行前均需询问用户并获得批准；受限自动模式允许项目内普通文件和目录的创建、修改、删除、查询、移动、重命名和复制；完全访问允许项目外普通文件和目录访问。文件和目录操作必须优先使用专用工具，不要用终端命令代替：mkdir 创建目录，write 写入文件，edit 修改文件，delete 删除文件，rmdir 删除目录（删除非空目录时设置 recursive=true），move 移动或重命名，copy 复制，stat 查看信息，ls 查看目录内容，find 查找文件或目录，grep 搜索文件内容，read 读取文件。批量操作先用 find 查找，再逐项调用对应工具。执行模式下，用户已经明确要求的项目内文件和目录操作直接调用工具，是否需要审批由应用执行，不要额外询问执行许可。受限自动模式下的复合脚本和其他终端命令在系统沙箱内直接运行，项目外访问和联网会被系统拦截；不要仅因命令复杂就询问许可。只有明确需要沙箱外权限时才设置 outsideSandbox=true。沙箱或程序返回错误后先根据错误调整实现，不要自动申请本机权限。Windows PowerShell 5 的 Remove-Item 等路径命令可能访问项目祖先而被拒绝，优先使用专用文件工具或项目内 System.IO API。用户拒绝后请调整方案，不要变换语法重试相同动作。${project ? `当前项目：${project}` : '未绑定项目，不存在自动授权的工作区。'}`, instruction, planning ? PLAN_INSTRUCTION : '当前为执行模式。若本轮计划已批准，请按批准内容执行。'].filter(Boolean).join('\n\n'),
+      getSystemPrompt: () => isTest ? '' : ['你是 Pi Agenda · 行动派的助手。对话、注释与日志以中文为主。', `当前权限模式：${mode}。“每次询问”模式下，文件和目录修改及命令执行前均需询问用户并获得批准；受限自动模式允许项目内普通文件和目录的创建、修改、删除、查询、移动、重命名和复制；完全访问使用当前用户的本机权限，文件修改、删除、命令与脚本执行、项目外访问及联网均不再逐项请求批准；此模式不要自行询问执行许可。文件和目录操作必须优先使用专用工具，不要用终端命令代替：mkdir 创建目录，write 写入文件，edit 修改文件，delete 删除文件，rmdir 删除目录（删除非空目录时设置 recursive=true），move 移动或重命名，copy 复制，stat 查看信息，ls 查看目录内容，find 查找文件或目录，grep 搜索文件内容，read 读取文件。批量操作先用 find 查找，再逐项调用对应工具。执行模式下，用户已经明确要求的项目内文件和目录操作直接调用工具，是否需要审批由应用执行，不要额外询问执行许可。受限自动模式下的复合脚本和其他终端命令在系统沙箱内直接运行，项目外访问和联网会被系统拦截；不要仅因命令复杂就询问许可。只有明确需要沙箱外权限时才设置 outsideSandbox=true。应用会自动处理可安全恢复的文件操作、隔离配置和运行时访问问题；按工具返回的 recovery 状态继续任务。应用确认原命令尚未启动且确需本机运行时时，会请求本次完整本机权限批准。其他错误先根据原始结果调整实现；partial-or-unknown 表示可能已完成部分操作，先核对结果，只完成剩余步骤，不重放整段脚本。不得绕过 denied 或 awaiting-approval 状态重复申请相同授权。Windows PowerShell 5 的 Remove-Item 等路径命令可能访问项目祖先而被拒绝，优先使用专用文件工具或项目内 System.IO API。用户拒绝后请调整方案，不要变换语法重试相同动作。${project ? `当前项目：${project}` : '未绑定项目，不存在自动授权的工作区。'}`, instruction, planning ? PLAN_INSTRUCTION : '当前为执行模式。若本轮计划已批准，请按批准内容执行。'].filter(Boolean).join('\n\n'),
       getSystemPromptSource: () => undefined, getAppendSystemPrompt: () => [], getAppendSystemPromptSources: () => [], extendResources: () => {}, reload: async () => {}
     }
     const projectTools = isTest || !options ? [] : piProjectTools(snapshot?.getRoot() ?? cwd, () => snapshot ? beforePromise ??= (async () => {
@@ -274,11 +284,13 @@ export class PiAgentService {
     })() : Promise.resolve(), {
       mode, project: snapshot?.getRoot(), protectedDirectories: [this.dependencies.dataDirectory, path.join(os.homedir(), '.pi-agenda-execution'), ...(this.dependencies.sandboxRuntimeDirectory ? [this.dependencies.sandboxRuntimeDirectory] : []), ...(this.dependencies.protectedDirectories ?? [])],
       sandbox: this.sandbox,
+      onRecovery: message => status(message),
       approve: (id, tool, args, reason, toolSignal) => this.approvals.ask(requestId, options.conversationId, { toolCallId: id, tool, args: structuredClone(args), cwd, reason }, toolSignal ?? signal, waitingFor(id, `等待你批准${toolActions[tool] ?? '操作'}…`)).then(() => {})
     })
     let session: AgentSession | undefined
     const planningTools = (): string[] => ['read', 'ls', 'find', 'grep', 'stat', ...skillTools.map(tool => tool.name), 'ask_user_question', ...(clarified ? ['submit_plan'] : [])]
     const guardedTools = projectTools.map(tool => ({ ...tool, execute: async (...args: Parameters<typeof tool.execute>) => {
+      await Promise.all(pendingCodeSnapshots)
       if (planning && !['read', 'ls', 'find', 'grep', 'stat'].includes(tool.name)) {
         planningMutationAttempted = true
         throw new ModelError('计划尚未批准，不能修改文件或执行终端命令。请先澄清需求并提交计划。')
@@ -348,6 +360,28 @@ export class PiAgentService {
       unsubscribe = session.subscribe(event => {
         if (event.type === 'turn_start') { modelStatus = '正在连接模型…'; refreshStatus() }
         if (event.type === 'message_end' && event.message.role === 'assistant') {
+          if (project && options) {
+            const message = event.message
+            const source = message.content.filter(block => block.type === 'text').map(block => block.text).join('\n')
+            if (collectCodeReferences(source).length) {
+              pendingCodeSnapshots.push(finishSafely(async () => {
+                // SDK 在通知监听器后同步追加消息；让出当前调用栈后再关联准确的原生条目。
+                await Promise.resolve()
+                const entry = manager.getEntries().find(entry => entry.type === 'message' && entry.message === message)
+                if (!entry) throw new Error('无法关联报告的会话消息')
+                manager.appendCustomEntry('pi-agenda-code-preview', { entryId: entry.id, snapshotId: 'pending' })
+                try {
+                  const snapshotId = await saveCodePreviewSnapshot(this.directory(options.conversationId), project, source)
+                  manager.appendCustomEntry('pi-agenda-code-preview', { entryId: entry.id, snapshotId: snapshotId ?? 'unavailable' })
+                } catch (error) {
+                  manager.appendCustomEntry('pi-agenda-code-preview', { entryId: entry.id, snapshotId: 'unavailable' })
+                  throw error
+                } finally {
+                  publish({ type: 'transcript', messages: this.transcript(manager) })
+                }
+              }, '审查时代码快照保存失败，请重新生成报告'))
+            }
+          }
           completedResponse = event.message.stopReason === 'stop' && !signal.aborted
           try { manager.appendCustomEntry('pi-agenda-call-duration', { messageTimestamp: event.message.timestamp, elapsedMs: Math.round(performance.now() - callStarted) }) }
           catch { warn('模型调用耗时记录保存失败') }
@@ -415,7 +449,7 @@ export class PiAgentService {
       while (planning) {
         signal.throwIfAborted()
         const last = session.messages.filter((message): message is AssistantMessage => message.role === 'assistant').at(-1)
-        if (!last || last.stopReason === 'error' || last.stopReason === 'aborted') throw new ModelError('计划生成失败，请检查模型服务及工具调用能力后重试')
+        if (!last || last.stopReason === 'error' || last.stopReason === 'aborted') throw new ModelError(`计划生成失败：${safeModelErrorDetail(last?.errorMessage ?? '模型未返回有效响应或具体错误原因，请重试', apiKey)}`)
         if (last.stopReason === 'length') throw new ModelError(systemOutputTokens(profile.provider) ? '计划生成达到系统输出额度，尚未完成确认与审批。请降低推理强度、缩小任务范围或切换模型后重试' : '计划生成达到输出上限，尚未完成确认与审批，请提高输出 Token 上限后重试')
         // 技能已交付只读文字结果并报告用途时，本轮自然结束。
         // 已发起的计划交互或被拦截的修改仍需完成原有审批流程。
@@ -454,7 +488,7 @@ export class PiAgentService {
       }
       if (!completedResponse) signal.throwIfAborted()
       const final = session.messages.filter((message): message is AssistantMessage => message.role === 'assistant').at(-1)
-      if (!final || final.stopReason === 'error' || final.stopReason === 'aborted') throw new ModelError(profile.provider === 'chatgpt' ? 'ChatGPT 订阅请求失败，请检查授权、模型权限与订阅额度后重试' : '模型请求失败，请检查接口、密钥和模型工具调用能力后重试')
+      if (!final || final.stopReason === 'error' || final.stopReason === 'aborted') throw new ModelError(safeModelErrorDetail(final?.errorMessage ?? (final?.stopReason === 'aborted' ? '模型响应已中断，请重试' : '模型请求失败：未返回有效响应或具体错误原因，请重试'), apiKey))
       let text = session.getLastAssistantText() ?? ''
       if (!text.trim()) {
         if (final.stopReason === 'length') throw new ModelError(systemOutputTokens(profile.provider)
@@ -495,6 +529,7 @@ export class PiAgentService {
           publish({ type: 'snapshot', snapshot: round })
         } catch { const warning = '修改后快照保存失败，请手动捕获当前改动'; warn(warning); status(warning) }
       }
+      await Promise.all(pendingCodeSnapshots)
       await finishSafely(() => {
         const messages = this.transcript(manager)
         if (completedReply) completedReply.messages = messages

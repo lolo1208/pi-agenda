@@ -7,7 +7,7 @@ import type { CodePreview, CodeReference } from '../../../../shared/code-preview
 import { useSyntaxHighlight } from '../../hooks/useSyntaxHighlight'
 import { SyntaxTokens } from './SyntaxCode'
 
-export function CodePreviewDialog({ project, reference, onClose }: { project: string; reference: CodeReference; onClose(): void }): React.JSX.Element {
+export function CodePreviewDialog({ project, reference, snapshotId, onClose }: { project: string; reference: CodeReference; snapshotId?: string; onClose(): void }): React.JSX.Element {
   const [preview, setPreview] = useState<CodePreview>()
   const [error, setError] = useState('')
   const [retry, setRetry] = useState(0)
@@ -25,15 +25,18 @@ export function CodePreviewDialog({ project, reference, onClose }: { project: st
     let active = true
     setError('')
     setPreview(undefined)
-    void window.piAgenda.readCodePreview(project, reference.path, reference.ranges).then(value => {
+    const request = snapshotId
+      ? window.piAgenda.readCodePreview(project, reference.path, reference.ranges, snapshotId)
+      : window.piAgenda.readCodePreview(project, reference.path, reference.ranges)
+    void request.then(value => {
       if (active) setPreview(value)
     }).catch(reason => {
       if (active) setError(reason instanceof Error ? reason.message : '代码加载失败，请重试')
     })
     return () => { active = false }
-  }, [project, reference, retry])
+  }, [project, reference, snapshotId, retry])
   const lineLabel = reference.ranges.map(range => range.start === range.end ? `${range.start}` : `${range.start}–${range.end}`).join('、')
-  return <Modal open onOpenChange={open => { if (!open) onClose() }} closeOnBackdropClick title={<span className="code-preview-title"><FileCode2 size={18} aria-hidden="true" /><span>{reference.path}</span></span>} description={`第 ${lineLabel} 行 · 各段前后 10 行 · 当前文件内容`} contentClassName="code-preview-dialog">
+  return <Modal open onOpenChange={open => { if (!open) onClose() }} closeOnBackdropClick title={<span className="code-preview-title"><FileCode2 size={18} aria-hidden="true" /><span>{reference.path}</span></span>} description={`第 ${lineLabel} 行 · 各段前后 10 行 · ${snapshotId ? '审查时代码快照' : '当前文件内容'}`} contentClassName="code-preview-dialog">
     {error ? <div className="code-preview-state" role="alert"><p>{error}</p><Button variant="outline" onClick={() => setRetry(value => value + 1)}>重试</Button></div>
       : !preview ? <div className="code-preview-state" role="status">正在加载代码…</div>
         : rows.length > 200 ? <Virtuoso className="code-preview-scroll" tabIndex={0} aria-label="代码预览" data={rows} defaultItemHeight={22} increaseViewportBy={200}

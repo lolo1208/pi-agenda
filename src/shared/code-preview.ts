@@ -3,9 +3,18 @@ export interface CodeReference { path: string; ranges: CodeLineRange[] }
 export interface CodePreview {
   path: string
   totalLines: number
-  /** 完整文件用于跨行语法解析，界面仍只展示 sections 指定的上下文。 */
+  /** 用于语法解析；快照中未保存的行补为空白，界面只展示 sections 中的片段。 */
   content: string
   sections: { start: number; lines: string[] }[]
+  capturedAt?: string
+}
+
+/** 收集报告中的定位，供主进程在回复完成时保存代码片段。 */
+export function collectCodeReferences(source: string): CodeReference[] {
+  return [...source.matchAll(new RegExp(CODE_REFERENCE_SOURCE, 'gu'))].flatMap(match => {
+    const parsed = parseCodeReference(match[0])
+    return parsed ? [parsed.reference] : []
+  })
 }
 
 /** 排序并合并相邻定位，限制异常模型输出和 IPC 参数。 */

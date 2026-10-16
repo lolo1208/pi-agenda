@@ -57,7 +57,7 @@ export function safeFileCommand(command: string): { tool: 'read' | 'ls'; path: s
   return { tool, path: target ?? '.' }
 }
 
-/** 系统目录、登录配置与自动启动文件的修改始终需要确认。 */
+/** 默认或受限模式中的敏感路径；完全访问模式不再逐项确认。 */
 export function highRiskFileMutation(target: string): boolean {
   const normalized = target.replace(/\\/g, '/').toLowerCase()
   return /^(?:[a-z]:\/(?:windows|program files(?: \(x86\))?|programdata)(?:\/|$)|\/(?:etc|boot|system|library|bin|sbin)(?:\/|$)|\/usr\/(?:bin|sbin|lib)(?:\/|$))/.test(normalized)
@@ -66,11 +66,9 @@ export function highRiskFileMutation(target: string): boolean {
 }
 
 export function commandApprovalReason(mode: PermissionMode, command: string): string | undefined {
+  if (mode === 'full') return undefined
   if (mode === 'default') return '“每次询问”模式下，终端命令需要逐次确认。未隔离的 Shell 命令获准后可能访问项目外文件或网络'
   if (safeLocationCommand(command) || safeFileCommand(command)) return undefined
   if (mode === 'auto') return '当前命令没有可用的项目系统沙箱。获准后将使用本机权限，可能访问项目外文件或网络'
-  // 间接执行与组合语法无法保证没有隐藏的高风险动作，完全访问也保留确认。
-  if (/[\r\n;&|<>`$]/.test(command) || /(?:^|\s)(?:rm|rmdir|del|erase|Remove-Item|Clear-Content|format|diskpart|reg|Set-ItemProperty|Invoke-Expression|iex|eval|sudo|chmod|chown|curl|wget|Invoke-WebRequest|Invoke-RestMethod|Start-Process|cmd|powershell|pwsh|bash|sh|node|python\w*|ruby|perl|npm|pnpm|yarn|npx|make)(?:\s|$)/i.test(command) || /git\s+(?:reset|clean|push|rebase|checkout|restore|update-ref|filter-branch|config)\b/i.test(command) || /\.(?:ps1|bat|cmd|sh|py|js|mjs|cjs)(?:\s|$)/i.test(command)) return '该命令可能涉及删除、历史覆盖、系统修改或间接脚本执行，完全访问下仍需确认'
-  // 仅放行明确列出的普通查询；未知程序的实现不可据名称推断。
-  return '无法可靠判断该命令是否包含高风险操作，请确认本次执行'
+  return undefined
 }

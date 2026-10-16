@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Check, Copy, File, FileText, Music, Video, X } from 'lucide-react'
+import { Check, Copy, Download, File, FileText, Music, Video, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/modal'
 import type { ChatImage } from '../../../../shared/models'
@@ -38,21 +38,34 @@ export function ChatImages({ images, onRemove, disabled }: Props): React.JSX.Ele
 function AttachmentPreview({ image: preview, onClose, onUnreadable }: { image: ChatImage; onClose: () => void; onUnreadable: () => void }): React.JSX.Element {
   const kind = attachmentKind(preview)
   const [unreadable, setUnreadable] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
+  const save = async (): Promise<void> => {
+    setSaving(true)
+    setSaveError('')
+    try { await window.piAgenda.saveAttachment(preview.name, preview.dataUrl) }
+    catch { setSaveError('附件保存失败，请检查保存位置的访问权限和剩余空间后重试') }
+    finally { setSaving(false) }
+  }
+  const saveButton = <Button type="button" variant="ghost" size="icon" className={`modal-close attachment-save${kind === 'image' ? ' image-preview-save' : ''}`} aria-label="另存为" title="另存为" disabled={saving} onClick={() => void save()}><Download size={16} aria-hidden="true" /></Button>
+  const errorMessage = saveError && <p className="attachment-save-error" role="alert">{saveError}</p>
   const markUnreadable = (): void => { setUnreadable(true); onUnreadable() }
   // 图片使用沉浸灯箱，其余附件沿用通用弹窗（标题栏、关闭按钮与遮罩一致）。
   if (kind === 'image') return <Modal open onOpenChange={open => { if (!open) onClose() }} title={`图片预览：${preview.name}`}
-    bare closeOnBackdropClick contentClassName="image-preview-content" closeClassName="image-preview-close" closeLabel="关闭图片预览">
+    bare closeOnBackdropClick closeExtra={saveButton} contentClassName="image-preview-content" closeClassName="image-preview-close" closeLabel="关闭图片预览">
+    {errorMessage}
     {unreadable ? <p className="file-preview-error" role="alert">此文件无法预览，请检查文件格式或内容。</p>
       : <img src={preview.dataUrl} alt={preview.name} onError={markUnreadable} />}
   </Modal>
   const text = kind === 'text' ? attachmentText(preview) : ''
   const Icon = kind === 'audio' ? Music : kind === 'video' ? Video : FileText
-  return <Modal open onOpenChange={open => { if (!open) onClose() }} closeLabel="关闭附件预览"
+  return <Modal open onOpenChange={open => { if (!open) onClose() }} closeLabel="关闭附件预览" closeExtra={saveButton}
     title={<span className="file-preview-title"><Icon size={17} aria-hidden="true" />
       <span className="file-preview-name">{preview.name}</span>
       {kind === 'text' && <span className="file-preview-subtitle">{textAttachmentMeta(text, preview)}</span>}
     </span>}
     contentClassName={`attachment-preview-dialog${kind === 'text' ? ' attachment-preview-text-dialog' : ' attachment-preview-media-dialog'}`}>
+    {errorMessage}
     {unreadable ? <p className="file-preview-error" role="alert">此文件无法预览，请检查文件格式或内容。</p>
       : kind === 'text' ? <TextAttachmentPreview name={preview.name} text={text} />
       : kind === 'audio' ? <audio src={preview.dataUrl} controls aria-label={preview.name} onError={markUnreadable} />

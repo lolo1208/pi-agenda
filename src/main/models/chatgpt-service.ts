@@ -7,6 +7,7 @@ import { chatgptReferencePricing } from '../../shared/model-pricing'
 import type { ModelSettingsStore } from './model-settings-store'
 import { ModelError, requiredString } from './model-validation'
 import { requestPiStream } from './pi-stream'
+import { modelResponseError } from './model-request-error'
 import type { PiAttachments } from './pi-attachments'
 import { exchangeChatgptToken, loginChatgpt } from './chatgpt-oauth'
 
@@ -247,12 +248,20 @@ export class ChatgptService {
     runtime.registerNativeProvider({ ...original, getModels: () => [configured], getAllModels: () => [configured],
       streamSimple: (target: Model<Api>, context: TranscriptContext, options?: SimpleStreamOptions) => {
         const controller = new AbortController()
+        let responseError: string | undefined
         this.invalidateUsage()
         return requestPiStream(() => original.streamSimple(target, context, { ...options, transport: 'sse', maxTokens: Math.min(options?.maxTokens ?? configured.maxTokens, configured.maxTokens), temperature: undefined, timeoutMs: profile.timeoutSeconds * 1000, maxRetries: 0,
           signal: options?.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal,
-          fetch: (url, init) => this.fetchRequest(url, { ...init, redirect: 'error' }),
+          fetch: async (url, init) => {
+            const response = await this.fetchRequest(url, { ...init, redirect: 'error' })
+            if (!response.ok) {
+              const token = new Headers(init?.headers).get('authorization')?.replace(/^Bearer\s+/i, '') ?? options?.apiKey ?? ''
+              responseError = await modelResponseError(response, token)
+            }
+            return response
+          },
           onPayload: async (payload, target) => attachments.replacePayload(await options?.onPayload?.(payload, target) ?? payload, profile, true)
-        }), options?.apiKey ?? '', () => controller.abort(), onModelRequestActive)
+        }), options?.apiKey ?? '', () => controller.abort(), onModelRequestActive, () => responseError)
       }
     })
     const levels = actualThinkingLevels(configured)

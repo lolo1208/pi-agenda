@@ -5,7 +5,7 @@ export interface FileDiff { path: string; before: string; after: string; binary:
 export type FileAction = 'copy-file' | 'copy-path' | 'open-directory' | 'open-file'
 import type { ConversationState } from './conversations'
 export interface PiAgendaApi {
-  readCodePreview(project: string, path: string, ranges: import('./code-preview').CodeLineRange[]): Promise<import('./code-preview').CodePreview>
+  readCodePreview(project: string, path: string, ranges: import('./code-preview').CodeLineRange[], snapshotId?: string): Promise<import('./code-preview').CodePreview>
   getSkills(): Promise<ModelResult<import('./skills').LocalSkill[]>>
   installSkill(source?: 'zip' | 'directory'): Promise<ModelResult<import('./skills').LocalSkill[] | null>>
   getSkillsDirectory(): Promise<ModelResult<string>>
@@ -16,6 +16,7 @@ export interface PiAgendaApi {
   refreshSkills(): Promise<ModelResult<import('./skills').LocalSkill[]>>
   performFileAction(project: string, path: string, action: FileAction): Promise<void>
   copyText(text: string): Promise<void>
+  saveAttachment(name: string, dataUrl: string): Promise<string | null>
   getSandboxStatus(): Promise<ModelResult<import('./sandbox').SandboxState>>
   ensureSandbox(): Promise<ModelResult<import('./sandbox').SandboxState>>
   startSandbox(action: 'configure' | 'diagnose' | 'check'): Promise<ModelResult<import('./sandbox').SandboxState>>
@@ -72,6 +73,7 @@ export const IPC_CHANNELS = {
   skillsList: 'models:skills-list', skillsInstall: 'models:skills-install', skillsEnable: 'models:skills-enable', skillsDelete: 'models:skills-delete', skillsRefresh: 'models:skills-refresh', skillsDirectory: 'models:skills-directory', skillsOpenDirectory: 'models:skills-open-directory',
   fileAction: 'files:action',
   copyText: 'clipboard:copy-text',
+  saveAttachment: 'files:save-attachment',
   sandboxStatus: 'models:sandbox-status', sandboxEnsure: 'models:sandbox-ensure', sandboxStart: 'models:sandbox-start', sandboxStop: 'models:sandbox-stop', sandboxState: 'sandbox:state',
   planInteraction: 'models:plan-interaction',
   toolApprovalPreview: 'models:tool-approval-preview',

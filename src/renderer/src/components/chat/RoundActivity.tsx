@@ -27,25 +27,44 @@ function WorkItem({ item, busy = false }: { item: ChatWorkItem; busy?: boolean }
   </div>
 }
 
-function CallActivity({ message, executing = false }: { message: ChatMessage; executing?: boolean }): React.JSX.Element {
+interface CallGroup { start: number; messages: ChatMessage[] }
+
+/** 正文输出结束当前组；跨分页先分组，避免连续调用被页边界拆开。 */
+function groupCalls(messages: ChatMessage[]): CallGroup[] {
+  const groups: CallGroup[] = []
+  messages.forEach((message, index) => {
+    const previous = groups.at(-1)
+    if (previous && !previous.messages.at(-1)?.content.trim()) previous.messages.push(message)
+    else groups.push({ start: index, messages: [message] })
+  })
+  return groups
+}
+
+function CallActivity({ group, executing = false }: { group: CallGroup; executing?: boolean }): React.JSX.Element {
   const [open, setOpen] = useTranscriptState('call-open', false)
+  const activeIndex = executing ? group.start + group.messages.length - 1 : undefined
   // 执行中的调用尚无耗时记录，从成为当前调用起本地计时，避免显示上一次调用的耗时。
   const startedRef = useRef<number | undefined>(undefined)
   const [now, setNow] = useState(() => performance.now())
   useEffect(() => {
     if (!executing) { startedRef.current = undefined; return }
-    startedRef.current ??= performance.now()
+    startedRef.current = performance.now()
     setNow(performance.now())
     const timer = setInterval(() => setNow(performance.now()), 1000)
     return () => clearInterval(timer)
-  }, [executing])
+  }, [activeIndex])
+  const completed = executing ? group.messages.slice(0, -1) : group.messages
+  const recordedMs = completed.reduce((sum, message) => sum + (message.call?.elapsedMs ?? 0), 0)
+  const missingDuration = completed.some(message => message.call?.elapsedMs === undefined)
   const runningMs = executing && startedRef.current !== undefined ? now - startedRef.current : undefined
-  const duration = runningMs !== undefined ? `已耗时 ${formatExecutionDuration(runningMs)}` : `耗时 ${message.call?.elapsedMs === undefined ? '未记录' : formatExecutionDuration(message.call.elapsedMs)}`
+  const duration = `${executing ? '已耗时' : '耗时'} ${missingDuration ? '未记录' : formatExecutionDuration(recordedMs + (runningMs ?? 0))}`
   return <div className="chat-call">
     <Button variant="ghost" className="chat-call-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
-      {executing ? <LoaderCircle size={14} className="chat-execution-spinner" aria-label="正在执行" /> : <Layers size={14} />}<span>{duration}</span><ChevronRight size={14} className={open ? 'chat-disclosure-chevron open' : 'chat-disclosure-chevron'} />
+      {executing ? <LoaderCircle size={14} className="chat-execution-spinner" aria-label="正在执行" /> : <Layers size={14} />}<span>{duration}</span>{group.messages.length > 1 && <span className="chat-call-count" aria-label={`${group.messages.length} 次调用`}>{group.messages.length}</span>}<ChevronRight size={14} className={open ? 'chat-disclosure-chevron open' : 'chat-disclosure-chevron'} />
     </Button>
-    {open && <div className="chat-work-list">{message.call?.work.length ? <TranscriptPagedList preferLatest={executing} items={message.call.work} label="工具记录">{page => page.map(item => <TranscriptScope key={item.id} id={`work:${item.id}`}><WorkItem item={item} busy={executing} /></TranscriptScope>)}</TranscriptPagedList> : <p className="chat-call-empty">{message.call ? '本次调用仅生成回复，没有工具执行或可展示的思考记录。' : '此历史调用未保存工作详情。'}</p>}</div>}
+    {open && <div className="chat-work-list"><TranscriptPagedList preferLatest={executing} items={group.messages} label="组内调用记录">{(page, start) => page.map((message, offset) => <TranscriptScope key={start + offset} id={`call:${group.start + start + offset}`}>
+      {message.call?.work.length ? <TranscriptPagedList preferLatest={executing && start + offset === group.messages.length - 1} items={message.call.work} label="工具记录">{work => work.map(item => <TranscriptScope key={item.id} id={`work:${item.id}`}><WorkItem item={item} busy={executing && start + offset === group.messages.length - 1} /></TranscriptScope>)}</TranscriptPagedList> : <p className="chat-call-empty">{message.call ? '本次调用仅生成回复，没有工具执行或可展示的思考记录。' : '此历史调用未保存工作详情。'}</p>}
+    </TranscriptScope>)}</TranscriptPagedList></div>}
   </div>
 }
 
@@ -56,18 +75,19 @@ export function RoundActivity({ project, messages, execution, startedAt, status,
     if (disclosure.busy !== busy) setDisclosure({ busy, open: busy })
   }, [busy, disclosure.busy, setDisclosure])
   const final = messages.at(-1)
+  const groups = groupCalls(messages)
   const hasPlanCards = messages.some(message => message.call?.work.some(hasPlanResult))
   return <>
     <Button variant="ghost" className="chat-round-toggle" aria-expanded={open} onClick={() => setDisclosure({ busy, open: !open })}>
       <ExecutionLabel execution={execution ?? final?.execution} startedAt={startedAt} status={status} busy={busy} /><ChevronRight size={14} className={open ? 'chat-disclosure-chevron open' : 'chat-disclosure-chevron'} />
     </Button>
-    {open && <div className="chat-round-calls"><TranscriptPagedList preferLatest={busy} items={messages} label="调用记录">{(page, start) => page.map((message, offset) => { const index = start + offset; return <TranscriptScope id={`call:${index}`} key={index}><div className="chat-call-section">
-      <CallActivity message={message} executing={busy && index === messages.length - 1} />
-      {!hasPlanCards && message.content && (busy || index < messages.length - 1) && <ChatMarkdown project={project} content={message.content} />}
+    {open && <div className="chat-round-calls"><TranscriptPagedList preferLatest={busy} items={groups} label="调用记录">{page => page.map(group => { const message = group.messages.at(-1)!; const index = group.start + group.messages.length - 1; return <TranscriptScope id={`call:${group.start}`} key={group.start}><div className="chat-call-section">
+      <CallActivity group={group} executing={busy && index === messages.length - 1} />
+      {!hasPlanCards && message.content && (busy || index < messages.length - 1) && <ChatMarkdown project={project} content={message.content} snapshotId={message.codeSnapshotId} />}
     </div></TranscriptScope> })}</TranscriptPagedList></div>}
     {hasPlanCards ? <div className="chat-round-result plan-round-results">{messages.map((message, index) => <TranscriptScope key={index} id={`plan-call:${index}`}>
-      {message.content && <ChatMarkdown project={project} content={message.content} />}
+      {message.content && <ChatMarkdown project={project} content={message.content} snapshotId={message.codeSnapshotId} />}
       {message.call?.work.filter(hasPlanResult).map(item => <TranscriptScope key={item.id} id={`plan-result:${item.id}`}><PlanResultCard item={item} project={project} /></TranscriptScope>)}
-    </TranscriptScope>)}</div> : !busy && final?.content && <div className="chat-round-result"><ChatMarkdown project={project} content={final.content} /></div>}
+    </TranscriptScope>)}</div> : !busy && final?.content && <div className="chat-round-result"><ChatMarkdown project={project} content={final.content} snapshotId={final.codeSnapshotId} /></div>}
   </>
 }

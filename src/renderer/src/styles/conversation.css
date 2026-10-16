@@ -176,6 +176,7 @@
 }
 
 .chat-message.user {
+  position: relative;
   /* 聊天应用气泡：靠右、随内容收窄、主色淡底，与左侧通栏的模型回复区分发言方 */
   display: flex;
   flex-direction: column;
@@ -203,6 +204,39 @@
 .chat-message.user + .chat-message.user { margin-top: calc(4rem / 14); }
 
 .chat-message.user > p { margin: 0; }
+
+/* 复用行间留白，悬停与反馈都不参与虚拟列表的高度计算。 */
+.chat-message.user::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  right: 0;
+  left: 0;
+  height: calc(30rem / 14);
+  pointer-events: none;
+}
+/* 气泡等宽的透明区域延伸到按钮底部，支持先向下再横向移动。 */
+.chat-message.user:hover::after,
+.chat-message.user:focus-within::after { pointer-events: auto; }
+.chat-message.user .message-copy {
+  position: absolute;
+  top: calc(100% + 6rem / 14);
+  z-index: 1;
+  right: 0;
+  width: calc(24rem / 14);
+  height: calc(24rem / 14);
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  opacity: 0;
+  pointer-events: none;
+}
+.chat-message.user:hover .message-copy,
+.chat-message.user:focus-within .message-copy { opacity: 1; pointer-events: auto; }
+.chat-message.user .message-copy:hover { background: var(--hover); color: var(--text); }
+@media (hover: none) { .chat-message.user .message-copy { opacity: 1; pointer-events: auto; } }
 
 /* 附件与气泡内边距对齐，间距统一由 flex gap 控制 */
 .chat-message.user .chat-images { margin: 0; padding: 0; }
@@ -606,6 +640,30 @@
 }
 
 .attachment-preview-dialog .modal-heading { flex: none; margin-bottom: 14px; }
+.attachment-preview-dialog .modal-title { min-width: 0; padding-right: calc(70rem / 14); }
+.modal-close.attachment-save { right: calc(24px + 32rem / 14); }
+/* 保存按钮悬停使用中性色，不借用强调色，避免与图标同色导致对比不足。 */
+.modal-close.attachment-save:not(:disabled):hover,
+.modal-close.attachment-save:not(:disabled):active {
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+  color: var(--text);
+}
+.modal-close.image-preview-save {
+  top: 16px;
+  right: calc(24px + 36rem / 14);
+  width: calc(36rem / 14);
+  height: calc(36rem / 14);
+  background: #0008;
+  color: #fff;
+}
+/* 灯箱背景任意，悬停时只加深底色，不加边框。 */
+.modal-close.image-preview-save:not(:disabled):hover,
+.modal-close.image-preview-save:not(:disabled):active {
+  background: #000d;
+  color: #fff;
+}
+.attachment-save-error { margin: 0 0 12px; color: var(--error); font-size: calc(12rem / 14); }
+.image-preview-content > .attachment-save-error { position: absolute; top: 60px; right: 16px; max-width: 100%; padding: 8px; background: var(--surface); }
 
 /* 标题单行：图标 + 文件名 + 行数/字符数/体积小字，文件名过长时省略号截断。 */
 .file-preview-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
@@ -831,6 +889,7 @@
 .chat-disclosure-chevron.open { transform: rotate(90deg); }
 .chat-round-calls, .chat-work-list { margin: 8px 0 14px; padding-left: 14px; border-left: 1px solid var(--border); min-width: 0; }
 .chat-call-toggle.ui-button, .chat-work-toggle.ui-button { min-height: calc(28rem / 14); padding-block: 4px; }
+.chat-call-count { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; padding: 0 5px; border-radius: 5px; background: var(--hover); color: var(--text); font-size: calc(11rem / 14); line-height: 18px; font-variant-numeric: tabular-nums; }
 .chat-work-list { display: flex; flex-direction: column; gap: 4px; margin-block: 4px 8px; }
 .chat-call-section + .chat-call-section { margin-top: 4px; }
 .chat-call-section > .chat-markdown { margin: 6px 10px 12px; }

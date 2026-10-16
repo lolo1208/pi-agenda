@@ -107,8 +107,19 @@ class AppContainerRunner {
     IntPtr list=Marshal.AllocHGlobal(size), capsMemory=IntPtr.Zero,policy=IntPtr.Zero,handleList=IntPtr.Zero,capList=IntPtr.Zero,job=IntPtr.Zero;
     var capabilitySids=new List<IntPtr>();
     var process=new ProcessInfo();
+    ProjectDeviceMap projectMap=null;
+    bool attributesReady=false;
     try {
+      bool nativeGit=encoded.StartsWith("git:",StringComparison.Ordinal);
+      string gitExecutable=null,gitArguments=null;
+      if(nativeGit) {
+        var payload=Encoding.Unicode.GetString(Convert.FromBase64String(encoded.Substring(4))).Split(new[]{'\n'},2);
+        if(payload.Length!=2 || !Path.IsPathRooted(payload[0]) || !Path.GetFileName(payload[0]).Equals("git.exe",StringComparison.OrdinalIgnoreCase)) throw new ArgumentException("Git 隔离启动参数无效");
+        gitExecutable=payload[0]; gitArguments=payload[1];
+        projectMap=new ProjectDeviceMap(project,identity);
+      }
       Require(InitializeProcThreadAttributeList(list,3,0,ref size),"无法初始化隔离进程属性");
+      attributesReady=true;
       foreach(string capability in new[]{"registryRead","lpacInstrumentation","lpacCom"}) capabilitySids.Add(Capability(capability));
       int sidSize=Marshal.SizeOf(typeof(SidAttr)); capList=Marshal.AllocHGlobal(sidSize*capabilitySids.Count);
       for(int i=0;i<capabilitySids.Count;i++) Marshal.StructureToPtr(new SidAttr { Sid=capabilitySids[i],Attributes=4 },new IntPtr(capList.ToInt64()+i*sidSize),false);
@@ -122,14 +133,19 @@ class AppContainerRunner {
       handleList=Marshal.AllocHGlobal(IntPtr.Size*handles.Count); for(int i=0;i<handles.Count;i++) Marshal.WriteIntPtr(handleList,i*IntPtr.Size,handles[i]);
       Require(UpdateProcThreadAttribute(list,0,new IntPtr(0x20002),handleList,new IntPtr(IntPtr.Size*handles.Count),IntPtr.Zero,IntPtr.Zero),"无法限制继承句柄");
       job=CreateJobObjectW(IntPtr.Zero,null); Require(job!=IntPtr.Zero,"无法创建进程组"); var limits=new JobLimits(); limits.limits.flags=0x2000; Require(SetInformationJobObject(job,9,ref limits,(uint)Marshal.SizeOf(typeof(JobLimits))),"无法设置子进程退出限制");
-      string shell=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows),"System32\\WindowsPowerShell\\v1.0\\powershell.exe");
-      var command=new StringBuilder("\""+shell+"\" -NoProfile -NonInteractive -ExecutionPolicy Bypass -OutputFormat Text -EncodedCommand "+encoded);
+      // 两条启动路径使用完全相同的 AppContainer 属性、继承句柄白名单及 Job。
+      // Git 用 -C 切换到子进程私有入口，宿主自身的设备映射和 cwd 始终不变。
+      string shell=nativeGit ? gitExecutable : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows),"System32\\WindowsPowerShell\\v1.0\\powershell.exe");
+      var command=new StringBuilder("\""+shell+"\" "+(nativeGit ? "-C "+projectMap.Root+" "+gitArguments : "-NoProfile -NonInteractive -ExecutionPolicy Bypass -OutputFormat Text -EncodedCommand "+encoded));
       Require(CreateProcessW(shell,command,IntPtr.Zero,IntPtr.Zero,true,0x08080404,IntPtr.Zero,project,ref startup,out process),"无法启动严格隔离进程");
-      Require(AssignProcessToJobObject(job,process.process),"无法限制子进程"); Require(ResumeThread(process.thread)!=0xffffffff,"无法运行隔离进程");
+      Require(AssignProcessToJobObject(job,process.process),"无法限制子进程");
+      if(projectMap!=null) projectMap.Apply(process.process);
+      Require(ResumeThread(process.thread)!=0xffffffff,"无法运行隔离进程");
       WaitForSingleObject(process.process,0xffffffff); uint code; Require(GetExitCodeProcess(process.process,out code),"无法读取隔离退出状态"); return unchecked((int)code);
     } finally {
       if(process.process!=IntPtr.Zero) { TerminateProcess(process.process,1); CloseHandle(process.process); } if(process.thread!=IntPtr.Zero) CloseHandle(process.thread);
-      if(job!=IntPtr.Zero) CloseHandle(job); DeleteProcThreadAttributeList(list); Marshal.FreeHGlobal(list);
+      if(job!=IntPtr.Zero) CloseHandle(job); if(attributesReady) DeleteProcThreadAttributeList(list); Marshal.FreeHGlobal(list);
+      if(projectMap!=null) projectMap.Dispose();
       foreach(var p in new[]{capsMemory,policy,handleList,capList}) if(p!=IntPtr.Zero) Marshal.FreeHGlobal(p);
       foreach(var capabilitySid in capabilitySids) LocalFree(capabilitySid); FreeSid(sid); if(created) DeleteAppContainerProfile(moniker);
     }
@@ -143,4 +159,47 @@ class AppContainerRunner {
       return Execute(args[0],Path.GetFullPath(args[1]).TrimEnd('\\'),Path.GetFullPath(args[2]).TrimEnd('\\'),args[3],protect);
     } catch(Exception error) { Console.Error.WriteLine("AppContainer 隔离失败："+error.Message+(error is Win32Exception ? " (Windows "+((Win32Exception)error).NativeErrorCode+")" : "")); return 1; }
   }
+}
+
+// 私有设备目录仅由本次隔离进程持有；不创建宿主盘符，不修改全局命名空间。
+// 文件访问仍由 AppContainer 令牌和原有 ACL 决定，所有对象随句柄释放。
+sealed class ProjectDeviceMap : IDisposable {
+  [StructLayout(LayoutKind.Sequential)] struct UnicodeString { public ushort Length, MaximumLength; public IntPtr Buffer; }
+  [StructLayout(LayoutKind.Sequential)] struct ObjectAttributes { public int Length; public IntPtr RootDirectory, ObjectName; public uint Attributes; public IntPtr SecurityDescriptor, SecurityQualityOfService; }
+  [DllImport("ntdll.dll")] static extern int NtCreateDirectoryObjectEx(out IntPtr handle,uint access,ref ObjectAttributes attributes,IntPtr shadow,uint flags);
+  [DllImport("ntdll.dll")] static extern int NtCreateSymbolicLinkObject(out IntPtr handle,uint access,ref ObjectAttributes attributes,ref UnicodeString target);
+  [DllImport("ntdll.dll")] static extern int NtSetInformationProcess(IntPtr process,int information,IntPtr value,uint length);
+  [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
+  IntPtr directory,link;
+  public readonly string Root;
+  static void Check(int status,string action) { if(status<0) throw new IOException(action+" (NTSTATUS 0x"+status.ToString("X8")+")"); }
+  static UnicodeString Text(string value) { return new UnicodeString { Buffer=Marshal.StringToHGlobalUni(value),Length=(ushort)(value.Length*2),MaximumLength=(ushort)(value.Length*2+2) }; }
+  public ProjectDeviceMap(string project,SecurityIdentifier identity) {
+    IntPtr nameMemory=IntPtr.Zero,security=IntPtr.Zero; var name=Text(""); var target=Text("\\??\\"+project);
+    try {
+      nameMemory=Marshal.AllocHGlobal(Marshal.SizeOf(typeof(UnicodeString))); Marshal.StructureToPtr(name,nameMemory,false);
+      var attributes=new ObjectAttributes { Length=Marshal.SizeOf(typeof(ObjectAttributes)),Attributes=0x40 };
+      string user=WindowsIdentity.GetCurrent().User.Value;
+      var descriptor=new RawSecurityDescriptor("D:(A;;GA;;;"+user+")(A;;GA;;;SY)(A;;0x00020003;;;"+identity.Value+")");
+      var bytes=new byte[descriptor.BinaryLength]; descriptor.GetBinaryForm(bytes,0); security=Marshal.AllocHGlobal(bytes.Length); Marshal.Copy(bytes,0,security,bytes.Length);
+      attributes.SecurityDescriptor=security;
+      Check(NtCreateDirectoryObjectEx(out directory,0xf000f,ref attributes,IntPtr.Zero,0),"无法创建进程私有项目映射");
+      string drive=null; var used=new HashSet<string>(Directory.GetLogicalDrives(),StringComparer.OrdinalIgnoreCase);
+      for(char candidate='Z';candidate>='D';candidate--) if(!used.Contains(candidate+":\\")) { drive=candidate+":"; break; }
+      if(drive==null) throw new IOException("没有可用的进程私有项目盘符");
+      Marshal.FreeHGlobal(name.Buffer); name=Text(drive); Marshal.StructureToPtr(name,nameMemory,false);
+      attributes.RootDirectory=directory; attributes.ObjectName=nameMemory;
+      descriptor=new RawSecurityDescriptor("D:(A;;GA;;;"+user+")(A;;GA;;;SY)(A;;0x00020001;;;"+identity.Value+")");
+      descriptor.GetBinaryForm(bytes,0); Marshal.Copy(bytes,0,security,bytes.Length);
+      Check(NtCreateSymbolicLinkObject(out link,0xf0001,ref attributes,ref target),"无法建立进程私有项目入口");
+      Root=drive+"\\";
+    } catch { Dispose(); throw; }
+    finally { Marshal.FreeHGlobal(name.Buffer); Marshal.FreeHGlobal(target.Buffer); if(nameMemory!=IntPtr.Zero) Marshal.FreeHGlobal(nameMemory); if(security!=IntPtr.Zero) Marshal.FreeHGlobal(security); }
+  }
+  public void Apply(IntPtr process) {
+    IntPtr info=Marshal.AllocHGlobal(IntPtr.Size);
+    try { Marshal.WriteIntPtr(info,directory); Check(NtSetInformationProcess(process,23,info,(uint)IntPtr.Size),"无法设置隔离进程私有项目入口"); }
+    finally { Marshal.FreeHGlobal(info); }
+  }
+  public void Dispose() { foreach(var handle in new[]{link,directory}) if(handle!=IntPtr.Zero) CloseHandle(handle); link=directory=IntPtr.Zero; }
 }

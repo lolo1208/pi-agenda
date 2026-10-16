@@ -7,7 +7,7 @@ import type { PermissionMode } from '../../../../shared/models'
 const modes = [
   { value: 'default' as const, label: '每次询问', icon: ShieldQuestion, description: '项目内读取和搜索直接执行；每次修改文件、执行终端命令或访问项目外内容前，都会询问你是否允许。' },
   { value: 'auto' as const, label: '受限自动', icon: ShieldCheck, description: '项目内文件和目录操作自动允许；终端命令在隔离环境中运行，限制项目外访问和联网。隔离失败时停止终端执行，可排查或切换完全访问。' },
-  { value: 'full' as const, label: '完全访问', icon: ShieldAlert, description: '允许访问项目外文件和执行普通命令。高风险或无法确定安全的操作仍需确认。' }
+  { value: 'full' as const, label: '完全访问', icon: ShieldAlert, description: '使用当前用户的本机权限访问文件、执行命令与联网，不再逐项请求批准。' }
 ]
 
 export function PermissionModePicker({ mode, disabled, onChange }: { mode: PermissionMode; disabled?: boolean; onChange(mode: PermissionMode): Promise<void> }): React.JSX.Element {

@@ -2,7 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { IPC_CHANNELS, type PiAgendaApi } from '../shared/api'
 
 const api: PiAgendaApi = {
-  readCodePreview: (project, path, ranges) => ipcRenderer.invoke(IPC_CHANNELS.codePreview, project, path, ranges),
+  readCodePreview: (project, path, ranges, snapshotId) => ipcRenderer.invoke(IPC_CHANNELS.codePreview, project, path, ranges, snapshotId),
   getSkills: () => ipcRenderer.invoke(IPC_CHANNELS.skillsList),
   installSkill: source => ipcRenderer.invoke(IPC_CHANNELS.skillsInstall, source),
   getSkillsDirectory: () => ipcRenderer.invoke(IPC_CHANNELS.skillsDirectory),
@@ -13,6 +13,7 @@ const api: PiAgendaApi = {
   refreshSkills: () => ipcRenderer.invoke(IPC_CHANNELS.skillsRefresh),
   performFileAction: (project, path, action) => ipcRenderer.invoke(IPC_CHANNELS.fileAction, project, path, action),
   copyText: text => ipcRenderer.invoke(IPC_CHANNELS.copyText, text),
+  saveAttachment: (name, dataUrl) => ipcRenderer.invoke(IPC_CHANNELS.saveAttachment, name, dataUrl),
   getSandboxStatus: () => ipcRenderer.invoke(IPC_CHANNELS.sandboxStatus),
   ensureSandbox: () => ipcRenderer.invoke(IPC_CHANNELS.sandboxEnsure),
   startSandbox: action => ipcRenderer.invoke(IPC_CHANNELS.sandboxStart, action),

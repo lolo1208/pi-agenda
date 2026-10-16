@@ -15,6 +15,8 @@ import { performFileAction } from './file-actions'
 import type { FileAction } from '../shared/api'
 import { SkillStore } from './skill-store'
 import { readCodePreview } from './code-preview'
+import { readCodePreviewSnapshot } from './code-preview-snapshots'
+import { ATTACHMENT_DATA_URL } from '../shared/attachments'
 
 interface IpcHandlerDependencies {
   getMainWindow: () => BrowserWindow | null
@@ -127,7 +129,22 @@ export function registerIpcHandlers(dependencies: IpcHandlerDependencies): void 
     if (typeof text !== 'string') throw new ModelError('复制内容格式无效')
     clipboard.writeText(text)
   })
-  handle(IPC_CHANNELS.codePreview, (project, file, ranges) => readCodePreview(parseString(project), parseString(file), ranges))
+  handle(IPC_CHANNELS.saveAttachment, async (name, dataUrl) => {
+    const window = dependencies.getMainWindow()
+    if (!window) throw new ModelError('应用窗口尚未准备就绪')
+    const match = typeof dataUrl === 'string' ? ATTACHMENT_DATA_URL.exec(dataUrl) : null
+    if (!match) throw new ModelError('附件内容格式无效')
+    let filename = parseString(name).replace(/[\x00-\x1f<>:"/\\|?*]/g, '_').replace(/[. ]+$/, '') || '附件'
+    if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(filename)) filename = `_${filename}`
+    const result = await dialog.showSaveDialog(window, { title: '附件另存为', defaultPath: filename })
+    if (result.canceled || !result.filePath) return null
+    try { await writeFile(result.filePath, Buffer.from(match[2], 'base64')) }
+    catch { throw new ModelError('附件保存失败，请检查保存位置的访问权限和剩余空间后重试') }
+    return result.filePath
+  })
+  handle(IPC_CHANNELS.codePreview, (project, file, ranges, snapshotId) => snapshotId === undefined
+    ? readCodePreview(parseString(project), parseString(file), ranges)
+    : readCodePreviewSnapshot(dependencies.dataDirectory, parseString(project), parseString(file), ranges, parseString(snapshotId)))
   const sandbox = (): SandboxService => {
     const service = dependencies.getSandboxService?.()
     if (!service) throw new ModelError('安全执行环境尚未初始化')

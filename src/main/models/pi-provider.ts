@@ -9,6 +9,7 @@ import { ollamaFetch } from './pi-ollama'
 import { requestPiStream } from './pi-stream'
 import type { ChatgptService } from './chatgpt-service'
 import { ModelError } from './model-validation'
+import { modelResponseError } from './model-request-error'
 
 export async function createPiProvider(profile: ModelProfile, apiKey: string, attachments: PiAttachments, responses: boolean, onLimits: (limits: ModelRateLimit[]) => void, fetchRequest: typeof fetch = fetch, chatgpt?: ChatgptService, onModelRequestActive: (active: boolean) => void = () => {}) {
   if (profile.provider === 'chatgpt') {
@@ -32,12 +33,17 @@ export async function createPiProvider(profile: ModelProfile, apiKey: string, at
       ...(api === 'openai-completions' ? { compat: { maxTokensField: profile.tokenParameter, supportsDeveloperRole: profile.provider === 'openai', supportsStore: false, supportsReasoningEffort: profile.provider === 'openai' || profile.provider === 'openrouter', ...(profile.provider === 'openrouter' ? { thinkingFormat: 'openrouter' as const } : {}) } } : {}) }],
     streamSimple: (model: Model<Api>, context: TranscriptContext, options?: SimpleStreamOptions) => {
       const controller = new AbortController()
+      let responseError: string | undefined
       return requestPiStream(() => implementation.streamSimple(model, context, {
       ...options, apiKey: apiKey || 'pi-agenda-local', maxTokens: Math.min(options?.maxTokens ?? profile.maxTokens, profile.maxTokens),
       signal: options?.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal,
       ...(profile.temperature !== null ? { temperature: profile.temperature } : {}),
       timeoutMs: profile.timeoutSeconds * 1000, maxRetries: 0,
-      fetch: profile.provider === 'ollama' ? ollamaFetch(profile, securedFetch) : securedFetch,
+      fetch: async (url, init) => {
+        const response = await (profile.provider === 'ollama' ? ollamaFetch(profile, securedFetch) : securedFetch)(url, init)
+        if (!response.ok) responseError = await modelResponseError(response, apiKey)
+        return response
+      },
       onPayload: async (payload, target) => {
         const modified = await options?.onPayload?.(payload, target) ?? payload
         const body = attachments.replacePayload(modified, profile.provider === 'ollama' ? { ...profile, provider: 'custom' } : profile, responses) as Record<string, unknown>
@@ -64,7 +70,7 @@ export async function createPiProvider(profile: ModelProfile, apiKey: string, at
         }
         onLimits(limits)
       }
-    }), apiKey, () => controller.abort(), onModelRequestActive)
+    }), apiKey, () => controller.abort(), onModelRequestActive, () => responseError)
     }
   })
   return { runtime, model: runtime.getModel(provider, profile.model)!, thinkingLevel: profile.thinking === true || profile.ollamaThinkingLevel != null ? 'medium' as const : 'off' as const }

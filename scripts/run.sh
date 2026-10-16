@@ -3,9 +3,16 @@
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." || exit 1
 
 package_command=''
+package_label='导出当前系统发行包'
 case "$(uname -s)" in
-  Darwin) package_command=dist:mac ;;
-  MINGW*|MSYS*|CYGWIN*) package_command=dist:win ;;
+  Darwin)
+    package_command=dist:mac
+    package_label='导出 macOS(x64) 安装包'
+    ;;
+  MINGW*|MSYS*|CYGWIN*)
+    package_command=dist:win
+    package_label='导出 Windows(x64) 安装包'
+    ;;
 esac
 
 while true; do
@@ -13,7 +20,7 @@ while true; do
   printf '%s\n' \
     '1. 运行开发桌面端' \
     '2. 生成程序图标' \
-    '3. 导出当前系统发行包' \
+    "3. $package_label" \
     '0. 退出'
   printf '\n请输入菜单编号，按回车执行：'
   IFS= read -r selection || exit 0
