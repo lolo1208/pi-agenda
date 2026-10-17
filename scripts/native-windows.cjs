@@ -139,7 +139,7 @@ async function packageWindows({ projectDir, stagingDir, portable, payload }) {
   const compiler = await getCompiler(projectDir)
   const tool = await getSevenZip(projectDir)
   payload ??= await compressDirectory({ projectDir, stagingDir })
-  const output = path.join(stagingDir, portable ? 'pi-agenda-portable.exe' : 'pi-agenda-setup.exe')
+  const output = path.join(stagingDir, portable ? 'pi-runner-portable.exe' : 'pi-runner-setup.exe')
   const args = [
     '/V2', '/INPUTCHARSET', 'UTF8',
     `/DAPP_NAME=${appName}`, `/DAPP_EXE=${appExe}`, `/DAPP_VERSION=${metadata.version}`,

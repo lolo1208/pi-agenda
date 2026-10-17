@@ -33,7 +33,7 @@ export function macosSandboxProfile(project: string, scratch: string, protectedD
     '(allow file-read-data file-write-data (subpath "/dev/fd"))',
     development ? '(allow network*)' : '(deny network*)', `(deny file-write-unlink (literal ${quoted(project)}) (literal ${quoted(scratch)}))`,
     '(deny file-write* (regex #"(^|/)\\.git(/|$)"))',
-    '(deny file-read* file-write* (regex #"(^|/)(\\.agents|\\.codex|\\.aws|\\.pi-agenda)(/|$)"))']
+    '(deny file-read* file-write* (regex #"(^|/)(\\.agents|\\.codex|\\.aws|\\.pi-runner)(/|$)"))']
   for (const root of protectedDirectories) {
     lines.push(`(deny file-read* file-write* ${subpath(root)} (literal ${quoted(root)}))`)
     // 不允许把受保护目录的祖先移出拒绝规则的范围。
@@ -66,7 +66,7 @@ export class MacosSandboxEngine implements TerminalSandbox {
     if (await realpath(project) !== project || project === path.parse(project).root) throw new ModelError('项目路径无效或发生变化，不能启动 macOS 隔离终端')
     if (this.prepared.has(project)) return
     let output = ''
-    const marker = 'PI_AGENDA_SEATBELT_READY'
+    const marker = 'PI_RUNNER_SEATBELT_READY'
     const result = await this.run(`printf '${marker}\\n'`, project, { signal, timeout: 15, onData: data => { output = (output + data.toString('utf8')).slice(-4000) } })
     if (result.exitCode !== 0 || !output.includes(marker)) throw new ModelError(`macOS 系统沙箱启动失败，命令尚未执行：${output.trim().slice(-1800) || '系统未返回启动标记'}`)
     this.prepared.add(project)
@@ -76,7 +76,7 @@ export class MacosSandboxEngine implements TerminalSandbox {
     return this.run(command, cwd, options)
   }
   private async run(command: string, cwd: string, options: Parameters<TerminalSandbox['exec']>[2]): Promise<{ exitCode: number }> {
-    const scratch = await realpath(await mkdtemp(path.join(os.tmpdir(), 'pi-agenda-command-')))
+    const scratch = await realpath(await mkdtemp(path.join(os.tmpdir(), 'pi-runner-command-')))
     try {
       const protectedDirectories = await Promise.all([...this.options.protectedDirectories, this.options.dataDirectory].map(root => realpath(root).catch(() => path.resolve(root))))
       if (protectedDirectories.some(root => scratch === root || scratch.startsWith(root + path.sep))) throw new ModelError('隔离临时目录与应用保护目录重叠，请检查临时目录配置')

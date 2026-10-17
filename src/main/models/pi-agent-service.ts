@@ -110,14 +110,14 @@ export class PiAgentService {
     const durations = new Map<string, number>()
     const results = new Map<string, { content: string; isError: boolean }>()
     for (const entry of manager.getBranch()) {
-      if (entry.type === 'custom' && entry.customType === 'pi-agenda-skill-usage') {
+      if (entry.type === 'custom' && entry.customType === 'pi-runner-skill-usage') {
         const data = entry.data as { entryId: string; notice: string }
         skillNotices.set(data.entryId, data.notice)
       }
       if (entry.type === 'message' && entry.message.role === 'toolResult') results.set(entry.message.toolCallId, {
         content: entry.message.content.map(block => block.type === 'text' ? block.text : '[图片结果]').join('\n'), isError: entry.message.isError
       })
-      if (entry.type === 'custom' && entry.customType === 'pi-agenda-call-duration') {
+      if (entry.type === 'custom' && entry.customType === 'pi-runner-call-duration') {
         const data = entry.data as { messageTimestamp: number; elapsedMs: number }; durations.set(String(data.messageTimestamp), data.elapsedMs)
       }
     }
@@ -126,7 +126,7 @@ export class PiAgentService {
     let lastMessageId: string | undefined
     // 使用原生历史中的快照记录定位轮次，旧会话无需猜测消息序号。
     for (const entry of manager.getBranch()) {
-      if (entry.type === 'custom' && entry.customType === 'pi-agenda-code-preview') {
+      if (entry.type === 'custom' && entry.customType === 'pi-runner-code-preview') {
         const data = entry.data as { entryId: string; snapshotId: string }
         codeSnapshots.set(data.entryId, data.snapshotId)
       }
@@ -134,16 +134,16 @@ export class PiAgentService {
         const content = entry.message.content
         if (typeof content === 'string' ? content.trim() : content.some(block => block.type === 'text' && block.text.trim())) lastMessageId = entry.id
       }
-      if (entry.type === 'custom' && entry.customType === 'pi-agenda-snapshot' && lastMessageId) {
+      if (entry.type === 'custom' && entry.customType === 'pi-runner-snapshot' && lastMessageId) {
         const data = entry.data as import('../../shared/models').AgentSnapshot
         snapshotHashes.set(lastMessageId, data.after.hash)
       }
     }
-    for (const entry of manager.getEntries()) if (entry.type === 'custom' && entry.customType === 'pi-agenda-execution') {
+    for (const entry of manager.getEntries()) if (entry.type === 'custom' && entry.customType === 'pi-runner-execution') {
       const data = entry.data as { entryIds: string[]; execution: ChatExecution }
       for (const id of data.entryIds) executions.set(id, data.execution)
     }
-    for (const entry of manager.getEntries()) if (entry.type === 'custom' && entry.customType === 'pi-agenda-files') {
+    for (const entry of manager.getEntries()) if (entry.type === 'custom' && entry.customType === 'pi-runner-files') {
       const data = entry.data as { id: string; message: ChatMessage }; attachments.set(data.id, data.message)
     }
     return manager.getBranch().flatMap(entry => {
@@ -151,7 +151,7 @@ export class PiAgentService {
       if (entry.type !== 'message' || (entry.message.role !== 'user' && entry.message.role !== 'assistant')) return []
       const message = entry.message
       const content = typeof message.content === 'string' ? message.content : message.content.filter(block => block.type === 'text').map(block => block.text).join('\n')
-      const original = attachments.get(/\[pi-agenda-files:([\w-]+)\]/.exec(content)?.[1] ?? '')
+      const original = attachments.get(/\[pi-runner-files:([\w-]+)\]/.exec(content)?.[1] ?? '')
       const execution = executions.get(entry.id)
       const call = message.role === 'assistant' ? {
         elapsedMs: durations.get(String(message.timestamp)),
@@ -274,7 +274,7 @@ export class PiAgentService {
     const resourceLoader: ResourceLoader = {
       getExtensions: () => ({ extensions: [], errors: [], runtime: createExtensionRuntime() }), getSkills: () => ({ skills: [], diagnostics: [] }),
       getPrompts: () => ({ prompts: [], diagnostics: [] }), getThemes: () => ({ themes: [], diagnostics: [] }), getAgentsFiles: () => ({ agentsFiles: [] }),
-      getSystemPrompt: () => isTest ? '' : ['你是 Pi Agenda · 行动派的助手。对话、注释与日志以中文为主。', `当前权限模式：${mode}。“每次询问”模式下，文件和目录修改及命令执行前均需询问用户并获得批准；受限自动模式允许项目内普通文件和目录的创建、修改、删除、查询、移动、重命名和复制；完全访问使用当前用户的本机权限，文件修改、删除、命令与脚本执行、项目外访问及联网均不再逐项请求批准；此模式不要自行询问执行许可。文件和目录操作必须优先使用专用工具，不要用终端命令代替：mkdir 创建目录，write 写入文件，edit 修改文件，delete 删除文件，rmdir 删除目录（删除非空目录时设置 recursive=true），move 移动或重命名，copy 复制，stat 查看信息，ls 查看目录内容，find 查找文件或目录，grep 搜索文件内容，read 读取文件。批量操作先用 find 查找，再逐项调用对应工具。执行模式下，用户已经明确要求的项目内文件和目录操作直接调用工具，是否需要审批由应用执行，不要额外询问执行许可。受限自动模式下的复合脚本和其他终端命令在系统沙箱内直接运行，项目外普通文件读写会被系统拦截；调用全局工具、测试子进程和联网无需审批；不要仅因命令复杂就询问许可。不要因工具位于项目外、命令组合、测试或联网设置 outsideSandbox=true。只有需要读取或写入项目外普通文件时才同时设置 externalFileAccess=true 和 outsideSandbox=true，应用将请求批准。应用会自动处理可安全恢复的文件操作、隔离配置和运行时访问问题；按工具返回的 recovery 状态继续任务。调用全局工具、测试子进程和联网不申请完整本机权限；工具不可用时保留兼容性错误。其他错误先根据原始结果调整实现；partial-or-unknown 表示可能已完成部分操作，先核对结果，只完成剩余步骤，不重放整段脚本。不得绕过 denied 或 awaiting-approval 状态重复申请相同授权。Windows PowerShell 5 的 Remove-Item 等路径命令可能访问项目祖先而被拒绝，优先使用专用文件工具或项目内 System.IO API。用户拒绝后请调整方案，不要变换语法重试相同动作。${project ? `当前项目：${project}` : '未绑定项目，不存在自动授权的工作区。'}`, instruction, planning ? PLAN_INSTRUCTION : '当前为执行模式。若本轮计划已批准，请按批准内容执行。'].filter(Boolean).join('\n\n'),
+      getSystemPrompt: () => isTest ? '' : ['你是 Pi Runner · 行动派的助手。对话、注释与日志以中文为主。', `当前权限模式：${mode}。“每次询问”模式下，文件和目录修改及命令执行前均需询问用户并获得批准；受限自动模式允许项目内普通文件和目录的创建、修改、删除、查询、移动、重命名和复制；完全访问使用当前用户的本机权限，文件修改、删除、命令与脚本执行、项目外访问及联网均不再逐项请求批准；此模式不要自行询问执行许可。文件和目录操作必须优先使用专用工具，不要用终端命令代替：mkdir 创建目录，write 写入文件，edit 修改文件，delete 删除文件，rmdir 删除目录（删除非空目录时设置 recursive=true），move 移动或重命名，copy 复制，stat 查看信息，ls 查看目录内容，find 查找文件或目录，grep 搜索文件内容，read 读取文件。批量操作先用 find 查找，再逐项调用对应工具。执行模式下，用户已经明确要求的项目内文件和目录操作直接调用工具，是否需要审批由应用执行，不要额外询问执行许可。受限自动模式下的复合脚本和其他终端命令在系统沙箱内直接运行，项目外普通文件读写会被系统拦截；调用全局工具、测试子进程和联网无需审批；不要仅因命令复杂就询问许可。不要因工具位于项目外、命令组合、测试或联网设置 outsideSandbox=true。只有需要读取或写入项目外普通文件时才同时设置 externalFileAccess=true 和 outsideSandbox=true，应用将请求批准。应用会自动处理可安全恢复的文件操作、隔离配置和运行时访问问题；按工具返回的 recovery 状态继续任务。调用全局工具、测试子进程和联网不申请完整本机权限；工具不可用时保留兼容性错误。其他错误先根据原始结果调整实现；partial-or-unknown 表示可能已完成部分操作，先核对结果，只完成剩余步骤，不重放整段脚本。不得绕过 denied 或 awaiting-approval 状态重复申请相同授权。Windows PowerShell 5 的 Remove-Item 等路径命令可能访问项目祖先而被拒绝，优先使用专用文件工具或项目内 System.IO API。用户拒绝后请调整方案，不要变换语法重试相同动作。${project ? `当前项目：${project}` : '未绑定项目，不存在自动授权的工作区。'}`, instruction, planning ? PLAN_INSTRUCTION : '当前为执行模式。若本轮计划已批准，请按批准内容执行。'].filter(Boolean).join('\n\n'),
       getSystemPromptSource: () => undefined, getAppendSystemPrompt: () => [], getAppendSystemPromptSources: () => [], extendResources: () => {}, reload: async () => {}
     }
     const projectTools = isTest || !options ? [] : piProjectTools(snapshot?.getRoot() ?? cwd, () => snapshot ? beforePromise ??= (async () => {
@@ -282,7 +282,7 @@ export class PiAgentService {
       try { before = await snapshot.createCheckpoint('代理修改前') }
       finally { refreshStatus() }
     })() : Promise.resolve(), {
-      mode, project: snapshot?.getRoot(), protectedDirectories: [this.dependencies.dataDirectory, path.join(os.homedir(), '.pi-agenda-execution'), ...(this.dependencies.sandboxRuntimeDirectory ? [this.dependencies.sandboxRuntimeDirectory] : []), ...(this.dependencies.protectedDirectories ?? [])],
+      mode, project: snapshot?.getRoot(), protectedDirectories: [this.dependencies.dataDirectory, path.join(os.homedir(), '.pi-runner-execution'), ...(this.dependencies.sandboxRuntimeDirectory ? [this.dependencies.sandboxRuntimeDirectory] : []), ...(this.dependencies.protectedDirectories ?? [])],
       sandbox: this.sandbox,
       onRecovery: message => status(message),
       approve: (id, tool, args, reason, toolSignal) => this.approvals.ask(requestId, options.conversationId, { toolCallId: id, tool, args: structuredClone(args), cwd, reason }, toolSignal ?? signal, waitingFor(id, `等待你批准${toolActions[tool] ?? '操作'}…`)).then(() => {})
@@ -300,19 +300,19 @@ export class PiAgentService {
     } }))
     const interactions = planning && options ? planTools(
       async (details, toolSignal) => {
-        manager.appendCustomEntry('pi-agenda-plan-message', { role: 'assistant', content: details.kind === 'review' ? `${details.title}\n\n${details.content}` : (details.questions ?? []).map(question => `${question.question}\n${question.options.map(option => `- ${option.label}${option.description ? `：${option.description}` : ''}`).join('\n')}`).join('\n\n') } satisfies ChatMessage)
+        manager.appendCustomEntry('pi-runner-plan-message', { role: 'assistant', content: details.kind === 'review' ? `${details.title}\n\n${details.content}` : (details.questions ?? []).map(question => `${question.question}\n${question.options.map(option => `- ${option.label}${option.description ? `：${option.description}` : ''}`).join('\n')}`).join('\n\n') } satisfies ChatMessage)
         publish({ type: 'transcript', messages: this.transcript(manager) })
         const response = await this.interactions.ask(requestId, options.conversationId, details, toolSignal ?? signal, waitingFor('plan-interaction', details.kind === 'questions' ? '等待你回答问题…' : '等待你审阅计划…'))
         signal.throwIfAborted()
         interactionVersion++
         if (details.kind === 'questions') { clarified = true; session?.setActiveToolsByName(planningTools()) }
-        manager.appendCustomEntry('pi-agenda-plan-message', { role: 'user', content: response.answers ? (details.questions ?? []).map(question => `${question.header || question.question}：${response.answers![question.id]}`).join('\n') : response.decision === 'approve' ? '批准计划并开始执行' : `修改计划：${response.feedback}` } satisfies ChatMessage)
+        manager.appendCustomEntry('pi-runner-plan-message', { role: 'user', content: response.answers ? (details.questions ?? []).map(question => `${question.header || question.question}：${response.answers![question.id]}`).join('\n') : response.decision === 'approve' ? '批准计划并开始执行' : `修改计划：${response.feedback}` } satisfies ChatMessage)
         publish({ type: 'transcript', messages: this.transcript(manager) })
         return response
       },
       (title, content) => {
         signal.throwIfAborted()
-        manager.appendCustomEntry('pi-agenda-approved-plan', { title, content, approvedAt: new Date().toISOString(), requestId })
+        manager.appendCustomEntry('pi-runner-approved-plan', { title, content, approvedAt: new Date().toISOString(), requestId })
         approvedPlan = { title, content }
         executionTransitionPending = true
         planning = false
@@ -333,7 +333,7 @@ export class PiAgentService {
     const saveExecution = (): number => {
       const elapsedMs = Math.round(performance.now() - started)
       const entryIds = manager.getEntries().filter(entry => !previousEntries.has(entry.id) && entry.type === 'message' && entry.message.role === 'assistant').map(entry => entry.id)
-      if (entryIds.length) manager.appendCustomEntry('pi-agenda-execution', { entryIds, execution: { model: profile.model, provider: profile.provider, elapsedMs, roundId: requestId } })
+      if (entryIds.length) manager.appendCustomEntry('pi-runner-execution', { entryIds, execution: { model: profile.model, provider: profile.provider, elapsedMs, roundId: requestId } })
       executionSaved = true
       return elapsedMs
     }
@@ -369,12 +369,12 @@ export class PiAgentService {
                 await Promise.resolve()
                 const entry = manager.getEntries().find(entry => entry.type === 'message' && entry.message === message)
                 if (!entry) throw new Error('无法关联报告的会话消息')
-                manager.appendCustomEntry('pi-agenda-code-preview', { entryId: entry.id, snapshotId: 'pending' })
+                manager.appendCustomEntry('pi-runner-code-preview', { entryId: entry.id, snapshotId: 'pending' })
                 try {
                   const snapshotId = await saveCodePreviewSnapshot(this.directory(options.conversationId), project, source)
-                  manager.appendCustomEntry('pi-agenda-code-preview', { entryId: entry.id, snapshotId: snapshotId ?? 'unavailable' })
+                  manager.appendCustomEntry('pi-runner-code-preview', { entryId: entry.id, snapshotId: snapshotId ?? 'unavailable' })
                 } catch (error) {
-                  manager.appendCustomEntry('pi-agenda-code-preview', { entryId: entry.id, snapshotId: 'unavailable' })
+                  manager.appendCustomEntry('pi-runner-code-preview', { entryId: entry.id, snapshotId: 'unavailable' })
                   throw error
                 } finally {
                   publish({ type: 'transcript', messages: this.transcript(manager) })
@@ -383,7 +383,7 @@ export class PiAgentService {
             }
           }
           completedResponse = event.message.stopReason === 'stop' && !signal.aborted
-          try { manager.appendCustomEntry('pi-agenda-call-duration', { messageTimestamp: event.message.timestamp, elapsedMs: Math.round(performance.now() - callStarted) }) }
+          try { manager.appendCustomEntry('pi-runner-call-duration', { messageTimestamp: event.message.timestamp, elapsedMs: Math.round(performance.now() - callStarted) }) }
           catch { warn('模型调用耗时记录保存失败') }
           const usage = event.message.usage
           roundUsage.inputTokens += usage.input + usage.cacheRead + usage.cacheWrite
@@ -460,7 +460,7 @@ export class PiAgentService {
         if (corrections++ >= 2) throw new ModelError(clarified ? '模型未提交可审批的计划，请使用支持工具调用的模型后重试' : '模型未发起需求确认，请使用支持工具调用的模型后重试')
         status(clarified ? '正在完善计划并准备审阅…' : '正在准备需求确认选项…')
         session.setAutoCompactionEnabled(!isTest)
-        await session.sendCustomMessage({ customType: 'pi-agenda-plan-control', display: false, content: clarified
+        await session.sendCustomMessage({ customType: 'pi-runner-plan-control', display: false, content: clarified
           ? '本轮仍处于计划模式，尚未获得用户批准。不要以普通文字结束；若还需要澄清请调用 ask_user_question，否则必须调用 submit_plan 将完整计划提交到审阅窗口。'
           : '本轮尚未进行需求确认。现在必须调用 ask_user_question，针对用户任务提出具体方案、范围或验收选项，等待本轮用户回答。不得直接提交计划，也不要仅用文字提问。' }, { triggerTurn: true })
       }
@@ -470,7 +470,7 @@ export class PiAgentService {
         status('计划已批准，正在执行…')
         // 隐藏消息直接 triggerTurn 不会刷新系统提示词。先排入下一轮，
         // 再用空输入启动 prompt 的完整刷新流程；空输入不会显示在对话中。
-        await session.sendCustomMessage({ customType: 'pi-agenda-execution-control', display: false,
+        await session.sendCustomMessage({ customType: 'pi-runner-execution-control', display: false,
           content: `用户已批准以下完整计划，并要求现在实施。需求确认与计划审阅已经结束。请使用项目工具完成计划中的实际工作和验证，再报告结果；不要只复述计划或确认收到。现有工具权限仍然适用。\n\n${approvedPlan.title}\n\n${approvedPlan.content}` }, { deliverAs: 'nextTurn' })
         session.setAutoCompactionEnabled(!isTest)
         await session.prompt('', { expandPromptTemplates: false })
@@ -482,7 +482,7 @@ export class PiAgentService {
           if (retry >= 2) throw new ModelError('计划已批准，但模型未调用项目工具开始执行，请使用支持工具调用的模型后重试')
           status('正在按批准计划开始实际工作…')
           session.setAutoCompactionEnabled(!isTest)
-          await session.sendCustomMessage({ customType: 'pi-agenda-execution-control', display: false,
+          await session.sendCustomMessage({ customType: 'pi-runner-execution-control', display: false,
             content: '批准后的执行尚未开始：你还没有调用任何项目工具。请现在按已批准的计划调用工具完成实际工作和验证，不能仅确认、复述方案或声称完成。若无法执行，请明确说明具体阻碍。' }, { triggerTurn: true })
         }
       }
@@ -501,7 +501,7 @@ export class PiAgentService {
         const task = plain(messages.at(-1)?.content ?? '')
         const notice = '\n\n' + [...usedSkills.values()].map(skill => `本次使用了 ${plain(skill.name)} 技能来${plain(skillPurposes.get(skill.id) ?? (task ? `处理本轮任务“${task.slice(0, 80)}”` : '处理本轮任务'))}。`).join('\n\n')
         const entry = manager.getEntries().filter(entry => !previousEntries.has(entry.id) && entry.type === 'message' && entry.message.role === 'assistant').at(-1)
-        if (entry) await finishSafely(() => manager.appendCustomEntry('pi-agenda-skill-usage', { entryId: entry.id, notice }), '回复已完成，但技能使用记录保存失败')
+        if (entry) await finishSafely(() => manager.appendCustomEntry('pi-runner-skill-usage', { entryId: entry.id, notice }), '回复已完成，但技能使用记录保存失败')
         text += notice
         publish({ type: 'text', text: notice })
       }
@@ -525,7 +525,7 @@ export class PiAgentService {
           status('正在保存本轮改动…')
           after = await snapshot.createCheckpoint('代理修改后')
           const round = { project: snapshot.getRoot(), before, after, messageIndex: this.transcript(manager).length - 1 }
-          manager.appendCustomEntry('pi-agenda-snapshot', round)
+          manager.appendCustomEntry('pi-runner-snapshot', round)
           publish({ type: 'snapshot', snapshot: round })
         } catch { const warning = '修改后快照保存失败，请手动捕获当前改动'; warn(warning); status(warning) }
       }

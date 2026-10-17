@@ -29,7 +29,7 @@ function CopyableCodeBlock({ code, children }: { code: string; children: ReactNo
   const copy = async (): Promise<void> => {
     setStatus('copying')
     try {
-      await window.piAgenda.copyText(code)
+      await window.piRunner.copyText(code)
       setStatus('copied')
     } catch {
       setStatus('error')

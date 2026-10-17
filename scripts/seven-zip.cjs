@@ -70,7 +70,7 @@ async function prepare(projectDir) {
 async function compressDirectory({ projectDir, stagingDir, zip = false }) {
   const started = performance.now()
   const tool = await getSevenZip(projectDir)
-  const output = path.join(stagingDir, zip ? 'pi-agenda-portable.zip' : 'app-payload.7z')
+  const output = path.join(stagingDir, zip ? 'pi-runner-portable.zip' : 'app-payload.7z')
   // 先移除旧压缩包，防止增量更新残留已经从应用删除的文件。
   await fs.rm(output, { force: true })
   console.log(`正在使用多线程生成 ${path.basename(output)}……`)

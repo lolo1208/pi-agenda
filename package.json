@@ -1,9 +1,9 @@
 {
-  "name": "pi-agenda",
+  "name": "pi-runner",
   "version": "0.1.0",
   "private": true,
-  "description": "Pi Agenda · 行动派 — 本地桌面 AI 编程助手，支持影子快照、代码差异检查与文件和对话同步回滚",
-  "author": "Pi Agenda",
+  "description": "Pi Runner · 行动派 — 本地桌面 AI 编程助手，支持影子快照、代码差异检查与文件和对话同步回滚",
+  "author": "Pi Runner",
   "main": "out/main/index.mjs",
   "scripts": {
     "dev": "pnpm electron:install && electron-vite dev",
@@ -69,8 +69,8 @@
     "vitest": "^4.1.11"
   },
   "build": {
-    "appId": "dev.piagenda.desktop",
-    "productName": "Pi Agenda · 行动派",
+    "appId": "dev.pirunner.desktop",
+    "productName": "Pi Runner",
     "directories": {
       "output": "build-work",
       "buildResources": "resources/icons"
@@ -100,7 +100,6 @@
       }
     ],
     "win": {
-      "executableName": "Pi Agenda",
       "extraResources": [
         {
           "from": "resources/sandbox-runtime",
@@ -121,10 +120,10 @@
       ]
     },
     "nsis": {
-      "artifactName": "pi-agenda-setup.exe"
+      "artifactName": "pi-runner-setup.exe"
     },
     "portable": {
-      "artifactName": "pi-agenda-portable.exe"
+      "artifactName": "pi-runner-portable.exe"
     },
     "mac": {
       "icon": "resources/icons/icon.icns",

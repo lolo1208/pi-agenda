@@ -74,7 +74,7 @@ export function TaskProjectHeading({ root, tasks, waitingTaskIds, projectBusy, c
       {root !== UNLINKED_PROJECT_LABEL && <Button className="project-create-button conversation-action-button" aria-label={`在项目 ${projectName} 中新建对话`} title="新建对话" disabled={creationDisabled} onClick={onCreateTask}><MessageCirclePlus size={14} aria-hidden="true" /></Button>}
       {canRemoveProjects && <Button className="project-edit-button conversation-action-button" aria-label={`编辑项目 ${projectName}`} title="编辑项目信息" disabled={creationDisabled} onClick={onEditProject}><SlidersHorizontal size={14} aria-hidden="true" /></Button>}
       {canRemoveProjects && <Button className="project-remove-button" aria-label={`移除项目 ${projectName}`} title="移除项目并删除快照数据" disabled={removalDisabled} onClick={() => onRemovalPendingChange(true)}><Trash2 size={14} /></Button>}
-      {canRemoveProjects && !hideRemovalDialog && <Modal open={isRemovalPending} onOpenChange={onRemovalPendingChange} title="移除此项目？" description="同时移除此项目的对话，并删除 Pi Agenda 快照数据。项目文件会保留。" closeDisabled={removalDisabled}>
+      {canRemoveProjects && !hideRemovalDialog && <Modal open={isRemovalPending} onOpenChange={onRemovalPendingChange} title="移除此项目？" description="同时移除此项目的对话，并删除 Pi Runner 快照数据。项目文件会保留。" closeDisabled={removalDisabled}>
         <div className="modal-actions">
           <Button variant="outline" autoFocus disabled={removalDisabled} onClick={() => onRemovalPendingChange(false)}>取消</Button>
           <Button variant="destructive" disabled={removalDisabled} onClick={onRemoveProject}>确认移除</Button>

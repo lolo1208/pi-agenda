@@ -12,9 +12,9 @@ export function useLocalSkills(): { skills: LocalSkill[]; error: string; loading
   const [revision, setRevision] = useState(0)
   useEffect(() => {
     let current = true
-    if (!window.piAgenda?.getSkills) { setLoading(false); return }
+    if (!window.piRunner?.getSkills) { setLoading(false); return }
     setLoading(true)
-    void window.piAgenda.getSkills().then(unwrapModelResult).then(value => { if (current) { setSkills(value); setError('') } }).catch(e => { if (current) setError(e instanceof Error ? e.message : '技能读取失败，请重试') }).finally(() => { if (current) setLoading(false) })
+    void window.piRunner.getSkills().then(unwrapModelResult).then(value => { if (current) { setSkills(value); setError('') } }).catch(e => { if (current) setError(e instanceof Error ? e.message : '技能读取失败，请重试') }).finally(() => { if (current) setLoading(false) })
     return () => { current = false }
   }, [revision])
   useEffect(() => {

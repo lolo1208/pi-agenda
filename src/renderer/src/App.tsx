@@ -73,13 +73,13 @@ export default function App(): React.JSX.Element {
   const [tool, setTool] = useState<'snapshots' | 'files' | 'terminal' | 'browser'>('snapshots')
   const loadSettings = (): void => {
     setSettingsError('')
-    void window.piAgenda.getModelSettings().then(unwrapModelResult).then(setSettings).catch(e => setSettingsError(e instanceof Error ? e.message : '无法读取模型设置'))
+    void window.piRunner.getModelSettings().then(unwrapModelResult).then(setSettings).catch(e => setSettingsError(e instanceof Error ? e.message : '无法读取模型设置'))
   }
   useEffect(loadSettings, [])
-  useEffect(() => window.piAgenda.onWindowMaximizedChange?.(setIsMaximized), [])
+  useEffect(() => window.piRunner.onWindowMaximizedChange?.(setIsMaximized), [])
   // 点击通知时显示主窗口并选中对应会话；若正在设置页则先返回工作台。
   // 会话已被删除或不存在时只保持已打开的程序，不提示错误。
-  useEffect(() => window.piAgenda.onNotificationActivate?.(conversationId => {
+  useEffect(() => window.piRunner.onNotificationActivate?.(conversationId => {
     if (typeof conversationId !== 'string' || !conversationId) return
     const task = tasks.find(item => item.id === conversationId)
     if (!task) return
@@ -99,13 +99,13 @@ export default function App(): React.JSX.Element {
   }, [resolvedTheme, preferences.font, preferences.fontSize])
   const updatePreferences = (next: Preferences): void => {
     setPreferences(next)
-    try { localStorage.setItem('pi-agenda.preferences', JSON.stringify({ ...next, sendWithCtrlEnterVersion: 1 })) } catch { setError('偏好设置未能保存，重启后将恢复默认值。请检查本地存储。') }
+    try { localStorage.setItem('pi-runner.preferences', JSON.stringify({ ...next, sendWithCtrlEnterVersion: 1 })) } catch { setError('偏好设置未能保存，重启后将恢复默认值。请检查本地存储。') }
   }
   /** 按开关发送系统通知；macOS 走系统通知，Windows 走桌面右下角气泡。 */
   const sendNotification = (kind: 'success' | 'failure' | 'input', title: string, body: string, conversationId: string): void => {
     if (!preferences.systemNotifications) return
     // 兼容尚未注入通知接口的测试环境。
-    void window.piAgenda.showNotification?.({ kind, title, body, conversationId })?.catch(() => {})
+    void window.piRunner.showNotification?.({ kind, title, body, conversationId })?.catch(() => {})
   }
   const activeProfile = settings?.profiles.find(item => item.id === settings.activeProfileId)
   // 最近交流的对话先分组，同时让其所属项目排在列表顶部。
@@ -136,9 +136,9 @@ export default function App(): React.JSX.Element {
       pageTitle={settingsSection ? '设置' : currentTask?.title ?? ''}
       projectName={settingsSection ? null : currentTask?.project ? projectNameFor(currentTask.project) : null}
       isMaximized={isMaximized}
-      onMinimize={() => { void window.piAgenda.minimizeWindow() }}
-      onToggleMaximize={() => { void window.piAgenda.toggleMaximizeWindow() }}
-      onClose={() => { void window.piAgenda.closeWindow() }}
+      onMinimize={() => { void window.piRunner.minimizeWindow() }}
+      onToggleMaximize={() => { void window.piRunner.toggleMaximizeWindow() }}
+      onClose={() => { void window.piRunner.closeWindow() }}
     />
     <div className={`app ${toolsOpen ? 'tools-open' : ''}`} hidden={settingsSection !== null}>
       <ProjectSidebar
@@ -198,7 +198,7 @@ export default function App(): React.JSX.Element {
         onClose={() => setToolsOpen(false)}
         onCaptureCheckpoint={captureCheckpoint}
         onRollbackCheckpoint={rollbackCheckpoint}
-        onSelectDiff={filePath => { void runAction(async () => updateProjectSnapshot({ diff: await window.piAgenda.getDiff(checkpoints.at(-2)!.hash, checkpoints.at(-1)!.hash, filePath) })) }}
+        onSelectDiff={filePath => { void runAction(async () => updateProjectSnapshot({ diff: await window.piRunner.getDiff(checkpoints.at(-2)!.hash, checkpoints.at(-1)!.hash, filePath) })) }}
       />}
     </div>
     {settingsSection !== null && <SettingsPage initialSection={settingsSection} settings={settings} error={settingsError} reload={loadSettings} preferences={preferences} onPreferences={updatePreferences} onChange={setSettings} onClose={() => setSettingsSection(null)} />}

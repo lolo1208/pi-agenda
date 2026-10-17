@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { IPC_CHANNELS, type PiAgendaApi } from '../shared/api'
+import { IPC_CHANNELS, type PiRunnerApi } from '../shared/api'
 
-const api: PiAgendaApi = {
+const api: PiRunnerApi = {
   readCodePreview: (project, path, ranges, snapshotId) => ipcRenderer.invoke(IPC_CHANNELS.codePreview, project, path, ranges, snapshotId),
   getSkills: () => ipcRenderer.invoke(IPC_CHANNELS.skillsList),
   installSkill: source => ipcRenderer.invoke(IPC_CHANNELS.skillsInstall, source),
@@ -82,4 +82,4 @@ const api: PiAgendaApi = {
     return () => ipcRenderer.removeListener(IPC_CHANNELS.windowMaximized, listener)
   }
 }
-contextBridge.exposeInMainWorld('piAgenda', Object.freeze(api))
+contextBridge.exposeInMainWorld('piRunner', Object.freeze(api))

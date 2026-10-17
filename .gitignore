@@ -30,7 +30,7 @@ test-results/
 /tmp/
 /temp/
 /logs/
-/.pi-agenda-check-*/
+/.pi-runner-check-*/
 *.tmp
 *.temp
 

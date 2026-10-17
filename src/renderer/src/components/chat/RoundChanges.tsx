@@ -31,7 +31,7 @@ export function RoundChanges({ round, disabled, data, onRetry, fileState = data?
     if (lock.current || disabled) return
     lock.current = true; setBusy(true); setError(''); setNotice('')
     try {
-      await window.piAgenda.restoreCheckpoint(round.after.hash, round.project)
+      await window.piRunner.restoreCheckpoint(round.after.hash, round.project)
       setRestored({ fileState, disabled, value: true })
       setNotice('项目文件已还原到此轮结果')
       window.dispatchEvent(new CustomEvent(PROJECT_FILES_RESTORED, { detail: round.project }))

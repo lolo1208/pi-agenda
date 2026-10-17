@@ -2,7 +2,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { ArrowUp, Check, Square } from 'lucide-react'
+import { ArrowUp, Check, LoaderCircle, Square } from 'lucide-react'
 import { ComposerAddMenu, ComposerSkillTags, useLocalSkills } from './ComposerAddMenu'
 import { useSlashSkillPicker } from './SlashSkillPicker'
 import { MessageQueue, type MessageQueueProps } from './MessageQueue'
@@ -35,6 +35,7 @@ interface ChatComposerProps extends MessageQueueProps {
   skillIds?: string[]
   onSkillsChange?: (ids: string[]) => void
   isBusy: boolean
+  stopping?: boolean
   hasMessages: boolean
   settingsDisabled?: boolean
   sendWithCtrlEnter: boolean
@@ -45,7 +46,7 @@ interface ChatComposerProps extends MessageQueueProps {
   onCancel: () => void
 }
 
-export function ChatComposer({ active = true, queue = [], editingId, queuePaused, onResumeQueue, onEditQueued, onDeleteQueued, onReorderQueued, onCancelEdit, intentMode = 'execute', onIntentChange, permissionMode = 'default', onPermissionChange, profile, profiles, providers, onSelectModel, onThinkingChange, prompt, images, skillIds = [], onSkillsChange = () => {}, isBusy, hasMessages, settingsDisabled, sendWithCtrlEnter, onPromptChange, onImagesChange, onOpenSettings, onSend, onCancel }: ChatComposerProps): React.JSX.Element {
+export function ChatComposer({ active = true, queue = [], editingId, queuePaused, onResumeQueue, onEditQueued, onDeleteQueued, onReorderQueued, onCancelEdit, intentMode = 'execute', onIntentChange, permissionMode = 'default', onPermissionChange, profile, profiles, providers, onSelectModel, onThinkingChange, prompt, images, skillIds = [], onSkillsChange = () => {}, isBusy, stopping = false, hasMessages, settingsDisabled, sendWithCtrlEnter, onPromptChange, onImagesChange, onOpenSettings, onSend, onCancel }: ChatComposerProps): React.JSX.Element {
   const localSkills = useLocalSkills()
   const promptId = useId()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -147,7 +148,10 @@ export function ChatComposer({ active = true, queue = [], editingId, queuePaused
       </div>
       <div>
         <ConversationModelPicker profile={profile} profiles={profiles ?? (profile ? [profile] : [])} providers={providers} disabled={isBusy || settingsDisabled} onSelect={onSelectModel ?? (() => undefined)} onThinkingChange={onThinkingChange} onOpenSettings={onOpenSettings} />
-        {isBusy && <Button type="button" className="send-button" aria-label="取消请求" onClick={onCancel}><Square size={14} /></Button>}
+        {isBusy && <>
+          {stopping && <span className="composer-stop-status" role="status">正在停止任务…</span>}
+          <Button type="button" className="send-button stop-button" aria-label={stopping ? '正在停止任务' : '取消请求'} title={stopping ? '正在停止任务…' : '停止任务'} disabled={stopping} onClick={onCancel}>{stopping ? <LoaderCircle size={14} className="animate-spin" aria-hidden="true" /> : <Square size={14} aria-hidden="true" />}</Button>
+        </>}
         <Button type="submit" className={`send-button${editingId ? ' queue-save-button' : ''}`} aria-label={editingId ? '保存队列消息' : '发送消息'} title={`${editingId ? '保存队列消息' : isBusy ? '加入队列' : '发送消息'}（${sendWithCtrlEnter ? sendShortcut : 'Enter'}）`} disabled={(!editingId && (!profile || settingsDisabled)) || reading || (!prompt.trim() && !images.length)}>{editingId ? <><Check size={15} />保存</> : <ArrowUp size={19} />}</Button>
       </div>
     </div>}

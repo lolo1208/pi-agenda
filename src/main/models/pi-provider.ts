@@ -17,7 +17,7 @@ export async function createPiProvider(profile: ModelProfile, apiKey: string, at
     return chatgpt.createProvider(profile, attachments, onModelRequestActive)
   }
   const runtime = await ModelRuntime.create({ credentials: new InMemoryCredentialStore(), modelsPath: null, refreshOnCreate: false })
-  const provider = `pi-agenda-${profile.id}`
+  const provider = `pi-runner-${profile.id}`
   const api = profile.protocol === 'anthropic' ? 'anthropic-messages' : responses ? 'openai-responses' : 'openai-completions'
   const implementation = api === 'anthropic-messages' ? anthropicMessagesApi() : responses ? openAIResponsesApi() : openAICompletionsApi()
   const securedFetch: typeof fetch = (url, init) => {
@@ -26,7 +26,7 @@ export async function createPiProvider(profile: ModelProfile, apiKey: string, at
     return fetchRequest(url, { ...init, headers, redirect: 'error' })
   }
   runtime.registerProvider(provider, {
-    api, baseUrl: profile.baseUrl, apiKey: apiKey || 'pi-agenda-local',
+    api, baseUrl: profile.baseUrl, apiKey: apiKey || 'pi-runner-local',
     models: [{ id: profile.model, name: profile.name, input: ['text', 'image'], reasoning: profile.provider === 'openrouter' ? profile.supportedParameters?.includes('reasoning') === true : profile.thinking === true,
       contextWindow: profile.contextTokens ?? Math.max(32768, profile.maxTokens * 2), maxTokens: profile.maxTokens,
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
@@ -35,7 +35,7 @@ export async function createPiProvider(profile: ModelProfile, apiKey: string, at
       const controller = new AbortController()
       let responseError: string | undefined
       return requestPiStream(() => implementation.streamSimple(model, context, {
-      ...options, apiKey: apiKey || 'pi-agenda-local', maxTokens: Math.min(options?.maxTokens ?? profile.maxTokens, profile.maxTokens),
+      ...options, apiKey: apiKey || 'pi-runner-local', maxTokens: Math.min(options?.maxTokens ?? profile.maxTokens, profile.maxTokens),
       signal: options?.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal,
       ...(profile.temperature !== null ? { temperature: profile.temperature } : {}),
       timeoutMs: profile.timeoutSeconds * 1000, maxRetries: 0,

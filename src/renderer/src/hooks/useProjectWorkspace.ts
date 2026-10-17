@@ -14,13 +14,13 @@ const emptySnapshotState: ProjectSnapshotState = { checkpoints: [], changes: [],
 
 function readProjectList(): string[] {
   try {
-    const current = localStorage.getItem('pi-agenda.projects')
-    const legacy = localStorage.getItem('pi-agenda.workspaces')
+    const current = localStorage.getItem('pi-runner.projects')
+    const legacy = localStorage.getItem('pi-runner.workspaces')
     const roots: unknown = JSON.parse(current ?? legacy ?? '[]')
     const projects = Array.isArray(roots) ? roots.filter((root): root is string => typeof root === 'string' && root.length > 0) : []
     if (current === null && legacy !== null) {
-      localStorage.setItem('pi-agenda.projects', JSON.stringify(projects))
-      localStorage.removeItem('pi-agenda.workspaces')
+      localStorage.setItem('pi-runner.projects', JSON.stringify(projects))
+      localStorage.removeItem('pi-runner.workspaces')
     }
     return projects
   } catch {
@@ -49,7 +49,7 @@ export function useProjectWorkspace() {
   const [busyTasks, setBusyTasks] = useState<string[]>([])
   const [pendingProjectDirectories, setPendingProjectDirectories] = useState<Record<string, string>>(() => {
     try {
-      const value: unknown = JSON.parse(localStorage.getItem('pi-agenda.pending-project-directories') ?? '{}')
+      const value: unknown = JSON.parse(localStorage.getItem('pi-runner.pending-project-directories') ?? '{}')
       if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
       return Object.fromEntries(Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === 'string' && Boolean(entry[1].trim())))
     }
@@ -67,7 +67,7 @@ export function useProjectWorkspace() {
 
   useEffect(() => {
     let active = true
-    void window.piAgenda.loadConversations().then(state => {
+    void window.piRunner.loadConversations().then(state => {
       if (!active) return
       setTasks(state.tasks)
       const restored: Record<string, ProjectSnapshotState> = {}
@@ -86,7 +86,7 @@ export function useProjectWorkspace() {
       setLoaded(true)
       const root = (state.tasks.find(task => task.id === state.selectedId) ?? state.tasks[0])?.project
       if (root) {
-        void window.piAgenda.openProject(root).then(opened => { if (active) setProject(opened) })
+        void window.piRunner.openProject(root).then(opened => { if (active) setProject(opened) })
           .catch(error => { if (active) setError(`会话已恢复，但项目打开失败：${error instanceof Error ? error.message : String(error)}`) })
           .finally(() => { if (active) setIsBusy(false) })
       } else setIsBusy(false)
@@ -96,14 +96,14 @@ export function useProjectWorkspace() {
     return () => { active = false }
   }, [])
 
-  useEffect(() => window.piAgenda.onAgentEvent?.(event => {
+  useEffect(() => window.piRunner.onAgentEvent?.(event => {
     if (event.type !== 'snapshot' || !event.snapshot) return
     const round = event.snapshot
     setTasks(items => items.map(task => task.id === event.conversationId ? { ...task, agentSnapshots: [...task.agentSnapshots ?? [], round] } : task))
     setSnapshotsByProject(current => ({ ...current, [round.project]: {
       checkpoints: [...current[round.project]?.checkpoints ?? [], round.before, round.after], changes: [], diff: null
     } }))
-    void window.piAgenda.getChanges(round.before.hash, round.after.hash, round.project).then(changes => {
+    void window.piRunner.getChanges(round.before.hash, round.after.hash, round.project).then(changes => {
       setSnapshotsByProject(current => current[round.project]?.checkpoints.at(-1)?.hash === round.after.hash ? {
         ...current, [round.project]: { ...current[round.project], changes }
       } : current)
@@ -112,7 +112,7 @@ export function useProjectWorkspace() {
 
   useEffect(() => {
     if (!loaded) return
-    void window.piAgenda.saveConversations({ version: 1, tasks, selectedId }).catch(() => {
+    void window.piRunner.saveConversations({ version: 1, tasks, selectedId }).catch(() => {
       setError('会话未能保存到本地，请检查磁盘空间和访问权限。')
     })
   }, [loaded, tasks, selectedId])
@@ -125,9 +125,9 @@ export function useProjectWorkspace() {
   const beforeHash = projectSnapshot.checkpoints.at(-2)?.hash
   const afterHash = projectSnapshot.checkpoints.at(-1)?.hash
   useEffect(() => {
-    if (!beforeHash || !afterHash || snapshotKey === 'unlinked' || !window.piAgenda.getChanges) return
+    if (!beforeHash || !afterHash || snapshotKey === 'unlinked' || !window.piRunner.getChanges) return
     let active = true
-    void window.piAgenda.getChanges(beforeHash, afterHash, snapshotKey).then(changes => {
+    void window.piRunner.getChanges(beforeHash, afterHash, snapshotKey).then(changes => {
       if (active) setSnapshotsByProject(current => ({ ...current, [snapshotKey]: { ...current[snapshotKey], changes } }))
     }).catch(() => { if (active) setError('快照差异读取失败，请检查项目目录和快照数据') })
     return () => { active = false }
@@ -139,7 +139,7 @@ export function useProjectWorkspace() {
 
   const persistProjects = (projects: string[]): void => {
     try {
-      localStorage.setItem('pi-agenda.projects', JSON.stringify(projects))
+      localStorage.setItem('pi-runner.projects', JSON.stringify(projects))
     } catch {
       setError('项目列表未能保存到本地。')
     }
@@ -181,7 +181,7 @@ export function useProjectWorkspace() {
   const createProjectTask = (): void => {
     if (!loaded || isBusy) return
     void runAction(async () => {
-      const root = await window.piAgenda.selectProject()
+      const root = await window.piRunner.selectProject()
       if (!root) return
       rememberProject(root)
       setProject(root)
@@ -193,7 +193,7 @@ export function useProjectWorkspace() {
   const chooseExistingProject = (root: string): void => {
     if (!loaded || isBusy) return
     void runAction(async () => {
-      const opened = root === project ? root : await window.piAgenda.openProject(root)
+      const opened = root === project ? root : await window.piRunner.openProject(root)
       setProject(opened)
       rememberProject(opened)
       setProjectPickerOpen(false)
@@ -208,7 +208,7 @@ export function useProjectWorkspace() {
     }
 
     void runAction(async () => {
-      const opened = await window.piAgenda.openProject(task.project!)
+      const opened = await window.piRunner.openProject(task.project!)
       setProject(opened)
       rememberProject(opened)
       setSelectedId(task.id)
@@ -230,7 +230,7 @@ export function useProjectWorkspace() {
     }
     if (isCurrent && fallback?.project && fallback.project !== project) {
       void runAction(async () => {
-        const opened = await window.piAgenda.openProject(fallback.project!)
+        const opened = await window.piRunner.openProject(fallback.project!)
         setProject(opened)
         finishRemoval()
       })
@@ -241,7 +241,7 @@ export function useProjectWorkspace() {
 
   const removeProject = (root: string): void => {
     void runAction(async () => {
-      await window.piAgenda.removeProject(root)
+      await window.piRunner.removeProject(root)
       setReadyProjects(current => new Set([...current].filter(item => item !== root)))
       const remainingProjects = readProjectList().filter(item => item !== root)
       setSavedProjects(remainingProjects)
@@ -258,7 +258,7 @@ export function useProjectWorkspace() {
       if (currentTask?.project === root) {
         const fallback = remainingTasks[0]
         if (fallback?.project) {
-          const opened = await window.piAgenda.openProject(fallback.project)
+          const opened = await window.piRunner.openProject(fallback.project)
           setProject(opened)
           setSelectedId(fallback.id)
         } else {
@@ -283,17 +283,17 @@ export function useProjectWorkspace() {
         const pending = { ...pendingProjectDirectories }
         if (directory && directory !== root) pending[root] = directory
         else delete pending[root]
-        localStorage.setItem('pi-agenda.pending-project-directories', JSON.stringify(pending))
+        localStorage.setItem('pi-runner.pending-project-directories', JSON.stringify(pending))
         setPendingProjectDirectories(pending)
       } else if (directory && directory !== root) {
         // 目录迁移期间，已经打开的后台会话也必须停止启动新一轮。
         setReadyProjects(current => new Set([...current].filter(item => item !== root)))
-        try { target = await window.piAgenda.rebindProject(root, directory) }
+        try { target = await window.piRunner.rebindProject(root, directory) }
         catch (error) {
           setReadyProjects(current => new Set([...current, root]))
           throw error
         }
-        if (project && project !== root) await window.piAgenda.openProject(project)
+        if (project && project !== root) await window.piRunner.openProject(project)
       }
       const projects = readProjectList().map(item => item === root ? target : item)
       setSavedProjects(projects)
@@ -331,7 +331,7 @@ export function useProjectWorkspace() {
       if (!isChatBusy && pendingProjectDirectories[root]) {
         const pending = { ...pendingProjectDirectories }
         delete pending[root]
-        localStorage.setItem('pi-agenda.pending-project-directories', JSON.stringify(pending))
+        localStorage.setItem('pi-runner.pending-project-directories', JSON.stringify(pending))
         setPendingProjectDirectories(pending)
       }
     })
@@ -351,10 +351,10 @@ export function useProjectWorkspace() {
 
   const captureCheckpoint = (): void => {
     void runAction(async () => {
-      const next = await window.piAgenda.createCheckpoint(`手动快照 ${projectSnapshot.checkpoints.length + 1}`)
+      const next = await window.piRunner.createCheckpoint(`手动快照 ${projectSnapshot.checkpoints.length + 1}`)
       const previous = projectSnapshot.checkpoints.at(-1)
       updateProjectSnapshot({ checkpoints: [...projectSnapshot.checkpoints, next], changes: [], diff: null })
-      updateProjectSnapshot({ changes: previous ? await window.piAgenda.getChanges(previous.hash, next.hash) : [] })
+      updateProjectSnapshot({ changes: previous ? await window.piRunner.getChanges(previous.hash, next.hash) : [] })
     })
   }
 
@@ -362,7 +362,7 @@ export function useProjectWorkspace() {
     const before = projectSnapshot.checkpoints.at(-2), after = projectSnapshot.checkpoints.at(-1)
     if (!before || !after || isChatBusy || isBusy) return
     void runAction(async () => {
-      const restored = await window.piAgenda.rollbackCheckpoint(before.hash, after.hash)
+      const restored = await window.piRunner.rollbackCheckpoint(before.hash, after.hash)
       updateProjectSnapshot({ checkpoints: [...projectSnapshot.checkpoints, restored], changes: [], diff: null })
     })
   }

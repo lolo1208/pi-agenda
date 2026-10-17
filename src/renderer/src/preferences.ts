@@ -6,7 +6,7 @@ export interface Preferences { theme: ThemePreference; inlineDiff: boolean; send
 export const defaultPreferences: Preferences = { theme: 'light', inlineDiff: false, sendWithCtrlEnter: true, systemNotifications: true, font: 'inter', fontSize: 14, customPrompt: '', compressionThreshold: 80 }
 export function readPreferences(): Preferences {
   try {
-    const value = JSON.parse(localStorage.getItem('pi-agenda.preferences') ?? '{}')
+    const value = JSON.parse(localStorage.getItem('pi-runner.preferences') ?? '{}')
     const fontSize = Number(value?.fontSize)
     return {
       theme: ['light', 'dark', 'system'].includes(value?.theme) ? value.theme : 'light',

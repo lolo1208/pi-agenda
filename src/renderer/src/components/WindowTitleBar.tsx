@@ -15,7 +15,7 @@ export function WindowTitleBar({ pageTitle, projectName, isMaximized, onMinimize
     <div className="window-titlebar-drag" onDoubleClick={onToggleMaximize}>
       <div className="window-brand">
         <img className="window-app-mark" src="./icons/app-icon.png" alt="" draggable={false} />
-        <span className="window-app-name">Pi Agenda · 行动派</span>
+        <span className="window-app-name">Pi Runner · 行动派</span>
       </div>
       <div className="window-context-title" title={projectName ? `${pageTitle} · ${projectName}` : pageTitle}>
         <span className="window-page-title">{pageTitle}</span>

@@ -1,7 +1,7 @@
 export interface ProjectMeta { name?: string; prompt?: string }
 export type ProjectMetaMap = Record<string, ProjectMeta>
 
-const STORAGE_KEY = 'pi-agenda.project-meta'
+const STORAGE_KEY = 'pi-runner.project-meta'
 export const MAX_PROJECT_NAME_LENGTH = 60
 
 export function defaultProjectName(root: string): string {

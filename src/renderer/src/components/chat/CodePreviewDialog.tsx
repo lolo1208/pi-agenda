@@ -26,8 +26,8 @@ export function CodePreviewDialog({ project, reference, snapshotId, onClose }: {
     setError('')
     setPreview(undefined)
     const request = snapshotId
-      ? window.piAgenda.readCodePreview(project, reference.path, reference.ranges, snapshotId)
-      : window.piAgenda.readCodePreview(project, reference.path, reference.ranges)
+      ? window.piRunner.readCodePreview(project, reference.path, reference.ranges, snapshotId)
+      : window.piRunner.readCodePreview(project, reference.path, reference.ranges)
     void request.then(value => {
       if (active) setPreview(value)
     }).catch(reason => {

@@ -20,7 +20,7 @@ function nativeArgument(value: string): string {
 export class AppContainerSandbox implements TerminalSandbox {
   private checked?: Promise<void>
   constructor(private readonly options: { runtimeDirectory: string; dataDirectory: string; protectedDirectories: string[] }) {}
-  private get executable(): string { return path.join(this.options.runtimeDirectory, 'bin/pi-agenda-appcontainer.exe') }
+  private get executable(): string { return path.join(this.options.runtimeDirectory, 'bin/pi-runner-appcontainer.exe') }
   reset(): void { this.checked = undefined }
   async checkRuntime(): Promise<void> {
     if (process.platform !== 'win32' || process.arch !== 'x64') throw new ModelError('AppContainer 后端需要 Windows x64')
@@ -52,10 +52,10 @@ export class AppContainerSandbox implements TerminalSandbox {
       return { exitCode: 0 }
     }
     await this.prepare(project, options.signal)
-    const scratch = await realpath(await mkdtemp(path.join(os.tmpdir(), 'pi-agenda-ac-')))
+    const scratch = await realpath(await mkdtemp(path.join(os.tmpdir(), 'pi-runner-ac-')))
     await prepareSandboxConfiguration(scratch)
-    const moniker = 'pi-agenda.' + randomUUID().replace(/-/g, '')
-    const protect = [...this.options.protectedDirectories, this.options.runtimeDirectory, ...['.git', '.agents', '.codex', '.aws', '.pi-agenda'].map(name => path.join(project, name))]
+    const moniker = 'pi-runner.' + randomUUID().replace(/-/g, '')
+    const protect = [...this.options.protectedDirectories, this.options.runtimeDirectory, ...['.git', '.agents', '.codex', '.aws', '.pi-runner'].map(name => path.join(project, name))]
     const cwd = project.replace(/'/g, "''")
     const script = `$ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'; [Console]::OutputEncoding=[Text.Encoding]::UTF8; try { New-PSDrive -Name Project -PSProvider FileSystem -Root '${cwd}' | Out-Null; Set-Location -LiteralPath 'Project:\\'; [Environment]::CurrentDirectory='${cwd}'; & {\n${command}\n}; if (-not $?) { exit 1 }; if ($LASTEXITCODE) { exit $LASTEXITCODE } } catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }`
     try {
@@ -63,7 +63,7 @@ export class AppContainerSandbox implements TerminalSandbox {
     } finally {
       // 使用新宿主清理权限，强制停止的旧宿主不能执行 finally；清理不执行用户脚本。
       await this.run([moniker, project, scratch, 'cleanup'], scratch, { timeout: 30, onData: () => {} }).catch(() => {})
-      if (await realpath(scratch).catch(() => '') === scratch && path.basename(scratch).startsWith('pi-agenda-ac-')) await rm(scratch, { recursive: true, force: true })
+      if (await realpath(scratch).catch(() => '') === scratch && path.basename(scratch).startsWith('pi-runner-ac-')) await rm(scratch, { recursive: true, force: true })
     }
   }
   private async gitExecutable(project: string): Promise<string | undefined> {
@@ -87,9 +87,9 @@ export class AppContainerSandbox implements TerminalSandbox {
     await this.prepare(project, options.signal)
     const git = await this.gitExecutable(project)
     if (!git) throw new ModelError('本机 PATH 中未找到 Git，请安装或配置 Git 后重试')
-    const scratch = await realpath(await mkdtemp(path.join(os.tmpdir(), 'pi-agenda-ac-')))
-    const moniker = 'pi-agenda.' + randomUUID().replace(/-/g, '')
-    const protect = [...this.options.protectedDirectories, this.options.runtimeDirectory, ...['.git', '.agents', '.codex', '.aws', '.pi-agenda'].map(name => path.join(project, name))]
+    const scratch = await realpath(await mkdtemp(path.join(os.tmpdir(), 'pi-runner-ac-')))
+    const moniker = 'pi-runner.' + randomUUID().replace(/-/g, '')
+    const protect = [...this.options.protectedDirectories, this.options.runtimeDirectory, ...['.git', '.agents', '.codex', '.aws', '.pi-runner'].map(name => path.join(project, name))]
     try {
       await prepareSandboxConfiguration(scratch)
       const argumentsList = ['--no-optional-locks', '-c', 'core.fsmonitor=false', '-c', 'core.untrackedCache=false']
@@ -104,7 +104,7 @@ export class AppContainerSandbox implements TerminalSandbox {
       return await this.run([moniker, project, scratch, payload, ...protect], scratch, options)
     } finally {
       await this.run([moniker, project, scratch, 'cleanup'], scratch, { timeout: 30, onData: () => {} }).catch(() => {})
-      if (await realpath(scratch).catch(() => '') === scratch && path.basename(scratch).startsWith('pi-agenda-ac-')) await rm(scratch, { recursive: true, force: true })
+      if (await realpath(scratch).catch(() => '') === scratch && path.basename(scratch).startsWith('pi-runner-ac-')) await rm(scratch, { recursive: true, force: true })
     }
   }
   private run(args: string[], scratch: string, options: Parameters<TerminalSandbox['exec']>[2]): Promise<{ exitCode: number }> {

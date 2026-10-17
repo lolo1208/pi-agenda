@@ -17,7 +17,7 @@ $menuCommands = @{
 
 while ($true) {
   Write-Host ''
-  Write-Host 'Pi Agenda · 行动派 — 命令菜单'
+  Write-Host 'Pi Runner · 行动派 — 命令菜单'
   Write-Host ''
   Write-Host '1. 运行开发桌面端'
   Write-Host '2. 生成程序图标'

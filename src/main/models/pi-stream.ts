@@ -55,7 +55,7 @@ export function safePiStream(source: AssistantMessageEventStream, apiKey: string
     } catch (error) {
       if (completed) return
       abortSource()
-      last ??= { role: 'assistant', api: 'openai-completions', provider: 'pi-agenda', model: '', content: [], timestamp: Date.now(), stopReason: 'error', usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } }
+      last ??= { role: 'assistant', api: 'openai-completions', provider: 'pi-runner', model: '', content: [], timestamp: Date.now(), stopReason: 'error', usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } }
       last.stopReason = 'error'
       last.errorMessage = bytes > 2 * 1024 * 1024 ? '模型响应超过 2 MiB 上限，请降低输出 Token 上限' : modelRequestError(error, apiKey)
       if (bytes > 2 * 1024 * 1024) last.content = []

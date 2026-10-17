@@ -32,7 +32,7 @@ export async function exchangeChatgptToken(fetchRequest: typeof fetch, fields: R
 function page(response: ServerResponse, status: number, title: string, detail: string): void {
   const escape = (value: string): string => value.replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]!))
   response.writeHead(status, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'" })
-  response.end(`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(title)} · Pi Agenda</title><style>body{margin:0;background:#f2f2ee;color:#202623;font:16px system-ui;display:grid;place-items:center;min-height:100vh}main{max-width:560px;padding:40px}p{line-height:1.8}small{color:#657069}</style><main><small>Pi Agenda · 行动派</small><h1>${escape(title)}</h1><p>${escape(detail)}</p></main></html>`)
+  response.end(`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escape(title)} · Pi Runner</title><style>body{margin:0;background:#f2f2ee;color:#202623;font:16px system-ui;display:grid;place-items:center;min-height:100vh}main{max-width:560px;padding:40px}p{line-height:1.8}small{color:#657069}</style><main><small>Pi Runner · 行动派</small><h1>${escape(title)}</h1><p>${escape(detail)}</p></main></html>`)
 }
 
 /** 只有令牌已交换且已加密保存，浏览器回调页才报告授权成功。 */
@@ -43,7 +43,7 @@ export async function loginChatgpt(interaction: AuthInteraction, credentials: Cr
   const challenge = createHash('sha256').update(verifier).digest('base64url')
   const authorization = new URL('https://auth.openai.com/oauth/authorize')
   authorization.search = new URLSearchParams({ response_type: 'code', client_id: clientId, redirect_uri: redirectUri, scope: 'openid profile email offline_access',
-    code_challenge: challenge, code_challenge_method: 'S256', state, id_token_add_organizations: 'true', codex_cli_simplified_flow: 'true', originator: 'pi-agenda' }).toString()
+    code_challenge: challenge, code_challenge_method: 'S256', state, id_token_add_organizations: 'true', codex_cli_simplified_flow: 'true', originator: 'pi-runner' }).toString()
   let resolve!: (credential: OAuthCredential) => void, reject!: (error: unknown) => void
   const completed = new Promise<OAuthCredential>((yes, no) => { resolve = yes; reject = no })
   completed.catch(() => undefined)
@@ -59,19 +59,19 @@ export async function loginChatgpt(interaction: AuthInteraction, credentials: Cr
   const server = createServer((request, response) => {
     void (async () => {
       const url = new URL(request.url ?? '/', 'http://localhost:1455')
-      if (request.method !== 'GET' || url.pathname !== '/auth/callback') { page(response, 404, '回调地址无效', '请从 Pi Agenda 重新开始授权。'); return }
+      if (request.method !== 'GET' || url.pathname !== '/auth/callback') { page(response, 404, '回调地址无效', '请从 Pi Runner 重新开始授权。'); return }
       if (url.searchParams.get('state') !== state) { page(response, 400, '授权不匹配', '请使用本次授权链接重新登录。'); return }
-      if (claimed || settled) { page(response, 409, '本次授权已处理', '请返回 Pi Agenda 查看授权状态。'); return }
+      if (claimed || settled) { page(response, 409, '本次授权已处理', '请返回 Pi Runner 查看授权状态。'); return }
       if (url.searchParams.has('error')) { const error = new ModelError('ChatGPT 浏览器授权未完成，请重新登录'); page(response, 400, '授权未完成', error.message); fail(error); return }
       const code = url.searchParams.get('code')
-      if (!code) { page(response, 400, '缺少授权码', '请返回 Pi Agenda 重新开始授权。'); return }
+      if (!code) { page(response, 400, '缺少授权码', '请返回 Pi Runner 重新开始授权。'); return }
       claimed = true
       try {
         const credential = await exchange(code)
-        page(response, 200, '授权成功', 'ChatGPT 账号已授权，凭证已加密保存。现在可以关闭此页面，返回 Pi Agenda。')
+        page(response, 200, '授权成功', 'ChatGPT 账号已授权，凭证已加密保存。现在可以关闭此页面，返回 Pi Runner。')
         succeed(credential)
       } catch (error) {
-        page(response, 502, '授权未完成', error instanceof ModelError ? error.message : '授权处理失败，请返回 Pi Agenda 重新授权。')
+        page(response, 502, '授权未完成', error instanceof ModelError ? error.message : '授权处理失败，请返回 Pi Runner 重新授权。')
         fail(error)
       }
     })().catch(fail)

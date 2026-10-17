@@ -40,14 +40,14 @@ export async function canonicalToolPath(target: string): Promise<string> {
   }
 }
 
-const hiddenData = new Set(['.git', '.pi-agenda'])
-const hiddenProjectData = (name: string): boolean => hiddenData.has(name.toLowerCase()) || name.startsWith('.pi-agenda-check-')
+const hiddenData = new Set(['.git', '.pi-runner'])
+const hiddenProjectData = (name: string): boolean => hiddenData.has(name.toLowerCase()) || name.startsWith('.pi-runner-check-')
 
 /** 搜索逐项检查边界，不跟随链接，也不扫描应用内部数据。 */
 async function* ordinaryFiles(target: string, protectedDirectories: string[], signal?: AbortSignal, includeDirectories = false): AsyncGenerator<string> {
   signal?.throwIfAborted()
   const info = await lstat(target)
-  if (info.isSymbolicLink() || hiddenData.has(path.basename(target).toLowerCase()) || path.basename(target).startsWith('.pi-agenda-check-') || protectedDirectories.some(directory => within(directory, target))) return
+  if (info.isSymbolicLink() || hiddenData.has(path.basename(target).toLowerCase()) || path.basename(target).startsWith('.pi-runner-check-') || protectedDirectories.some(directory => within(directory, target))) return
   if (info.isFile()) { yield target; return }
   if (!info.isDirectory()) return
   if (includeDirectories) yield target

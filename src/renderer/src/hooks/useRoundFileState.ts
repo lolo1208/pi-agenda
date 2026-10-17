@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { AgentSnapshot } from '../../../shared/models'
 
-export const PROJECT_FILES_RESTORED = 'pi-agenda:project-files-restored'
+export const PROJECT_FILES_RESTORED = 'pi-runner:project-files-restored'
 export type RoundFileState = 'checking' | 'matches' | 'different' | 'error'
 
 /** 调用方控制检查时机，只传入已加载聊天范围内需要检查的快照。 */
@@ -10,7 +10,7 @@ export async function checkRoundFileStates(snapshots: AgentSnapshot[]): Promise<
   for (const round of snapshots) groups.set(round.project, [...groups.get(round.project) ?? [], round.after.hash])
   const states: Record<string, RoundFileState> = {}
   for (const [project, hashes] of groups) {
-    const matches = new Set(await window.piAgenda.getMatchingCheckpoints(hashes, project))
+    const matches = new Set(await window.piRunner.getMatchingCheckpoints(hashes, project))
     for (const hash of hashes) states[hash] = matches.has(hash) ? 'matches' : 'different'
   }
   return states
@@ -54,7 +54,7 @@ export function useRoundFileState(snapshots: AgentSnapshot[], disabled: boolean,
       try {
         await Promise.all(due.map(async ([project, hashes]) => {
           try {
-            const matches = new Set(await window.piAgenda.getMatchingCheckpoints(hashes, project))
+            const matches = new Set(await window.piRunner.getMatchingCheckpoints(hashes, project))
             if (!disposed) {
               lastChecks.current.set(project, { at: Date.now(), targets: JSON.stringify(hashes) })
               setStates(previous => ({ ...previous, ...Object.fromEntries(hashes.map(hash => [hash, matches.has(hash) ? 'matches' : 'different'])) }))

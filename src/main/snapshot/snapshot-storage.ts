@@ -28,7 +28,7 @@ async function ensureSafeDirectory(directory: string): Promise<void> {
   const expectedPath = process.platform === 'win32' ? path.resolve(directory).toLowerCase() : path.resolve(directory)
   const actualPath = process.platform === 'win32' ? actual.toLowerCase() : actual
   if (!info.isDirectory() || info.isSymbolicLink() || actualPath !== expectedPath) {
-    throw new Error('Pi Agenda 数据目录不能是符号链接或联接点')
+    throw new Error('Pi Runner 数据目录不能是符号链接或联接点')
   }
 }
 
@@ -76,7 +76,7 @@ function createSnapshotGit(root: string, repository: string, staging: string): S
     trimmed: false,
     // Fixed null path disables hooks, including on Git for Windows. Never accept a caller-supplied path.
     unsafe: { allowUnsafeHooksPath: true, allowUnsafeConfigPaths: true },
-    config: ['core.autocrlf=false', 'core.safecrlf=false', 'core.hooksPath=/dev/null', 'commit.gpgsign=false', 'user.name=Pi Agenda', 'user.email=snapshot@pi-agenda.local'],
+    config: ['core.autocrlf=false', 'core.safecrlf=false', 'core.hooksPath=/dev/null', 'commit.gpgsign=false', 'user.name=Pi Runner', 'user.email=snapshot@pi-runner.local'],
   }).env({
     ...env,
     GIT_CONFIG_NOSYSTEM: '1',
@@ -160,7 +160,7 @@ export async function removeSnapshotStorage(project: string, dataRoot: string): 
 
   const target = projectStoragePath(root, base)
   await serializeStorage(target, async () => {
-    await removeStorageDirectory(target, 'Pi Agenda 项目数据目录不能是符号链接或联接点')
+    await removeStorageDirectory(target, 'Pi Runner 项目数据目录不能是符号链接或联接点')
     await removeLegacyProjectStorage(target, base)
   })
   return root

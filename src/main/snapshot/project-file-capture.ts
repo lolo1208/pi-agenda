@@ -1,10 +1,10 @@
 import { copyFile, mkdir, readdir } from 'node:fs/promises'
 import path from 'node:path'
 
-const EXCLUDED_NAMES = new Set(['.git', '.pi-agenda', '.pi-console', '.cherrypi', 'node_modules', 'dist', 'out', 'build-work', 'release', 'exports', '.aws', '.ssh'])
+const EXCLUDED_NAMES = new Set(['.git', '.pi-runner', 'node_modules', 'dist', 'out', 'build-work', 'release', 'exports', '.aws', '.ssh'])
 
 function shouldExcludeEntry(name: string): boolean {
-  return EXCLUDED_NAMES.has(name.toLowerCase()) || /^\.env(?:\.|$)/i.test(name) || name.startsWith('.pi-agenda-check-')
+  return EXCLUDED_NAMES.has(name.toLowerCase()) || /^\.env(?:\.|$)/i.test(name) || name.startsWith('.pi-runner-check-')
 }
 
 export async function copyProjectFiles(sourceRoot: string, stagingRoot: string): Promise<void> {

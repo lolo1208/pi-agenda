@@ -43,7 +43,7 @@ export function GeneralSettingsSection({ preferences, onPreferences, isMac, sett
   const changeDefault = async (id: string): Promise<void> => {
     if (savingRef.current || id === settings?.activeProfileId) return
     savingRef.current = true; setSaving(true); onBusyChange(true); setError('')
-    try { onModelSettingsChange(unwrapModelResult(await window.piAgenda.setActiveModel(id))) }
+    try { onModelSettingsChange(unwrapModelResult(await window.piRunner.setActiveModel(id))) }
     catch (e) { setError(e instanceof Error ? e.message : '默认模型保存失败，请重试。') }
     finally { savingRef.current = false; setSaving(false); onBusyChange(false) }
   }
@@ -156,7 +156,7 @@ export function AboutSettingsSection(): React.JSX.Element {
 
   const handleCopy = async (): Promise<void> => {
     try {
-      await navigator.clipboard.writeText('Pi Agenda · 行动派 0.1.0')
+      await navigator.clipboard.writeText('Pi Runner · 行动派 0.1.0')
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     } catch {
@@ -165,17 +165,17 @@ export function AboutSettingsSection(): React.JSX.Element {
   }
 
   return <div className="about-section">
-    <h2>关于 Pi Agenda · 行动派</h2>
+    <h2>关于 Pi Runner · 行动派</h2>
     <p className="section-description">面向本地桌面的 AI 编程助手与安全受控开发环境。</p>
 
     <section className="settings-card about-header-card">
       <div className="about-brand-row">
         <div className="about-brand-logo">
-          <img src="./icons/app-icon.png" alt="Pi Agenda 图标" draggable={false} />
+          <img src="./icons/app-icon.png" alt="Pi Runner 图标" draggable={false} />
         </div>
         <div className="about-brand-info">
           <div className="about-title-row">
-            <h3>Pi Agenda · 行动派</h3>
+            <h3>Pi Runner · 行动派</h3>
             <span className="about-version-badge">0.1.0</span>
           </div>
           <p className="about-tagline">本地桌面 AI 编程助手，让代码改动透明受控、清晰可溯。</p>
@@ -243,7 +243,7 @@ export function AboutSettingsSection(): React.JSX.Element {
     </section>
 
     <footer className="about-footer">
-      <p>© 2026 Pi Agenda · 保留所有权利</p>
+      <p>© 2026 Pi Runner · 保留所有权利</p>
     </footer>
   </div>
 }

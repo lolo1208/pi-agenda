@@ -11,8 +11,8 @@ const execute = promisify(execFile)
 /** 文件通过参数或环境变量传递，避免路径中的引号被当作脚本执行。 */
 async function copyFile(file: string): Promise<void> {
   if (process.platform === 'win32') {
-    await execute('powershell.exe', ['-NoProfile', '-NonInteractive', '-STA', '-Command', "$ErrorActionPreference = 'Stop'; Add-Type -AssemblyName System.Windows.Forms; $files = New-Object System.Collections.Specialized.StringCollection; [void]$files.Add($env:PI_AGENDA_CLIPBOARD_FILE); [System.Windows.Forms.Clipboard]::SetFileDropList($files)"], {
-      windowsHide: true, timeout: 10000, env: { ...process.env, PI_AGENDA_CLIPBOARD_FILE: file }
+    await execute('powershell.exe', ['-NoProfile', '-NonInteractive', '-STA', '-Command', "$ErrorActionPreference = 'Stop'; Add-Type -AssemblyName System.Windows.Forms; $files = New-Object System.Collections.Specialized.StringCollection; [void]$files.Add($env:PI_RUNNER_CLIPBOARD_FILE); [System.Windows.Forms.Clipboard]::SetFileDropList($files)"], {
+      windowsHide: true, timeout: 10000, env: { ...process.env, PI_RUNNER_CLIPBOARD_FILE: file }
     })
   } else if (process.platform === 'darwin') {
     await execute('/usr/bin/osascript', ['-e', 'on run argv', '-e', 'set the clipboard to POSIX file (item 1 of argv)', '-e', 'end run', file], { timeout: 10000 })

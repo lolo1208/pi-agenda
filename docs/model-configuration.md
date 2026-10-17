@@ -1,6 +1,6 @@
 # 模型配置与 pi 代理接入
 
-Pi Agenda 在 Electron 主进程使用 `@earendil-works/pi-coding-agent@1.1.0` 调用模型。界面通过 IPC 提交任务，pi 的 `AgentSession` 负责流式回复、工具执行、会话历史和上下文压缩。主进程采用 ESM 构建，以加载 SDK。
+Pi Runner 在 Electron 主进程使用 `@earendil-works/pi-coding-agent@1.1.0` 调用模型。界面通过 IPC 提交任务，pi 的 `AgentSession` 负责流式回复、工具执行、会话历史和上下文压缩。主进程采用 ESM 构建，以加载 SDK。
 
 ## 使用步骤
 
@@ -54,7 +54,7 @@ ChatGPT 订阅与 OpenAI API 配置独立，订阅无需 API Key。登录后优�
 
 ## 会话与附件
 
-界面会话保存在 `~/.pi-agenda/conversations.json`；pi 的完整 JSONL 会话保存在 `~/.pi-agenda/agent-sessions/`。聊天 ID 对应独立目录，保留工具调用、工具结果、压缩记录和快照关联。首次使用 pi 时导入已有聊天，后续只提交新输入；切换模型仍沿用该聊天的完整代理历史。
+界面会话保存在 `~/.pi-runner/conversations.json`；pi 的完整 JSONL 会话保存在 `~/.pi-runner/agent-sessions/`。聊天 ID 对应独立目录，保留工具调用、工具结果、压缩记录和快照关联。首次使用 pi 时导入已有聊天，后续只提交新输入；切换模型仍沿用该聊天的完整代理历史。
 
 会话长期保留，只有用户删除聊天或所属项目时才删除其 pi 会话数据。重启应用后优先恢复 pi 的完整记录；取消后的用户消息与已完成结果也保留。失败或取消时保留草稿。
 

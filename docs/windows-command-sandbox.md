@@ -48,8 +48,8 @@
 本地测试 `tests/windows-command-compatibility.test.ts` 输出逐项 `PROBE ... OK/FAIL`，将工具执行结果与探针本身的执行结果分开；已知限制会记录为失败项，测试套件完成不代表所有工具兼容。基础项目操作和项目内 Node.js 必须成功，子进程单独设置超时，以免挂起影响剩余项目检查。
 
 ```powershell
-$env:PI_AGENDA_APPCONTAINER_TEST='1'
-$env:PI_AGENDA_NATIVE_SANDBOX_TEST='1'
+$env:PI_RUNNER_APPCONTAINER_TEST='1'
+$env:PI_RUNNER_NATIVE_SANDBOX_TEST='1'
 pnpm test tests/windows-command-compatibility.test.ts
 ```
 

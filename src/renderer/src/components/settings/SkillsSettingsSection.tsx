@@ -45,7 +45,7 @@ export function SkillsSettingsSection({ onBusyChange }: { onBusyChange(busy: boo
   const load = async (): Promise<void> => {
     setLoading(true); setError('')
     try {
-      setSkills(unwrapModelResult(await window.piAgenda.getSkills()))
+      setSkills(unwrapModelResult(await window.piRunner.getSkills()))
     }
     catch (e) { setError(e instanceof Error ? e.message : '技能读取失败，请重试') }
     finally { setLoading(false) }
@@ -63,10 +63,10 @@ export function SkillsSettingsSection({ onBusyChange }: { onBusyChange(busy: boo
   return <Tooltip.Provider delayDuration={300}>
     <div className="skills-heading"><h2>技能</h2>
       <div className="skills-actions">
-        <Button variant="outline" disabled={busy} onClick={() => void change(async () => { unwrapModelResult(await window.piAgenda.openSkillsDirectory()); return null })}><FolderOpen size={16} />查看目录</Button>
+        <Button variant="outline" disabled={busy} onClick={() => void change(async () => { unwrapModelResult(await window.piRunner.openSkillsDirectory()); return null })}><FolderOpen size={16} />查看目录</Button>
         <DropdownMenu><DropdownMenuTrigger asChild><Button variant="outline" disabled={busy || loading}><FolderPlus size={16} />安装技能<ChevronDown size={14} /></Button></DropdownMenuTrigger><DropdownMenuContent align="end" sideOffset={6}>
-          <DropdownMenuItem onSelect={() => void change(async () => unwrapModelResult(await window.piAgenda.installSkill('zip')))}><FileArchive size={16} />从 ZIP 压缩包安装</DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => void change(async () => unwrapModelResult(await window.piAgenda.installSkill('directory')))}><FolderOpen size={16} />从文件夹安装</DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => void change(async () => unwrapModelResult(await window.piRunner.installSkill('zip')))}><FileArchive size={16} />从 ZIP 压缩包安装</DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => void change(async () => unwrapModelResult(await window.piRunner.installSkill('directory')))}><FolderOpen size={16} />从文件夹安装</DropdownMenuItem>
         </DropdownMenuContent></DropdownMenu>
       </div>
     </div>
@@ -75,15 +75,15 @@ export function SkillsSettingsSection({ onBusyChange }: { onBusyChange(busy: boo
     {skills.length > 40 && <Input aria-label="搜索技能" placeholder="搜索技能名称或描述" value={query} onChange={event => setQuery(event.target.value)} />}
     {loading ? <p className="hint" role="status">正在读取本地技能…</p> : skills.length ? <PagedList items={filtered} label="技能" resetKey={query}>{page => <section className="settings-card skills-list" aria-label="已安装的本地技能">{page.map(skill => <div className="setting-row skill-setting-row" key={skill.id}>
       <div className="skill-row-info"><h3><Puzzle size={15} aria-hidden="true" />{skill.name}</h3><SkillDescription text={skill.description || '本地技能'} /></div>
-      <div className="skill-row-actions"><Switch checked={skill.enabled} disabled={busy} aria-label={`启用技能 ${skill.name}`} onCheckedChange={enabled => void change(async () => unwrapModelResult(await window.piAgenda.setSkillEnabled(skill.id, enabled)))} />
-        <Button variant="ghost" size="icon" disabled={busy} aria-label={`导出技能 ${skill.name}`} title="导出技能" onClick={() => void change(async () => { unwrapModelResult(await window.piAgenda.exportSkill(skill.id)); return null })}><Download size={16} /></Button>
+      <div className="skill-row-actions"><Switch checked={skill.enabled} disabled={busy} aria-label={`启用技能 ${skill.name}`} onCheckedChange={enabled => void change(async () => unwrapModelResult(await window.piRunner.setSkillEnabled(skill.id, enabled)))} />
+        <Button variant="ghost" size="icon" disabled={busy} aria-label={`导出技能 ${skill.name}`} title="导出技能" onClick={() => void change(async () => { unwrapModelResult(await window.piRunner.exportSkill(skill.id)); return null })}><Download size={16} /></Button>
         <Button variant="ghost" size="icon" className="skill-delete-button" disabled={busy} aria-label={`删除技能 ${skill.name}`} title="删除技能" onClick={() => setDeleting(skill)}><Trash2 size={16} /></Button>
       </div>
     </div>)}{!filtered.length && <p className="hint">没有匹配的技能。</p>}</section>}</PagedList> : !error && <div className="skills-empty"><Puzzle size={24} aria-hidden="true" /><h3>还没有安装技能</h3><p>安装本地技能后，可从消息输入框左下角的加号选择。</p></div>}
     {busy && <p className="hint" role="status">正在处理技能操作…</p>}
     <Modal open={Boolean(deleting)} onOpenChange={open => { if (!open && !busy) setDeleting(null) }} title={`删除技能「${deleting?.name ?? ''}」？`} description="将从技能根目录中永久删除该技能及其文件。" closeDisabled={busy}>
       <div className="modal-actions"><Button variant="outline" autoFocus disabled={busy} onClick={() => setDeleting(null)}>取消</Button><Button variant="destructive" disabled={busy} onClick={() => {
-        if (deleting) void change(async () => { const result = unwrapModelResult(await window.piAgenda.deleteSkill(deleting.id)); setDeleting(null); return result })
+        if (deleting) void change(async () => { const result = unwrapModelResult(await window.piRunner.deleteSkill(deleting.id)); setDeleting(null); return result })
       }}>确认删除</Button></div>
       {error && <p className="error" role="alert">{error}</p>}
     </Modal>

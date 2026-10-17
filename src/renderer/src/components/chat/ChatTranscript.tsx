@@ -133,7 +133,7 @@ export function ChatTranscript(props: ChatTranscriptProps): React.JSX.Element {
       : <div className="chat-scroll"><div className="chat-welcome">
         <div className="welcome-brand">
           <div className="welcome-mark"><img src="./icons/app-icon.png" alt="" draggable={false} /></div>
-          <span className="welcome-app-name">Pi Agenda · 行动派</span>
+          <span className="welcome-app-name">Pi Runner · 行动派</span>
         </div>
         <h1>今天，想完成什么？</h1>
         <p>从一个想法、一个问题，或一项新任务开始。</p>

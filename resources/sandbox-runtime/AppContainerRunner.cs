@@ -1,4 +1,4 @@
-// Pi Agenda 的 Windows AppContainer 命令宿主。仅授予指定项目与临时目录，不启用网络能力。
+// Pi Runner 的 Windows AppContainer 命令宿主。仅授予指定项目与临时目录，不启用网络能力。
 using System;
 using System.IO;
 using System.Text;
@@ -99,7 +99,7 @@ class AppContainerRunner {
     finally { for(uint i=0;i<gc;i++) LocalFree(Marshal.ReadIntPtr(groups,(int)i*IntPtr.Size)); LocalFree(groups); LocalFree(sids); }
   }
   static int Execute(string moniker,string project,string scratch,string encoded,List<string> protectedPaths) {
-    IntPtr sid; int profileResult=CreateAppContainerProfile(moniker,moniker,"Pi Agenda 临时命令隔离",IntPtr.Zero,0,out sid);
+    IntPtr sid; int profileResult=CreateAppContainerProfile(moniker,moniker,"Pi Runner 临时命令隔离",IntPtr.Zero,0,out sid);
     bool created=profileResult==0;
     if(profileResult==unchecked((int)0x800700b7)) Marshal.ThrowExceptionForHR(DeriveAppContainerSidFromAppContainerName(moniker,out sid)); else Marshal.ThrowExceptionForHR(profileResult);
     var identity=new SecurityIdentifier(sid); GrantTree(project,identity,protectedPaths); GrantTree(scratch,identity,new List<string>());
@@ -153,7 +153,7 @@ class AppContainerRunner {
   static int Main(string[] args) {
     Console.OutputEncoding=new UTF8Encoding(false);
     try {
-      if(args.Length<4 || !args[0].StartsWith("pi-agenda.")) throw new ArgumentException("隔离宿主参数不足");
+      if(args.Length<4 || !args[0].StartsWith("pi-runner.")) throw new ArgumentException("隔离宿主参数不足");
       if(args[3]=="cleanup") { IntPtr sid; Marshal.ThrowExceptionForHR(DeriveAppContainerSidFromAppContainerName(args[0],out sid)); try { var identity=new SecurityIdentifier(sid); CleanupTree(Path.GetFullPath(args[1]),identity); CleanupTree(Path.GetFullPath(args[2]),identity); return 0; } finally { FreeSid(sid); DeleteAppContainerProfile(args[0]); } }
       var protect=new List<string>(); for(int i=4;i<args.Length;i++) protect.Add(Path.GetFullPath(args[i]));
       return Execute(args[0],Path.GetFullPath(args[1]).TrimEnd('\\'),Path.GetFullPath(args[2]).TrimEnd('\\'),args[3],protect);

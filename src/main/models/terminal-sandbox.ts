@@ -41,9 +41,9 @@ export function sandboxProfile(project: string, scratch: string, protectedDirect
   for (const directory of protectedDirectories) filesystem[directory] = 'deny'
   // 专用临时目录仅用于当前项目，独立于会话、凭据和快照。
   filesystem[scratch] = 'write'
-  for (const name of ['.git', '.agents', '.codex', '.aws', '.pi-agenda']) filesystem[path.join(project, name)] = name === '.git' ? 'read' : 'deny'
+  for (const name of ['.git', '.agents', '.codex', '.aws', '.pi-runner']) filesystem[path.join(project, name)] = name === '.git' ? 'read' : 'deny'
   const entries = Object.entries(filesystem).map(([key, value]) => `${JSON.stringify(key)}=${JSON.stringify(value)}`).join(',')
-  return `permissions.agenda={filesystem={${entries}},network={enabled=false}}`
+  return `permissions.pi-runner={filesystem={${entries}},network={enabled=false}}`
 }
 
 /** 原生 MXC 负责文件、网络和子进程隔离；不允许回退到弱隔离或无沙箱执行。 */
@@ -57,7 +57,7 @@ export class NativeTerminalSandbox implements TerminalSandbox {
     // 官方约束：windows-sandbox-rs/src/resolved_permissions.rs 的 validate_elevated_filesystem_policy。
     if (backend === 'elevated') throw new ModelError('当前 Windows 兼容后端无法限制项目外读取，不能启用严格隔离。此问题无法通过重新配置修复；请使用支持原生隔离的 Windows，或明确选择完全访问')
   }
-  get legacyHome(): string { return path.join(os.homedir(), '.pi-agenda-execution', createHash('sha256').update(path.resolve(this.options.dataDirectory)).digest('hex')) }
+  get legacyHome(): string { return path.join(os.homedir(), '.pi-runner-execution', createHash('sha256').update(path.resolve(this.options.dataDirectory)).digest('hex')) }
   async configureLegacy(signal?: AbortSignal): Promise<void> {
     await this.checkBackend('elevated')
     await this.checkRuntime()
@@ -122,7 +122,7 @@ export class NativeTerminalSandbox implements TerminalSandbox {
     const home = this.backend === 'elevated' ? this.legacyHome : path.join(directory, 'runtime-home')
     await mkdir(home, { recursive: true })
     // 原生 deny 是递归边界，临时写入区不能放在被拒绝的应用数据目录之下。
-    const scratch = await realpath(await mkdtemp(path.join(os.tmpdir(), 'pi-agenda-command-')))
+    const scratch = await realpath(await mkdtemp(path.join(os.tmpdir(), 'pi-runner-command-')))
     await prepareSandboxConfiguration(scratch)
     const protectedDirectories = await Promise.all([...this.options.protectedDirectories, this.options.runtimeDirectory].map(async directory => { try { return await realpath(directory) } catch { return path.resolve(directory) } }))
     const context = { home, scratch, profile: sandboxProfile(project, scratch, protectedDirectories, await developerToolReads(project, protectedDirectories)) }
@@ -157,7 +157,7 @@ export class NativeTerminalSandbox implements TerminalSandbox {
     const script = `$ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'; [Console]::OutputEncoding=[System.Text.Encoding]::UTF8; try { New-PSDrive -Name Project -PSProvider FileSystem -Root '${literalCwd}' | Out-Null; Set-Location -LiteralPath 'Project:\\'; [Environment]::CurrentDirectory='${literalCwd}'; & {\n${command}\n}; if (-not $?) { exit 1 }; if ($LASTEXITCODE) { exit $LASTEXITCODE } } catch { [Console]::Error.WriteLine($_.Exception.Message + '\n' + $_.InvocationInfo.PositionMessage); exit 1 }`
     const development = await developerCommand(command, options.signal)
     const profile = development ? context.profile.replace('network={enabled=false}', 'network={enabled=true}') : context.profile
-    const args = ['sandbox', '--permission-profile', 'agenda', '-C', cwd, '-c', profile, '-c', `windows.sandbox="${this.backend}"`, '-c', 'features.prefer_mxc=false', '-c', 'shell_environment_policy.inherit="all"', '--', powershell, '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-OutputFormat', 'Text', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')]
+    const args = ['sandbox', '--permission-profile', 'pi-runner', '-C', cwd, '-c', profile, '-c', `windows.sandbox="${this.backend}"`, '-c', 'features.prefer_mxc=false', '-c', 'shell_environment_policy.inherit="all"', '--', powershell, '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-OutputFormat', 'Text', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')]
     return new Promise((resolve, reject) => {
       if (options.signal?.aborted) { reject(options.signal.reason); return }
       const env = { ...sandboxEnvironment(context.home, context.scratch), ...runtimeEnv, COREPACK_ENABLE_NETWORK: development ? '1' : '0' }

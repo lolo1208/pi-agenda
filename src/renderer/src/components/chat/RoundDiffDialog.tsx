@@ -21,7 +21,7 @@ function FileReview({ round, file, mode, defaultExpanded }: { round: AgentSnapsh
     if (!expanded || diff) return
     let active = true
     setError('')
-    void window.piAgenda.getDiff(round.before.hash, round.after.hash, file.path, round.project).then(value => { if (active) setDiff(value) }).catch(e => { if (active) setError(e instanceof Error ? e.message : '文件对比加载失败，请重试') })
+    void window.piRunner.getDiff(round.before.hash, round.after.hash, file.path, round.project).then(value => { if (active) setDiff(value) }).catch(e => { if (active) setError(e instanceof Error ? e.message : '文件对比加载失败，请重试') })
     return () => { active = false }
   }, [round.before.hash, round.after.hash, round.project, file.path, retry, expanded, diff])
   return <section className={`tool-approval-file${expanded ? '' : ' is-collapsed'}`}>

@@ -5,13 +5,13 @@ import type { ChatMessage, ModelProfile } from '../../shared/models'
 import { attachmentKind, attachmentText } from '../../shared/attachments'
 import { modelMessages } from './model-attachments'
 
-const markerPattern = /\[pi-agenda-files:([\w-]+)\]/
+const markerPattern = /\[pi-runner-files:([\w-]+)\]/
 /** 附件保留在本地会话中，发送前转换为供应商原生格式。 */
 export class PiAttachments {
   private readonly messages = new Map<string, ChatMessage>()
   constructor(private readonly manager: SessionManager) {
     for (const entry of manager.getEntries()) {
-      if (entry.type === 'custom' && entry.customType === 'pi-agenda-files') {
+      if (entry.type === 'custom' && entry.customType === 'pi-runner-files') {
         const data = entry.data as { id: string; message: ChatMessage }
         this.messages.set(data.id, data.message)
       }
@@ -21,12 +21,12 @@ export class PiAttachments {
     if (!message.images?.length && !message.skillIds?.length) return { text: message.content, images: [] }
     const id = randomUUID()
     this.messages.set(id, message)
-    this.manager.appendCustomEntry('pi-agenda-files', { id, message })
+    this.manager.appendCustomEntry('pi-runner-files', { id, message })
     const texts = (message.images ?? []).filter(file => attachmentKind(file) === 'text').map(file => `附件：${file.name}\n${attachmentText(file)}`)
     const images: ImageContent[] = (message.images ?? []).filter(file => attachmentKind(file) === 'image').map(file => ({
       type: 'image', mimeType: file.dataUrl.slice(5, file.dataUrl.indexOf(';')), data: file.dataUrl.slice(file.dataUrl.indexOf(',') + 1)
     }))
-    return { text: [message.content, ...texts, `[pi-agenda-files:${id}]`].filter(Boolean).join('\n\n'), images }
+    return { text: [message.content, ...texts, `[pi-runner-files:${id}]`].filter(Boolean).join('\n\n'), images }
   }
   replacePayload(payload: unknown, profile: ModelProfile, responses: boolean): unknown {
     const body = payload as Record<string, unknown>

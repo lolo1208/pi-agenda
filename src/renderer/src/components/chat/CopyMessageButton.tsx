@@ -12,7 +12,7 @@ export function CopyMessageButton({ text }: { text: string }): React.JSX.Element
   const label = status === 'copied' ? '已复制' : status === 'error' ? '复制失败，请重试' : '复制消息'
   const copy = async (): Promise<void> => {
     setStatus('copying')
-    try { await window.piAgenda.copyText(text); setStatus('copied') }
+    try { await window.piRunner.copyText(text); setStatus('copied') }
     catch { setStatus('error') }
   }
   return <Button type="button" variant="ghost" size="icon" className="message-copy" aria-label={label} title={label} disabled={status === 'copying'} onClick={() => void copy()}>

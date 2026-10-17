@@ -96,7 +96,7 @@ export default function ModelSettingsPanel({ settings, onChange, onBusyChange }:
       setInfoLoading(true)
       // 升级前的目录未保存缓存定价；一次刷新补齐全部模型，缺失值不触发重复刷新。
       if (!openrouterPricingRefresh.current || openrouterPricingRefresh.current.revision !== infoRevision) {
-        openrouterPricingRefresh.current = { revision: infoRevision, request: Promise.resolve().then(() => window.piAgenda.connectOpenrouter()).then(unwrapModelResult) }
+        openrouterPricingRefresh.current = { revision: infoRevision, request: Promise.resolve().then(() => window.piRunner.connectOpenrouter()).then(unwrapModelResult) }
       }
       void openrouterPricingRefresh.current.request.then(next => {
         if (disposed) return
@@ -115,7 +115,7 @@ export default function ModelSettingsPanel({ settings, onChange, onBusyChange }:
     setModelInfo(cached ?? null)
     if (profile.provider === 'chatgpt' && cached?.thinking != null) { setInfoError(''); setInfoLoading(false); return }
     setInfoLoading(true); setInfoError('')
-    const request = profile.provider === 'chatgpt' ? window.piAgenda.getChatgptModelInfo(profile.model) : window.piAgenda.getOllamaModelInfo(profile.baseUrl, profile.model)
+    const request = profile.provider === 'chatgpt' ? window.piRunner.getChatgptModelInfo(profile.model) : window.piRunner.getOllamaModelInfo(profile.baseUrl, profile.model)
     void request.then(unwrapModelResult).then(info => { if (!disposed) setModelInfo(current => ({ ...info, sizeBytes: info.sizeBytes ?? current?.sizeBytes })) }).catch(e => {
       if (!disposed) setInfoError(e instanceof Error ? e.message : '模型信息读取失败，请重试')
     }).finally(() => { if (!disposed) setInfoLoading(false) })
@@ -146,7 +146,7 @@ export default function ModelSettingsPanel({ settings, onChange, onBusyChange }:
       normalizedProfile.ollamaThinkingLevel = typeof selected === 'string' ? selected : null
       normalizedProfile.thinking = typeof selected === 'boolean' ? selected : null
     }
-    const next = unwrapModelResult(await window.piAgenda.saveModelProfile({ profile: normalizedProfile,
+    const next = unwrapModelResult(await window.piRunner.saveModelProfile({ profile: normalizedProfile,
       credential: apiKey.trim() ? { action: 'replace', value: apiKey } : { action: removeKey ? 'remove' : 'keep' } }))
     onChange(next); setApiKey(''); setRemoveKey(false); setSelected(profile.provider)
     setProfile(next.profiles.find(item => item.id === profile.id)!); setEditing(true)
@@ -157,19 +157,19 @@ export default function ModelSettingsPanel({ settings, onChange, onBusyChange }:
     if (provider === 'ollama' && !existing) setOllamaUrl(currentOllamaUrl.replace(/\/v1\/?$/, ''))
   }
   const connectOllama = (baseUrl: string, close = false): void => { void run(async () => {
-    const next = unwrapModelResult(await window.piAgenda.connectOllama(baseUrl))
+    const next = unwrapModelResult(await window.piRunner.connectOllama(baseUrl))
     onChange(next); setSelected('ollama'); setQuery('')
     if (close) setDialog(null)
     const count = next.providers?.find(item => item.provider === 'ollama')?.models.length ?? 0
     setNotice(count ? `已读取 ${count} 个 Ollama 模型` : 'Ollama 已连接，尚未发现模型。请先使用 ollama pull 下载模型，再刷新列表。')
   }) }
   const connectOpenrouter = (refresh = false): void => { void run(async () => {
-    const next = unwrapModelResult(await window.piAgenda.connectOpenrouter(refresh ? undefined : apiKey.trim()))
+    const next = unwrapModelResult(await window.piRunner.connectOpenrouter(refresh ? undefined : apiKey.trim()))
     onChange(next); setSelected('openrouter'); setQuery(''); setApiKey('')
     if (!refresh) setDialog(null)
   }) }
   const toggleModel = (item: ModelProfileView): void => { void run(async () => {
-    const next = unwrapModelResult(await window.piAgenda.saveModelProfile({ profile: { ...item, enabled: item.enabled === false }, credential: { action: 'keep' } }))
+    const next = unwrapModelResult(await window.piRunner.saveModelProfile({ profile: { ...item, enabled: item.enabled === false }, credential: { action: 'keep' } }))
     onChange(next)
     if (item.id === profile.id) setProfile(next.profiles.find(profile => profile.id === item.id)!)
     setNotice(item.enabled === false ? `已启用 ${item.name}` : `已停用 ${item.name}`)
@@ -180,7 +180,7 @@ export default function ModelSettingsPanel({ settings, onChange, onBusyChange }:
     const id = crypto.randomUUID(); setRequestId(id)
     setTest({ status: 'running' })
     try {
-      const result = unwrapModelResult(await window.piAgenda.testModel(profile.id, id))
+      const result = unwrapModelResult(await window.piRunner.testModel(profile.id, id))
       const elapsed = result.elapsedMs >= 1000 ? `${(Math.floor(result.elapsedMs / 100) / 10).toFixed(1)}s` : `${result.elapsedMs} ms`
       setTest({ status: 'success', message: `连接成功 · ${elapsed} · ${result.model}${result.truncated ? '（测试输出达到 Token 上限）' : ''}` })
     } catch (e) {
@@ -246,7 +246,7 @@ export default function ModelSettingsPanel({ settings, onChange, onBusyChange }:
           </fieldset> : <fieldset disabled={isBusy && !requestId}>
             <ModelProfileFields profile={profile} savedProfile={saved} settings={settings} modelInfo={modelInfo} infoLoading={infoLoading} apiKey={apiKey} removeKey={removeKey} onFieldChange={update} onApiKeyChange={setApiKey} onRemoveKeyChange={remove => { setRemoveKey(remove); setApiKey('') }}>
               {infoError && <p className="error" role="alert">{infoError} <Button size="sm" variant="ghost" disabled={isBusy || infoLoading} onClick={() => setInfoRevision(value => value + 1)}>重试读取</Button></p>}
-              <ModelProfileActions isLocal={profile.provider === 'ollama'} canSave={profileDirty} savedFlash={savedFlash} testStatus={test.status} testMessage={test.message} onCancelTest={() => { if (requestId) void window.piAgenda.cancelModelRequest(requestId).then(unwrapModelResult).catch(() => setError('取消请求失败，请重试')) }} onSave={saveProfile} onSaveAndTest={saveAndTest} />
+              <ModelProfileActions isLocal={profile.provider === 'ollama'} canSave={profileDirty} savedFlash={savedFlash} testStatus={test.status} testMessage={test.message} onCancelTest={() => { if (requestId) void window.piRunner.cancelModelRequest(requestId).then(unwrapModelResult).catch(() => setError('取消请求失败，请重试')) }} onSave={saveProfile} onSaveAndTest={saveAndTest} />
             </ModelProfileFields>
           </fieldset>}
           {feedback}

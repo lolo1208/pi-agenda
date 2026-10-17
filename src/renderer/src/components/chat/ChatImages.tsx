@@ -43,7 +43,7 @@ function AttachmentPreview({ image: preview, onClose, onUnreadable }: { image: C
   const save = async (): Promise<void> => {
     setSaving(true)
     setSaveError('')
-    try { await window.piAgenda.saveAttachment(preview.name, preview.dataUrl) }
+    try { await window.piRunner.saveAttachment(preview.name, preview.dataUrl) }
     catch { setSaveError('附件保存失败，请检查保存位置的访问权限和剩余空间后重试') }
     finally { setSaving(false) }
   }
@@ -97,7 +97,7 @@ function CopyAttachmentText({ text }: { text: string }): React.JSX.Element {
   const copy = async (): Promise<void> => {
     setStatus('copying')
     try {
-      await window.piAgenda.copyText(text)
+      await window.piRunner.copyText(text)
       setStatus('copied')
     } catch {
       setStatus('error')

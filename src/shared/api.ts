@@ -7,7 +7,7 @@ export type FileAction = 'copy-file' | 'copy-path' | 'open-directory' | 'open-fi
 export type NotificationKind = 'success' | 'failure' | 'input'
 export interface AppNotification { kind: NotificationKind; title: string; body: string; /** 点击通知后需要选中的会话。 */ conversationId?: string }
 import type { ConversationState } from './conversations'
-export interface PiAgendaApi {
+export interface PiRunnerApi {
   showNotification(notification: AppNotification): Promise<void>
   onNotificationActivate(callback: (conversationId: string) => void): () => void
   readCodePreview(project: string, path: string, ranges: import('./code-preview').CodeLineRange[], snapshotId?: string): Promise<import('./code-preview').CodePreview>

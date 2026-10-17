@@ -6,7 +6,7 @@ const root = path.resolve(__dirname, '../resources/sandbox-runtime')
 async function buildAppContainer() {
   if (process.platform !== 'win32') throw new Error('请在 Windows 上编译 AppContainer 宿主。')
   await fs.mkdir(path.join(root, 'bin'), { recursive: true })
-  const executable = path.join(root, 'bin/pi-agenda-appcontainer.exe')
+  const executable = path.join(root, 'bin/pi-runner-appcontainer.exe')
   const compiler = path.join(process.env.SystemRoot || 'C:\\Windows', 'Microsoft.NET/Framework64/v4.0.30319/csc.exe')
   const source = path.join(root, 'AppContainerRunner.cs')
   const result = spawnSync(compiler, ['/nologo', '/optimize+', '/platform:x64', '/out:' + executable, source], { windowsHide: true, encoding: 'utf8' })

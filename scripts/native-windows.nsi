@@ -15,7 +15,7 @@ VIProductVersion "${APP_VERSION}.0"
 VIAddVersionKey "ProductName" "${APP_NAME}"
 VIAddVersionKey "FileDescription" "${APP_NAME}"
 VIAddVersionKey "FileVersion" "${APP_VERSION}"
-VIAddVersionKey "LegalCopyright" "Pi Agenda"
+VIAddVersionKey "LegalCopyright" "Pi Runner"
 
 ; 载荷已由多线程 LZMA2 压缩，外层直接嵌入，避免再次单线程压缩。
 !macro ExtractPayload DESTINATION
@@ -59,7 +59,7 @@ VIAddVersionKey "LegalCopyright" "Pi Agenda"
   SectionEnd
 !else
   InstallDir "$LOCALAPPDATA\Programs\${APP_DIRECTORY_NAME}"
-  InstallDirRegKey HKCU "Software\PiAgenda" "InstallDir"
+  InstallDirRegKey HKCU "Software\PiRunner" "InstallDir"
   !define MUI_ABORTWARNING
   !define MUI_FINISHPAGE_RUN "$INSTDIR\${APP_EXE}"
   !insertmacro MUI_PAGE_DIRECTORY
@@ -74,14 +74,14 @@ VIAddVersionKey "LegalCopyright" "Pi Agenda"
     SetShellVarContext current
     !insertmacro ExtractPayload "$INSTDIR"
     WriteUninstaller "$INSTDIR\Uninstall.exe"
-    WriteRegStr HKCU "Software\PiAgenda" "InstallDir" "$INSTDIR"
-    WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\PiAgenda" "DisplayName" "${APP_NAME}"
-    WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\PiAgenda" "DisplayVersion" "${APP_VERSION}"
-    WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\PiAgenda" "Publisher" "Pi Agenda"
-    WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\PiAgenda" "DisplayIcon" "$INSTDIR\${APP_EXE}"
-    WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\PiAgenda" "UninstallString" '$\"$INSTDIR\Uninstall.exe$\"'
-    WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\PiAgenda" "NoModify" 1
-    WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\PiAgenda" "NoRepair" 1
+    WriteRegStr HKCU "Software\PiRunner" "InstallDir" "$INSTDIR"
+    WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\PiRunner" "DisplayName" "${APP_NAME}"
+    WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\PiRunner" "DisplayVersion" "${APP_VERSION}"
+    WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\PiRunner" "Publisher" "Pi Runner"
+    WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\PiRunner" "DisplayIcon" "$INSTDIR\${APP_EXE}"
+    WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\PiRunner" "UninstallString" '$\"$INSTDIR\Uninstall.exe$\"'
+    WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\PiRunner" "NoModify" 1
+    WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\PiRunner" "NoRepair" 1
     CreateShortcut "$DESKTOP\${APP_NAME}.lnk" "$INSTDIR\${APP_EXE}"
     CreateShortcut "$SMPROGRAMS\${APP_NAME}.lnk" "$INSTDIR\${APP_EXE}"
   SectionEnd
@@ -90,12 +90,12 @@ VIAddVersionKey "LegalCopyright" "Pi Agenda"
     SetRegView 64
     SetShellVarContext current
     ; 只删除已登记的应用目录，避免误删其他位置。
-    ReadRegStr $0 HKCU "Software\PiAgenda" "InstallDir"
+    ReadRegStr $0 HKCU "Software\PiRunner" "InstallDir"
     StrCmp $0 "$INSTDIR" 0 unsafe_path
     Delete "$DESKTOP\${APP_NAME}.lnk"
     Delete "$SMPROGRAMS\${APP_NAME}.lnk"
-    DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\PiAgenda"
-    DeleteRegKey HKCU "Software\PiAgenda"
+    DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\PiRunner"
+    DeleteRegKey HKCU "Software\PiRunner"
     ; 按构建清单删除应用文件，保留用户另外放入的文件。
     !include "${UNINSTALL_FILES}"
     Delete "$INSTDIR\Uninstall.exe"

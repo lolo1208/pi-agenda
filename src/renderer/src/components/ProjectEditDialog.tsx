@@ -31,7 +31,7 @@ export function ProjectEditDialog({ root, name, directory, prompt, isBusy, error
     el.style.height = `${el.scrollHeight}px`
   }, [draftPrompt])
   const chooseDirectory = (): void => {
-    void window.piAgenda.pickProjectDirectory?.().then(chosen => { if (chosen) setDraftDirectory(chosen) }).catch(() => undefined)
+    void window.piRunner.pickProjectDirectory?.().then(chosen => { if (chosen) setDraftDirectory(chosen) }).catch(() => undefined)
   }
   return <Modal open onOpenChange={open => { if (!open && !isBusy) onClose() }} title="项目信息" closeLabel="关闭项目信息" closeDisabled={isBusy} contentClassName="project-edit-dialog">
     {error && <p role="alert" className="error">{error}</p>}

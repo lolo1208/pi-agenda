@@ -8,7 +8,7 @@ export function FileContextMenu({ project, path, children }: { project: string; 
   const [error, setError] = useState('')
   const run = async (action: FileAction): Promise<void> => {
     setError('')
-    try { await window.piAgenda.performFileAction(project, path, action) }
+    try { await window.piRunner.performFileAction(project, path, action) }
     catch (reason) { setError(reason instanceof Error ? reason.message : '文件操作失败，请重试') }
   }
   return <>

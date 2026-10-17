@@ -103,7 +103,7 @@ function showSystemNotification(notification: AppNotification, activate: () => v
 export function showNotification(notification: AppNotification, activate: () => void): void {
   const safe: AppNotification = {
     kind: notification.kind,
-    title: String(notification.title ?? '').slice(0, 120) || 'Pi Agenda · 行动派',
+    title: String(notification.title ?? '').slice(0, 120) || 'Pi Runner · 行动派',
     body: String(notification.body ?? '').slice(0, 240)
   }
   if (process.platform === 'win32') showBubble(safe, activate)

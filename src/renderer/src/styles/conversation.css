@@ -845,6 +845,16 @@
   background: var(--accent);
 }
 
+.stop-button:hover:not(:disabled), .stop-button:focus-visible {
+  background: var(--error);
+  color: var(--error-foreground);
+}
+
+.composer-stop-status {
+  color: var(--muted);
+  font-size: calc(12rem / 14);
+}
+
 .message-queue { margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
 .queue-save-button { width: auto; padding: 0 10px; border-radius: 6px; font-size: calc(12rem / 14); }
 .message-queue ol { list-style: none; margin: 0; padding: 0; max-height: 160px; overflow-y: auto; }

@@ -23,7 +23,7 @@ async function verifySandboxRuntime(directory) {
   await fs.access(path.join(directory, 'LICENSE'))
   await fs.access(path.join(directory, 'NOTICE'))
   const appcontainer = JSON.parse(await fs.readFile(path.join(directory, 'appcontainer-manifest.json'), 'utf8'))
-  for (const [name, expected] of [['AppContainerRunner.cs', appcontainer.source], ['bin/pi-agenda-appcontainer.exe', appcontainer.executable]]) {
+  for (const [name, expected] of [['AppContainerRunner.cs', appcontainer.source], ['bin/pi-runner-appcontainer.exe', appcontainer.executable]]) {
     const bytes = await fs.readFile(path.join(directory, name))
     if (appcontainer.version !== 1 || createHash('sha256').update(bytes).digest('hex') !== expected) throw new Error('AppContainer 宿主校验失败：' + name)
   }

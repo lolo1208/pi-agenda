@@ -1,6 +1,6 @@
-# Pi Agenda · 行动派
+# Pi Runner · 行动派
 
-Pi Agenda 是面向 macOS 和 Windows 的本地桌面 AI 编程助手，基于 Electron、React 和 TypeScript 构建，让代码改动可查看、可追踪，并最终支持项目文件与对话上下文同步回滚。
+Pi Runner 是面向 macOS 和 Windows 的本地桌面 AI 编程助手，基于 Electron、React 和 TypeScript 构建，让代码改动可查看、可追踪，并最终支持项目文件与对话上下文同步回滚。
 
 当前已实现项目选择、手动与代理修改快照、git-diff-view 文件对比、模型设置、加密凭证、连接测试、流式多轮对话、文件/终端工具执行审批、Skill 管理，以及内置计划模式（逐轮澄清选项、末项自定义输入，需求确认后才执行）。SQLite 与双轨回滚（硬恢复、分支恢复）尚未实现，详见产品规格和开发路线。
 
@@ -34,7 +34,7 @@ Windows 与 macOS 共用 `safe-execution.json` 的记录格式和读写模块，
 
 macOS 使用固定系统路径 `/usr/bin/sandbox-exec` 的 Seatbelt 后端和 `/bin/bash`，关闭用户启动脚本。策略默认拒绝访问，只开放项目、当前命令独立的临时 HOME，以及系统工具和常见 Homebrew 工具目录的读取；不开放用户主目录、全盘读取、应用数据或网络。项目 Git 元数据只读，配置与凭据目录禁止访问；子进程继承限制。命令结束、停止或超时后终止进程组并清理本次临时区，不转成普通终端执行。Windows 的通过记录不能替代 macOS 检测证明。系统组件缺失或策略限制时，排查页保留原因，应用不下载替代程序、不提升权限。[Seatbelt 调用方式参考](https://github.com/openai/codex/blob/main/codex-rs/sandboxing/src/seatbelt.rs)。
 
-macOS 实机隔离验收：在 Mac 上运行 `PI_AGENDA_MACOS_SANDBOX_TEST=1 pnpm test -- tests/macos-sandbox-integration.test.ts`，覆盖真实文件和网络边界、子进程、重启与路径修改后的记录复用、超时停止。Windows 开发机只执行 macOS 的策略、进程管理和路由测试，不能据此认定 macOS 实机检测已经通过。
+macOS 实机隔离验收：在 Mac 上运行 `PI_RUNNER_MACOS_SANDBOX_TEST=1 pnpm test -- tests/macos-sandbox-integration.test.ts`，覆盖真实文件和网络边界、子进程、重启与路径修改后的记录复用、超时停止。Windows 开发机只执行 macOS 的策略、进程管理和路由测试，不能据此认定 macOS 实机检测已经通过。
 
 检测涵盖项目内文件增删改查、项目外文件读写、应用内部目录、目录联接、子进程和网络连接。每 2 秒补查状态，防止通知丢失或项目恢复时错过配置。单步检查最多等待 60 秒，完整准备最多 5 分钟；查询状态无响应或准备未能启动时也会显示手动检查入口，不无限等待。任一检测失败即禁用自动终端执行并显示检查按钮，点击进入专门的排查进度页面，或明确选择完全访问并完成权限确认。排查会恢复应用工作目录、清除失效缓存、重建执行配置并复测，展示每一步状态与失败原因；不会自动提升权限或放宽隔离边界。企业策略限制、项目权限异常或运行时损坏时会说明原因。检测临时目录不参与普通文件搜索和快照。聊天任务执行期间禁止手动重新配置，以免更换正在使用的隔离环境。
 
@@ -93,15 +93,15 @@ bash scripts/dev-menu.sh
 | 导出命令 | 发行目录 | 内容 |
 | --- | --- | --- |
 | `pnpm dist:win:all` | `release/` | 一次生成 Windows 安装包、便携版和 ZIP 包 |
-| `pnpm dist:win` | `release/` | Windows 安装包 `pi-agenda-setup.exe` |
-| `pnpm dist:win:portable` | `release/` | 单文件免安装便携版 `pi-agenda-portable.exe` |
-| `pnpm dist:win:zip` | `release/` | 解压即用的 Windows ZIP 包 `pi-agenda-portable.zip` |
+| `pnpm dist:win` | `release/` | Windows 安装包 `pi-runner-setup.exe` |
+| `pnpm dist:win:portable` | `release/` | 单文件免安装便携版 `pi-runner-portable.exe` |
+| `pnpm dist:win:zip` | `release/` | 解压即用的 Windows ZIP 包 `pi-runner-portable.zip` |
 | `pnpm dist:mac` | `release/` | macOS `.dmg` 发行包 |
 | `pnpm pack:dir` | `build-work/dir/` | 免安装目录版，需分发完整应用目录 |
 
 `release/` 是最终发行目录，根目录直接存放发行文件，不创建次级目录。`build-work/` 是打包工作目录，保留目录版、更新文件、调试配置等内容。两者均不提交到 Git，也不会进入项目快照。
 
-Windows 菜单命令 `d` 单独生成 ZIP 包，对应 `pnpm dist:win:zip`。完整解压 `pi-agenda-portable.zip` 后，双击其中的 `Pi Agenda.exe` 即可启动，无需安装 Node.js、pnpm 或本程序。请保留解压目录中的全部文件；ZIP 打包不需要 NSIS。
+Windows 菜单命令 `d` 单独生成 ZIP 包，对应 `pnpm dist:win:zip`。完整解压 `pi-runner-portable.zip` 后，双击其中的 `Pi Runner.exe` 即可启动，无需安装 Node.js、pnpm 或本程序。请保留解压目录中的全部文件；ZIP 打包不需要 NSIS。
 
 推荐使用 `pnpm dist:win:all`：只执行一次类型检查、编译、应用目录打包及运行时校验，然后并行生成 ZIP 与 LZMA2 载荷；安装包和便携版共用同一份载荷，并行生成 NSIS 外壳，外壳不再重复压缩。单独导出命令也使用同样的多线程压缩方式。Electron 语言包仅保留 `zh-CN/en-US`，应用归档排除源码映射、类型声明和开发文档，保留许可证。
 
@@ -143,16 +143,10 @@ Windows PowerShell 若限制执行 `.ps1`，使用 `pnpm.cmd icons:generate`。
 
 打开测试项目 → 创建基准快照 → 外部编辑器增删改文件 → 捕获当前改动 → 点击文件查看内联或分栏 Diff。
 
-快照仓库与暂存区保存在用户主目录 `~/.pi-agenda/projects/<项目路径哈希>/` 下，不会在项目目录创建 `.pi-agenda`。移除项目会清除对应快照仓库及暂存数据，项目文件本身会保留。快照、项目列表和会话均本地持久保存，只有用户删除后才移除。
+快照仓库与暂存区保存在用户主目录 `~/.pi-runner/projects/<项目路径哈希>/` 下，不会在项目目录创建 `.pi-runner`。移除项目会清除对应快照仓库及暂存数据，项目文件本身会保留。快照、项目列表和会话均本地持久保存，只有用户删除后才移除。
 
 当前快照排除依赖、构建产物、元数据和部分凭证路径；拒绝符号链接、联接点及特殊文件。空目录、ACL、扩展属性和时间戳不属于覆盖范围；复制过程非原子操作，捕获时应停止外部写入。详见架构文档。
 
 改动列表额外隐藏项目 `.gitignore`（含嵌套）排除的文件：每轮「已更改 N 个文件」、右侧栏「最近改动」和审查弹窗都不统计、不显示这些路径。被忽略文件仍在快照覆盖范围内，混合轮次的回滚与「还原至此」会一并处理；只有被忽略文件发生变化的轮次列表为空，不显示改动卡片。过滤只读项目内的 `.gitignore`，不读全局 gitignore；`.gitignore` 修改后过滤结果随之更新。
 
 应用本地运行；使用远程模型时，发送的提示和代码会传输给相应服务商。
-
-## 更名与兼容性
-
-2026-10-09 起统一使用「Pi Agenda · 行动派」，英文名为「Pi Agenda」，中文名为「行动派」；包名 `pi-agenda`，应用 ID `dev.piagenda.desktop`，桥接 `window.piAgenda`。仓库目录使用 `pi-agenda`，当前工作目录已符合此命名。源码和文档文件名按模块职责命名，无需添加产品名前缀。
-
-旧版 `.pi-console` 和 `.cherrypi` 快照保留原位并排除在新快照之外，当前不自动迁移；升级后需建立新基准。新版本使用 `.pi-agenda` 快照目录和 `pi-agenda.*` 本地存储键，旧版本的项目列表与偏好设置不自动迁移。应用 ID 和产品名变化可能影响既有安装与模型配置所在的用户数据目录，发布前须设计迁移方案。

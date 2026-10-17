@@ -117,7 +117,7 @@ export class WindowsCommandRecovery {
   }
 
   private async visible(sandbox: TerminalSandbox, name: string, root: string, signal?: AbortSignal): Promise<boolean> {
-    const marker = `pi-agenda-runtime-${randomUUID()}`
+    const marker = `pi-runner-runtime-${randomUUID()}`
     const command = `$runtime=Get-Command -Name ${quote(name)} -CommandType Application,ExternalScript -ErrorAction SilentlyContinue | Select-Object -First 1; if ($runtime) { Write-Output '${marker}:available' } else { Write-Output '${marker}:missing' }`
     let output = ''
     const result = await sandbox.exec(command, root, { signal, timeout: 15, onData: data => { output = (output + data.toString('utf8')).slice(-16000) } })

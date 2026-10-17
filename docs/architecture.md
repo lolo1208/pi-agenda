@@ -1,15 +1,15 @@
 # 架构规划
 
-适用产品：Pi Agenda · 行动派。更新日期：2026-10-09。完整技术栈见[产品规格](product-specification.md)，实现进度见[开发路线](development-roadmap.md)。
+适用产品：Pi Runner · 行动派。更新日期：2026-10-09。完整技术栈见[产品规格](product-specification.md)，实现进度见[开发路线](development-roadmap.md)。
 
 ## 进程边界
 
-当前会话由主进程保存到用户主目录的 `.pi-agenda/conversations.json`。会话列表、消息、图片、未发送草稿和选中会话在重启后恢复，不按时间或数量自动清理；只有用户确认删除对话或项目时才移除相应会话。写入采用临时文件加原子替换。读取失败时显示错误并禁止覆盖原文件，防止将未恢复的空列表保存为历史记录。
+当前会话由主进程保存到用户主目录的 `.pi-runner/conversations.json`。会话列表、消息、图片、未发送草稿和选中会话在重启后恢复，不按时间或数量自动清理；只有用户确认删除对话或项目时才移除相应会话。写入采用临时文件加原子替换。读取失败时显示错误并禁止覆盖原文件，防止将未恢复的空列表保存为历史记录。
 
 Renderer（React 19、Tailwind、git-diff-view）只负责界面；Preload 暴露固定的类型化方法，不透传 IPC 或 Node API；Main 持有项目选择权、文件系统与影子 Git。开启 contextIsolation、sandbox、webSecurity，关闭 nodeIntegration，拒绝额外窗口、导航和权限请求，并验证 IPC 来源及参数。
 
 ```text
-Renderer → window.piAgenda → Preload → Main IPC → ShadowGitManager
+Renderer → window.piRunner → Preload → Main IPC → ShadowGitManager
                                              → ConversationStore
                                              → ModelSettingsStore / PiAgentService（pi SDK）
 ```
@@ -20,11 +20,11 @@ Renderer → window.piAgenda → Preload → Main IPC → ShadowGitManager
 
 ## 快照策略
 
-项目影子仓库与独立暂存工作树保存在 `app.getPath('home')/.pi-agenda/projects/<项目路径 SHA-256>/shadow-git` 和 `staging` 下，能排除用户 Git 配置、属性过滤器及嵌套仓库的干扰，且不会在项目目录写入应用元数据。所有 Git 调用通过 simple-git 指定专用 GIT_DIR 与 GIT_WORK_TREE，隔离继承的 GIT_* 环境和全局配置，禁用换行转换、提交签名和钩子。强制添加符合快照策略的文件，因此原 `.gitignore` 不决定快照覆盖范围。改动列表只在展示层过滤：`src/main/snapshot/project-ignores.ts` 用 `ignore` 解析项目根与相关目录的 `.gitignore`，按 Git 的目录优先级匹配（深目录规则优先，父目录被排除时不读取其中的规则）；读取失败或路径异常按未忽略处理；不读取全局 gitignore 与 `.git/info/exclude`，匹配器按 `.gitignore` 的 mtime 与大小有限缓存。
+项目影子仓库与独立暂存工作树保存在 `app.getPath('home')/.pi-runner/projects/<项目路径 SHA-256>/shadow-git` 和 `staging` 下，能排除用户 Git 配置、属性过滤器及嵌套仓库的干扰，且不会在项目目录写入应用元数据。所有 Git 调用通过 simple-git 指定专用 GIT_DIR 与 GIT_WORK_TREE，隔离继承的 GIT_* 环境和全局配置，禁用换行转换、提交签名和钩子。强制添加符合快照策略的文件，因此原 `.gitignore` 不决定快照覆盖范围。改动列表只在展示层过滤：`src/main/snapshot/project-ignores.ts` 用 `ignore` 解析项目根与相关目录的 `.gitignore`，按 Git 的目录优先级匹配（深目录规则优先，父目录被排除时不读取其中的规则）；读取失败或路径异常按未忽略处理；不读取全局 gitignore 与 `.git/info/exclude`，匹配器按 `.gitignore` 的 mtime 与大小有限缓存。
 
 单个 Manager 串行执行操作。当前仅支持单窗口/单个 Manager 使用项目；下一阶段需进程级项目锁与配额。快照前必须暂停 Agent 工具写入。识别改名暂按删除和新增处理；二进制展示状态，不渲染文本。Diff 路径必须出现在指定提交间的改动列表中。
 
-原型排除任意层级的 `.git`、`.pi-agenda`、旧版 `.pi-console` 和 `.cherrypi`、`node_modules`、`dist`、`out`、`build-work`、`release`、旧版发行目录 `exports`、`.aws`、`.ssh`，以及 `.env` 与 `.env.*`。不以此替代秘密扫描。拒绝符号链接/联接点和特殊文件；Git 不记录空目录，当前不保证 ACL、扩展属性、时间戳及完整权限元数据。复制不是文件系统原子快照，大文件限制和外部写入冲突检测待实现。
+排除任意层级的 `.git`、`.pi-runner`、`node_modules`、`dist`、`out`、`build-work`、`release`、发行目录 `exports`、`.aws`、`.ssh`，以及 `.env` 与 `.env.*`。不以此替代秘密扫描。拒绝符号链接/联接点和特殊文件；Git 不记录空目录，当前不保证 ACL、扩展属性、时间戳及完整权限元数据。复制不是文件系统原子快照，大文件限制和外部写入冲突检测待实现。
 
 ## 后续数据模型与轮次
 

@@ -6,7 +6,7 @@ import { ModelError } from './model-validation'
 import { SandboxCompatibilityError } from './sandbox-compatibility-error'
 import { literalCommand } from './windows-command-parser'
 
-const failureMarker = 'PI_AGENDA_GIT_CWD_FAILED'
+const failureMarker = 'PI_RUNNER_GIT_CWD_FAILED'
 
 /** 只识别 Git 自身的完整错误行，不把普通拒绝访问或仓库错误当成后端故障。 */
 export function gitWorkingDirectoryDenied(output: string): boolean {
@@ -53,7 +53,7 @@ export async function checkGitWorkingDirectory(sandbox: Pick<TerminalSandbox, 'e
     try { return (await stat(path.resolve(project, directory, 'git.exe'))).isFile() } catch { return false }
   }))).some(Boolean)
   signal?.throwIfAborted()
-  const token = randomUUID(), marker = `pi-agenda-git-cwd-${token}`
+  const token = randomUUID(), marker = `pi-runner-git-cwd-${token}`
   const literalProject = "'" + project.replace(/'/g, "''") + "'"
   const command = `$gitCommand=Get-Command git -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1; if (-not $gitCommand -and $${hostHasGit ? 'true' : 'false'}) { throw '${failureMarker}: 宿主 PATH 中可定位 Git，但隔离进程无法访问 Git 可执行程序' }; if ($gitCommand) {
   $gitProbe=[IO.Path]::Combine($env:TEMP,'git-cwd-${token}.git')

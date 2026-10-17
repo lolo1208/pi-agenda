@@ -154,11 +154,13 @@ export default function ModelChat({ snapshots, initialIntentMode = 'execute', on
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [requestId, setRequestId] = useState<string | null>(null)
+  const [stopping, setStopping] = useState(false)
+  const stoppingRequest = useRef<string | null>(null)
   const changePermission = useCallback(async (mode: PermissionMode): Promise<void> => {
     if (!conversationId) return
     setPermissionChanging(true)
     try {
-      const selected = unwrapModelResult(await window.piAgenda.setPermissionMode(conversationId, mode))
+      const selected = unwrapModelResult(await window.piRunner.setPermissionMode(conversationId, mode))
       setPermissionMode(selected); onPermissionChange?.(selected)
     } catch (e) { setError(e instanceof Error ? e.message : '权限切换失败，请重试') }
     finally { setPermissionChanging(false) }
@@ -172,7 +174,7 @@ export default function ModelChat({ snapshots, initialIntentMode = 'execute', on
       ollamaThinkingLevel: target.provider === 'ollama' && typeof value === 'string' ? value : null,
       thinking: typeof value === 'boolean' ? value : null }
     try {
-      const settings = unwrapModelResult(await window.piAgenda.saveModelProfile({ profile: next, credential: { action: 'keep' } }))
+      const settings = unwrapModelResult(await window.piRunner.saveModelProfile({ profile: next, credential: { action: 'keep' } }))
       onModelSettingsChange?.(settings)
     } catch (e) { setError(e instanceof Error ? e.message : '推理强度保存失败，请重试') }
   }, [onModelSettingsChange])
@@ -182,10 +184,10 @@ export default function ModelChat({ snapshots, initialIntentMode = 'execute', on
     void changePermission('full')
   }, [pendingFullAccess, requestId, changePermission])
   useEffect(() => {
-    if (!project || !window.piAgenda.getSandboxStatus) { setSandboxState(null); return }
+    if (!project || !window.piRunner.getSandboxStatus) { setSandboxState(null); return }
     if (!projectReady || !projectCurrent || !active) return
     let current = true
-    const automatic = permissionMode === 'auto' && active && Boolean(window.piAgenda.ensureSandbox)
+    const automatic = permissionMode === 'auto' && active && Boolean(window.piRunner.ensureSandbox)
     let timer: ReturnType<typeof setTimeout> | undefined, watchdog: ReturnType<typeof setTimeout> | undefined
     const started = Date.now()
     const failed = (e: unknown): void => {
@@ -197,7 +199,7 @@ export default function ModelChat({ snapshots, initialIntentMode = 'execute', on
     const read = (): void => {
       let finished = false
       watchdog = setTimeout(() => { finished = true; failed(new Error('安全执行状态查询超时，请手动检查当前项目和后台服务')) }, 30000)
-      const request = automatic ? window.piAgenda.ensureSandbox : window.piAgenda.getSandboxStatus
+      const request = automatic ? window.piRunner.ensureSandbox : window.piRunner.getSandboxStatus
       void request().then(unwrapModelResult).then(state => {
         if (!current || finished) return
         const matching = sameSandboxProject(state.project, project)
@@ -211,19 +213,19 @@ export default function ModelChat({ snapshots, initialIntentMode = 'execute', on
     read()
     return () => { current = false; if (timer) clearTimeout(timer); if (watchdog) clearTimeout(watchdog) }
   }, [project, permissionMode, active, projectReady, projectCurrent, requestId, sandboxRefresh])
-  useEffect(() => window.piAgenda.onSandboxState?.(state => {
+  useEffect(() => window.piRunner.onSandboxState?.(state => {
     if (!project || !sameSandboxProject(state.project, project)) return
     setSandboxState(previous => mergeSandboxState(previous, state))
   }), [project, active, permissionMode])
   const getApprovalPreview = useCallback(async (approval: ToolApproval) => {
     if (!requestId || !conversationId) throw new Error('审批请求已失效')
-    return unwrapModelResult(await window.piAgenda.getToolApprovalPreview(requestId, conversationId, approval.id))
+    return unwrapModelResult(await window.piRunner.getToolApprovalPreview(requestId, conversationId, approval.id))
   }, [requestId, conversationId])
   /** 回应审批；勾选“重复不再提醒”时把本次决定延续到本对话后续审批。 */
   const respondApproval = async (requestId: string, approval: ToolApproval, allow: boolean): Promise<void> => {
     if (!conversationId) throw new Error('审批请求已失效')
     if (approvalRepeat) { autoDecision.current = allow; setAutoApproval(allow) }
-    unwrapModelResult(await window.piAgenda.respondToolApproval(requestId, conversationId, approval.id, allow))
+    unwrapModelResult(await window.piRunner.respondToolApproval(requestId, conversationId, approval.id, allow))
   }
   const [pending, setPending] = useState<{ message: ChatMessage; firstMessage: number } | null>(null)
   const [streamedText, setStreamedText] = useState('')
@@ -231,7 +233,7 @@ export default function ModelChat({ snapshots, initialIntentMode = 'execute', on
   const [execution, setExecution] = useState<{ model: string; provider: ProviderId; startedAt: number; firstMessage: number }>()
   const activeRequest = useRef<string | null>(null)
   const nativeHistory = useRef(false)
-  const [historyReady, setHistoryReady] = useState(!conversationId || !window.piAgenda.getAgentHistory)
+  const [historyReady, setHistoryReady] = useState(!conversationId || !window.piRunner.getAgentHistory)
   const messagesCallback = useRef(onMessagesChange)
   messagesCallback.current = onMessagesChange
   // 请求期间可以切换会话，完成时必须使用当前的查看状态。
@@ -240,16 +242,16 @@ export default function ModelChat({ snapshots, initialIntentMode = 'execute', on
   const taskEndCallback = useRef(onTaskEnd)
   taskEndCallback.current = onTaskEnd
   useEffect(() => {
-    if (!conversationId || !window.piAgenda.getAgentHistory) return
+    if (!conversationId || !window.piRunner.getAgentHistory) return
     let active = true
-    void window.piAgenda.getAgentHistory(conversationId).then(unwrapModelResult).then(history => {
+    void window.piRunner.getAgentHistory(conversationId).then(unwrapModelResult).then(history => {
       if (!active) return
       if (history) { nativeHistory.current = true; setMessages(history); messagesCallback.current?.(history, true) }
       setHistoryReady(true)
     }).catch(() => { if (active) setError('代理会话恢复失败，请检查本地会话文件后重试') })
     return () => { active = false }
   }, [conversationId])
-  useEffect(() => window.piAgenda.onAgentEvent?.(event => {
+  useEffect(() => window.piRunner.onAgentEvent?.(event => {
     if (event.conversationId !== conversationId) return
     if (event.type === 'approval' && event.approval?.tool === 'full-access') { setFullConfirmation({ requestId: event.requestId, approval: event.approval }); return }
     if (event.type === 'approval-end') setFullConfirmation(previous => previous?.approval.id === event.approvalId ? null : previous)
@@ -261,7 +263,7 @@ export default function ModelChat({ snapshots, initialIntentMode = 'execute', on
       const approval = event.approval
       // 已勾选“重复不再提醒”时不再打扰，直接按同一决定回应。
       if (autoDecision.current !== null && conversationId) {
-        void window.piAgenda.respondToolApproval(event.requestId, conversationId, approval.id, autoDecision.current).then(unwrapModelResult).catch(e => setError(e instanceof Error ? e.message : '审批回应失败，请重试'))
+        void window.piRunner.respondToolApproval(event.requestId, conversationId, approval.id, autoDecision.current).then(unwrapModelResult).catch(e => setError(e instanceof Error ? e.message : '审批回应失败，请重试'))
         return
       }
       setApprovals(items => [...items.filter(item => item.id !== approval.id), approval])
@@ -301,7 +303,7 @@ export default function ModelChat({ snapshots, initialIntentMode = 'execute', on
       if (loading) return
       loading = true
       try {
-        const value = unwrapModelResult(await window.piAgenda.getOpenrouterUsage())
+        const value = unwrapModelResult(await window.piRunner.getOpenrouterUsage())
         if (!disposed) setOpenrouterUsage(value)
       } catch (error) {
         if (!disposed) setOpenrouterUsage({ fetchedAt: 0, error: error instanceof Error ? error.message : 'OpenRouter 额度读取失败，将自动重试' })
@@ -317,7 +319,7 @@ export default function ModelChat({ snapshots, initialIntentMode = 'execute', on
     if (!active || profile?.provider !== 'chatgpt') return
     let disposed = false
     const refresh = (): void => {
-      void window.piAgenda.getChatgptUsage().then(unwrapModelResult).then(value => { if (!disposed) setSubscriptionUsage(value) }).catch(e => {
+      void window.piRunner.getChatgptUsage().then(unwrapModelResult).then(value => { if (!disposed) setSubscriptionUsage(value) }).catch(e => {
         if (!disposed) setSubscriptionUsage(previous => { const error = e instanceof Error ? e.message : '订阅额度读取失败，将自动重试'; return { windows: /授权|登录|切换/.test(error) ? [] : previous?.windows ?? [], fetchedAt: previous?.fetchedAt ?? 0, error } })
       })
     }
@@ -337,11 +339,22 @@ export default function ModelChat({ snapshots, initialIntentMode = 'execute', on
   // 原队列、编辑内容和原草稿分别保存，刷新后继续编辑，避免直接发送旧内容。
   useEffect(() => { queueCallback.current?.(queue, queuePaused || Boolean(editingId), queueEdit) }, [queue, queuePaused, queueEdit])
   const stopRequest = async (): Promise<void> => {
-    if (!requestId) return
+    if (!requestId || stoppingRequest.current === requestId) return
+    const id = requestId
+    stoppingRequest.current = id
+    setStopping(true)
+    setError('')
     cancelledRef.current = true
     // 立即暂停，即使取消与正常完成同时发生，也不能启动下一条。
     setQueuePaused(true)
-    unwrapModelResult(await window.piAgenda.cancelModelRequest(requestId))
+    try { unwrapModelResult(await window.piRunner.cancelModelRequest(id)) }
+    catch (error) {
+      if (activeRequest.current !== id) return
+      stoppingRequest.current = null
+      setStopping(false)
+      cancelledRef.current = false
+      throw error
+    }
   }
   const send = async (item: QueuedMessage): Promise<void> => {
     if (!profile || busyRef.current) return
@@ -361,8 +374,8 @@ export default function ModelChat({ snapshots, initialIntentMode = 'execute', on
       const requestMessages = (conversationId ? nativeHistory.current ? [message] : next : contextMessages(next, compaction))
         .map(({ execution: _execution, snapshotHash: _snapshotHash, ...message }) => message)
       const reply = unwrapModelResult(await (conversationId
-        ? window.piAgenda.chatWithModel(profile.id, id, requestMessages, instruction || undefined, requestContext, { conversationId, project, ...(intentMode !== 'execute' ? { intentMode } : {}) })
-        : window.piAgenda.chatWithModel(profile.id, id, requestMessages, instruction || undefined, requestContext)))
+        ? window.piRunner.chatWithModel(profile.id, id, requestMessages, instruction || undefined, requestContext, { conversationId, project, ...(intentMode !== 'execute' ? { intentMode } : {}) })
+        : window.piRunner.chatWithModel(profile.id, id, requestMessages, instruction || undefined, requestContext)))
       replyReceived = true
       setStatistics({ profileId: profile.id, reply })
       if (reply.messages) nativeHistory.current = true
@@ -384,6 +397,7 @@ export default function ModelChat({ snapshots, initialIntentMode = 'execute', on
       setQueue(items => [item, ...items]); setQueuePaused(true)
     }
     finally {
+      stoppingRequest.current = null; setStopping(false)
       busyRef.current = false; activeRequest.current = null; setRequestId(null); setPending(null); setStreamedText(''); setAgentStatus(''); setApprovals([]); setCommandApproval(null); setFullConfirmation(null); setInteraction(null); setPlanProgress('')
       try { onBusyChange(false) }
       catch { setNotice('界面运行状态更新失败，请重新打开会话') }
@@ -396,10 +410,10 @@ export default function ModelChat({ snapshots, initialIntentMode = 'execute', on
   })
   return <section className="model-chat" aria-label="模型对话">
     {active && sandboxState && <SandboxSetupDialog open={sandboxOpen} state={sandboxState} taskRunning={Boolean(requestId)} onClose={() => setSandboxOpen(false)} onRun={async action => {
-      const state = unwrapModelResult(await window.piAgenda.startSandbox(action))
+      const state = unwrapModelResult(await window.piRunner.startSandbox(action))
       setSandboxState(current => mergeSandboxState(current, state))
       setSandboxRefresh(value => value + 1)
-    }} onStop={async () => { unwrapModelResult(await window.piAgenda.stopSandbox()) }} onFullAccess={() => {
+    }} onStop={async () => { unwrapModelResult(await window.piRunner.stopSandbox()) }} onFullAccess={() => {
       if (!requestId) { setSandboxOpen(false); void changePermission('full'); return }
       setPendingFullAccess(true)
       void stopRequest().catch(e => { setPendingFullAccess(false); setError(e instanceof Error ? e.message : '停止任务失败，请重试') })
@@ -411,14 +425,14 @@ export default function ModelChat({ snapshots, initialIntentMode = 'execute', on
       const progress = response.answers ? '已提交回答，正在与模型沟通…' : response.decision === 'revise' ? '已提交修改意见，正在完善计划…' : ''
       setPlanProgress(progress)
       try {
-        unwrapModelResult(await window.piAgenda.respondPlanInteraction(requestId, conversationId, interaction.id, response))
+        unwrapModelResult(await window.piRunner.respondPlanInteraction(requestId, conversationId, interaction.id, response))
       } catch (e) { setPlanProgress(''); throw e }
     }} />}
     {active && fullConfirmation && conversationId && <FullAccessDialog key={fullConfirmation.approval.id} onRespond={async allow => {
-      try { unwrapModelResult(await window.piAgenda.respondToolApproval(fullConfirmation.requestId, conversationId, fullConfirmation.approval.id, allow)) }
+      try { unwrapModelResult(await window.piRunner.respondToolApproval(fullConfirmation.requestId, conversationId, fullConfirmation.approval.id, allow)) }
       catch (e) { setError(e instanceof Error ? e.message : '权限确认失败，请重试') }
     }} />}
-    <ChatTranscript project={project} active={active} scrollToLatestRequest={scrollToLatestRequest} snapshots={snapshots} messages={messages} pendingMessage={pending?.message ?? null} streamedText={streamedText} agentStatus={agentStatus} isBusy={Boolean(requestId)} execution={execution} hasProfile={Boolean(profile)} settingsDisabled={settingsDisabled} onOpenSettings={onOpenSettings} />
+    <ChatTranscript project={project} active={active} scrollToLatestRequest={scrollToLatestRequest} snapshots={snapshots} messages={messages} pendingMessage={pending?.message ?? null} streamedText={streamedText} agentStatus={stopping ? '正在停止任务…' : agentStatus} isBusy={Boolean(requestId)} execution={execution} hasProfile={Boolean(profile)} settingsDisabled={settingsDisabled} onOpenSettings={onOpenSettings} />
     <div className="composer-wrap" hidden={!active}>
       {requestId && !interaction && planProgress && <div className="plan-waiting plan-progress" role="status"><LoaderCircle size={18} className="plan-progress-spinner" aria-hidden="true" /><span>{planProgress}</span></div>}
       {interaction && <div className="plan-waiting"><span>{interaction.kind === 'questions' ? '计划正在等待你的回答' : '计划已准备好，等待你的批准'}</span><Button variant="outline" onClick={() => setInteractionOpen(true)}>{interaction.kind === 'questions' ? '回答问题' : '审阅计划'}</Button></div>}
@@ -437,9 +451,9 @@ export default function ModelChat({ snapshots, initialIntentMode = 'execute', on
       {active && error && <p className="error" role="alert">{error}</p>}
       {active && notice && <p className="request-notice" role="status">{notice}</p>}
       {active && project && <SandboxStatus key={project} visible={permissionMode === 'auto'} state={currentSandboxState} onInspect={() => setSandboxOpen(true)} />}
-      <ChatComposer active={active} queue={queue} editingId={editingId} queuePaused={queuePaused} onResumeQueue={() => setQueuePaused(false)} onCancelEdit={restoreDraft} onEditQueued={editQueued} onDeleteQueued={deleteQueued} onReorderQueued={reorderQueued} intentMode={intentMode} onIntentChange={changeIntent} permissionMode={permissionMode} onPermissionChange={conversationId ? changePermission : undefined} profile={profile} profiles={availableProfiles} providers={providers} onSelectModel={id => { setSelectedModelId(id); onModelChange?.(id) }} onThinkingChange={changeThinking} prompt={prompt} images={images} skillIds={skillIds} onSkillsChange={setSkillIds} onImagesChange={setImages} isBusy={Boolean(requestId)} hasMessages={messages.length > 0} settingsDisabled={settingsDisabled || permissionChanging || !projectReady} sendWithCtrlEnter={sendWithCtrlEnter} onPromptChange={setPrompt} onOpenSettings={onOpenSettings} onSend={submit} onCancel={() => { void stopRequest().catch(() => setError('取消请求失败，请重试')) }} />
+      <ChatComposer stopping={stopping} active={active} queue={queue} editingId={editingId} queuePaused={queuePaused} onResumeQueue={() => setQueuePaused(false)} onCancelEdit={restoreDraft} onEditQueued={editQueued} onDeleteQueued={deleteQueued} onReorderQueued={reorderQueued} intentMode={intentMode} onIntentChange={changeIntent} permissionMode={permissionMode} onPermissionChange={conversationId ? changePermission : undefined} profile={profile} profiles={availableProfiles} providers={providers} onSelectModel={id => { setSelectedModelId(id); onModelChange?.(id) }} onThinkingChange={changeThinking} prompt={prompt} images={images} skillIds={skillIds} onSkillsChange={setSkillIds} onImagesChange={setImages} isBusy={Boolean(requestId)} hasMessages={messages.length > 0} settingsDisabled={settingsDisabled || permissionChanging || !projectReady} sendWithCtrlEnter={sendWithCtrlEnter} onPromptChange={setPrompt} onOpenSettings={onOpenSettings} onSend={submit} onCancel={() => { void stopRequest().catch(() => setError('取消请求失败，请重试')) }} />
       {active && <ComposerStatus latestReply={matchingStatistics?.reply} subscriptionUsage={subscriptionUsage} openrouterUsage={openrouterUsage} compressionThreshold={compressionThreshold} project={project} profile={profile} contextLimit={providers?.find(item => item.provider === profile?.provider && item.baseUrl === profile?.baseUrl)?.models.find(item => item.id === profile?.model)?.maxContextTokens} messages={contextMessages(messages, compaction)} prompt={prompt} instruction={customPrompt} attachments={images} usage={contextUsage} rateLimits={matchingStatistics?.reply.rateLimits} onOpenProject={() => {
-        if (project) void window.piAgenda.openProjectDirectory(project).catch(() => setError('无法打开项目目录，请检查目录是否存在后重试'))
+        if (project) void window.piRunner.openProjectDirectory(project).catch(() => setError('无法打开项目目录，请检查目录是否存在后重试'))
       }} />}
     </div>
   </section>

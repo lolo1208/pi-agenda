@@ -141,7 +141,7 @@ export class ChatgptService {
     const credential = await this.credentials.read(providerId)
     const account = credential?.type === 'oauth' ? credential.accountId : undefined
     if (typeof account !== 'string' || !account) throw new ModelError('ChatGPT 授权缺少账号信息，请重新登录')
-    return new Headers({ Authorization: `Bearer ${auth.auth.apiKey}`, 'ChatGPT-Account-Id': account, originator: 'pi-agenda', accept: 'application/json' })
+    return new Headers({ Authorization: `Bearer ${auth.auth.apiKey}`, 'ChatGPT-Account-Id': account, originator: 'pi-runner', accept: 'application/json' })
   }
   private async get(endpoint: string): Promise<unknown> {
     const signal = AbortSignal.timeout(15000)

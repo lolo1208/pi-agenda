@@ -16,7 +16,7 @@ case "$(uname -s)" in
 esac
 
 while true; do
-  printf '\nPi Agenda · 行动派 — 命令菜单\n\n'
+  printf '\nPi Runner · 行动派 — 命令菜单\n\n'
   printf '%s\n' \
     '1. 运行开发桌面端' \
     '2. 生成程序图标' \

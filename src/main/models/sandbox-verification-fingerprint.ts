@@ -8,7 +8,7 @@ import type { SandboxBackend } from '../../shared/sandbox'
 
 /** 不记录文件内容；系统、宿主、项目身份和关键目录权限变化时让检测记录失效。 */
 export async function sandboxVerificationFingerprint(options: { runtimeDirectory: string; dataDirectory: string; protectedDirectories: string[] }, backend: SandboxBackend, project: string): Promise<string> {
-  const directories = [...new Set([project, options.runtimeDirectory, options.dataDirectory, ...options.protectedDirectories, ...['.git', '.agents', '.codex', '.aws', '.pi-agenda'].map(name => path.join(project, name))])]
+  const directories = [...new Set([project, options.runtimeDirectory, options.dataDirectory, ...options.protectedDirectories, ...['.git', '.agents', '.codex', '.aws', '.pi-runner'].map(name => path.join(project, name))])]
   const identities = await Promise.all(directories.map(async directory => {
     try { const actual = await realpath(directory), info = await stat(actual); return { path: actual, dev: info.dev, ino: info.ino, created: info.birthtimeMs } }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; return { path: path.resolve(directory), missing: true } }

@@ -36,7 +36,7 @@ export class SkillStore {
   }
 
   async installZip(file: string): Promise<LocalSkill[]> {
-    const temporary = await mkdtemp(path.join(os.tmpdir(), 'pi-agenda-skill-'))
+    const temporary = await mkdtemp(path.join(os.tmpdir(), 'pi-runner-skill-'))
     try {
       const unpacked = path.join(temporary, path.basename(file, path.extname(file)))
       await mkdir(unpacked)

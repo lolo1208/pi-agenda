@@ -4,12 +4,12 @@
 
 | 用途 | 名称 |
 | --- | --- |
-| 产品全名 | Pi Agenda · 行动派 |
-| 英文 / 中文 | Pi Agenda / 行动派 |
-| 包名 / 推荐仓库目录 | `pi-agenda` |
-| application ID | `dev.piagenda.desktop` |
-| 桥接类型 / 对象 | `PiAgendaApi` / `window.piAgenda` |
-| 影子仓库与暂存区 | `~/.pi-agenda/projects/<项目路径哈希>/` |
+| 产品全名 | Pi Runner · 行动派 |
+| 英文 / 中文 | Pi Runner / 行动派 |
+| 包名 / 推荐仓库目录 | `pi-runner` |
+| application ID | `dev.pirunner.desktop` |
+| 桥接类型 / 对象 | `PiRunnerApi` / `window.piRunner` |
+| 影子仓库与暂存区 | `~/.pi-runner/projects/<项目路径哈希>/` |
 
 ## 命名约定
 
@@ -19,7 +19,7 @@
 | --- | --- | --- |
 | 目录、普通 TS、文档 | kebab-case | `shadow-git-manager.ts`、`development-guide.md` |
 | React 组件文件与组件 | PascalCase | `App.tsx`、`ChangedFilesList` |
-| 类、接口、类型 | PascalCase，无 I/T 前缀 | `ShadowGitManager`、`PiAgendaApi` |
+| 类、接口、类型 | PascalCase，无 I/T 前缀 | `ShadowGitManager`、`PiRunnerApi` |
 | 变量、属性、函数 | camelCase，体现职责 | `snapshotManager`、`rendererUrl`、`createCheckpoint` |
 | 布尔状态 | 优先 is/has/can/should | `isBusy`、`canRestore` |
 | 固定模块常量 | UPPER_SNAKE_CASE | `IPC_CHANNELS`、`EXCLUDED_NAMES` |
@@ -27,7 +27,7 @@
 | 测试文件 | 模块名 + `.test.ts(x)` | `shadow-git-manager.test.ts` |
 | IPC 通道 | 领域:动作，使用共享常量 | `snapshot:create` |
 | 数据库（接入时） | snake_case，表用复数 | `tool_calls`、`turn_id` |
-| 自定义环境变量 | PI_AGENDA_ + UPPER_SNAKE_CASE | `PI_AGENDA_LOG_LEVEL` |
+| 自定义环境变量 | PI_RUNNER_ + UPPER_SNAKE_CASE | `PI_RUNNER_LOG_LEVEL` |
 
 工具入口保留惯例，如 `index.ts`、`main.tsx`、`env.d.ts` 和 `electron.vite.config.ts`；外部 API 名称不重写。避免语义模糊的模块级 `data`、`manager`；局部循环索引可用 `i`。
 
@@ -75,6 +75,8 @@ docs/
 `pack:dir` 避免与 pnpm 内置 `pack` 混淆。编译输出 `out/`、打包工作目录 `build-work/` 和最终发行目录 `release/` 不提交，也不进入项目快照。Windows 可用 `pnpm.cmd`。
 
 Windows 推荐在 dev-menu 输入 `a`，或执行 `pnpm dist:win:all`。菜单 `b/c/d` 分别单独导出安装包、便携版、ZIP。三件套仅执行一次构建、目录打包和包内依赖校验；7-Zip 多线程生成 ZIP 与共享 LZMA2 载荷后，两个 NSIS 外壳并行生成，不重复压缩载荷。固定版本 7-Zip 安装包与工具文件按 SHA-256 校验并缓存在 `build-work/tools/`，工具损坏时从已校验的包重新解出。Electron 只保留简体中文与英语，asar 排除映射、类型声明和开发文档，保留许可证；调整排除规则后必须通过包内依赖加载验证。
+
+Windows 导出（含 `pack:dir`）会先使用系统 .NET Framework 的 C# 编译器重新编译 `AppContainerRunner.cs` 并生成校验清单，再校验本地沙箱运行时，避免源码修改后打包旧宿主。包内运行时仍会在打包后再次校验；编译或校验失败时停止导出。
 
 Windows 安装包与便携版首次打包时才自动下载固定版本的 NSIS，并校验 SHA-256；工具保存在 `build-work/tools/nsis-x64-3.13.7507.353/`，后续校验并复用，缺失或损坏时重新下载。首次准备工具还会下载并校验官方 7-Zip `26.04`，借助 electron-builder 的解压工具解出完整 7-Zip，再解出 NSIS；无需系统安装这些工具，也不执行下载的安装程序。仓库仅保留 `scripts/nsis-x64-manifest.json` 的版本与校验信息，`scripts/vendor/` 旧工具目录已忽略，无需提交。macOS 开发和打包不准备这些 Windows 工具。首次下载失败时，检查 GitHub Releases 的网络访问或 `HTTP_PROXY` / `HTTPS_PROXY`（也支持小写形式），然后重新运行打包命令；缓存就绪后可离线复用。
 

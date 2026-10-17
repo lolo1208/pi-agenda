@@ -47,8 +47,8 @@
 新增 C、D 盘多级 `work/projects/rust/shuobei` 项目回归：普通终端返回 `?? 111.bmp`，注入“准备通过、实际 MXC Git 才报 cwd 拒绝”，经过真实 `WindowsSandboxEngine` 的 AppContainer Git 探针和完整边界验证后，同一 Agent 请求自动重试成功，随后 diff 和 rev-parse 正常；父目录枚举与 Git 元数据写入仍被拒绝。注入的是原生错误触发条件，兼容后端执行和隔离验证均为真实操作，不能称为已在故障机器复现全部原始系统行为。
 
 ```powershell
-$env:PI_AGENDA_APPCONTAINER_TEST='1'
-$env:PI_AGENDA_NATIVE_SANDBOX_TEST='1'
+$env:PI_RUNNER_APPCONTAINER_TEST='1'
+$env:PI_RUNNER_NATIVE_SANDBOX_TEST='1'
 pnpm test tests/windows-sandbox-git.test.ts
 ```
 

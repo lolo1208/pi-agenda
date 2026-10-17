@@ -99,7 +99,7 @@ export function useRoundChanges(rounds: AgentSnapshot[], visible: string[], acti
         const key = roundChangesKey(next)
         publish(key, { status: 'loading' })
         try {
-          const files = await window.piAgenda.getChanges(next.before.hash, next.after.hash, next.project)
+          const files = await window.piRunner.getChanges(next.before.hash, next.after.hash, next.project)
           if (valid() && input.current.rounds.some(round => roundChangesKey(round) === key)) publish(key, { status: 'loaded', files })
           else publish(key, { status: 'waiting' })
         } catch (error) {
