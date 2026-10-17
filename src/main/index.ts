@@ -8,6 +8,7 @@ import { ModelSettingsStore } from './models/model-settings-store'
 import { ModelService } from './models/model-service'
 import { PiAgentService } from './models/pi-agent-service'
 import { registerIpcHandlers } from './ipc-handlers'
+import { closeAllNotifications } from './notifications'
 import { ChatgptCredentials } from './models/chatgpt-credentials'
 import { ChatgptService } from './models/chatgpt-service'
 import { OpenrouterClient } from './models/openrouter-client'
@@ -64,6 +65,7 @@ function showMainWindow(): void {
 function prepareToQuit(): void {
   if (isQuitting) return
   isQuitting = true
+  closeAllNotifications()
   tray?.destroy()
   tray = null
   modelService?.cancelAll()

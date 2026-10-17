@@ -4,6 +4,7 @@ import path from 'node:path'
 import type { TerminalSandbox } from './terminal-sandbox'
 import { ModelError } from './model-validation'
 import { SandboxCompatibilityError } from './sandbox-compatibility-error'
+import { literalCommand } from './windows-command-parser'
 
 const failureMarker = 'PI_AGENDA_GIT_CWD_FAILED'
 
@@ -13,10 +14,33 @@ export function gitWorkingDirectoryDenied(output: string): boolean {
 }
 
 /** 严格限制可自动重试的脚本，不接受参数扩展、重定向、管道或任意其他命令。 */
-export function retryableGitInspection(command: string): boolean {
-  if (command.length > 1024) return false
+export function parseGitInspection(command: string): string[][] | undefined {
+  if (command.length > 16000) return undefined
   const lines = command.trim().split(/;|\r?\n/).map(line => line.trim()).filter(Boolean)
-  return lines.length > 0 && lines.length <= 3 && lines.every(line => /^git(?:\.exe)?[ \t]+(?:status[ \t]+--short|diff[ \t]+(?:--no-ext-diff|--stat|--cached[ \t]+--stat)|rev-parse[ \t]+--show-toplevel)$/.test(line))
+  if (!lines.length || lines.length > 32) return undefined
+  const queries: string[][] = []
+  for (const line of lines) {
+    if (/^['"]/.test(line)) return undefined
+    const tokens = literalCommand(line)
+    if (!tokens || !/^git(?:\.exe)?$/i.test(tokens[0])) return undefined
+    const [, subcommand, ...args] = tokens
+    const options = subcommand === 'status'
+      ? ['--short', '-s', '--branch', '-b', '-sb', '--porcelain', '--porcelain=v1', '--porcelain=v2', '--untracked-files=no', '--untracked-files=normal', '--untracked-files=all', '-uno', '-unormal', '-uall']
+      : subcommand === 'diff' ? ['--cached', '--staged', '--check', '--stat', '--numstat', '--shortstat', '--name-only', '--name-status', '--patch', '-p', '--no-ext-diff', '--no-textconv', '--color=never'] : []
+    if (subcommand === 'rev-parse') { if (args.length !== 1 || args[0] !== '--show-toplevel') return undefined }
+    else {
+      if (!options.length) return undefined
+      const separator = args.indexOf('--'), flags = separator < 0 ? args : args.slice(0, separator)
+      if (!flags.every(value => options.includes(value))) return undefined
+      if (separator >= 0 && args.slice(separator + 1).some(value => path.win32.isAbsolute(value) || value.split(/[\\/]/).includes('..') || value.includes(':'))) return undefined
+    }
+    queries.push([subcommand, ...args])
+  }
+  return queries
+}
+
+export function retryableGitInspection(command: string): boolean {
+  return parseGitInspection(command) !== undefined
 }
 
 /** 在真实项目 cwd 验证 Git；探针仓库仅存在于隔离进程的临时区，不扫描用户文件。 */

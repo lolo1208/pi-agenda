@@ -77,6 +77,15 @@ export default function App(): React.JSX.Element {
   }
   useEffect(loadSettings, [])
   useEffect(() => window.piAgenda.onWindowMaximizedChange?.(setIsMaximized), [])
+  // 点击通知时显示主窗口并选中对应会话；若正在设置页则先返回工作台。
+  // 会话已被删除或不存在时只保持已打开的程序，不提示错误。
+  useEffect(() => window.piAgenda.onNotificationActivate?.(conversationId => {
+    if (typeof conversationId !== 'string' || !conversationId) return
+    const task = tasks.find(item => item.id === conversationId)
+    if (!task) return
+    setSettingsSection(null)
+    selectTask(task)
+  }), [tasks, selectTask])
   useEffect(() => {
     const query = window.matchMedia('(prefers-color-scheme: dark)')
     const update = (): void => setSystemPrefersDark(query.matches)
@@ -92,12 +101,18 @@ export default function App(): React.JSX.Element {
     setPreferences(next)
     try { localStorage.setItem('pi-agenda.preferences', JSON.stringify({ ...next, sendWithCtrlEnterVersion: 1 })) } catch { setError('偏好设置未能保存，重启后将恢复默认值。请检查本地存储。') }
   }
+  /** 按开关发送系统通知；macOS 走系统通知，Windows 走桌面右下角气泡。 */
+  const sendNotification = (kind: 'success' | 'failure' | 'input', title: string, body: string, conversationId: string): void => {
+    if (!preferences.systemNotifications) return
+    // 兼容尚未注入通知接口的测试环境。
+    void window.piAgenda.showNotification?.({ kind, title, body, conversationId })?.catch(() => {})
+  }
   const activeProfile = settings?.profiles.find(item => item.id === settings.activeProfileId)
   // 最近交流的对话先分组，同时让其所属项目排在列表顶部。
   const filtered = useMemo(() => {
     const search = query.trim().toLowerCase()
     return tasks.filter(item => `${item.title} ${item.preview} ${item.project ?? ''}`.toLowerCase().includes(search))
-      .sort((left, right) => (right.updatedAt ?? 0) - (left.updatedAt ?? 0))
+      .sort((left, right) => (right.lastSentAt ?? right.updatedAt ?? 0) - (left.lastSentAt ?? left.updatedAt ?? 0))
   }, [tasks, query])
   const knownProjects = useMemo(() => [...new Set([...savedProjects, ...tasks.map(item => item.project).filter((root): root is string => Boolean(root))])], [tasks, savedProjects])
   const groupedTasks = useMemo(() => {
@@ -157,14 +172,15 @@ export default function App(): React.JSX.Element {
       <main className="conversation" ref={conversationRef}>
         <header className="conversation-header"><Button className="icon-button" aria-label={toolsOpen ? '收起工具栏' : '展开工具栏'} aria-expanded={toolsOpen} onClick={() => setToolsOpen(value => !value)}><PanelRightOpen size={18} /></Button></header>
         {!currentTask && <section className="no-task-state"><FolderOpen size={30} /><h1>从一个项目开始</h1><p>为新对话选择已有项目，或添加一个新的目录。</p><Button className="project-new-button conversation-action-button" onClick={() => setProjectPickerOpen(true)}><MessageCirclePlus size={17} aria-hidden="true" />新建对话</Button></section>}
-        {mountedTasks.map(task => <div className="task-chat" key={task.id} hidden={task.id !== currentTask?.id}><ModelChat snapshots={task.agentSnapshots} active={task.id === currentTask?.id && settingsSection === null} projectReady={!pendingProjectDirectories[task.project ?? ''] && Boolean(task.project && [...readyProjects].some(root => sameSandboxProject(root, task.project!)))} projectCurrent={!isBusy && Boolean(project && task.project && sameSandboxProject(project, task.project))} conversationId={task.id} initialIntentMode={task.intentMode} onIntentChange={intentMode => setTasks(items => items.map(item => item.id === task.id ? { ...item, intentMode } : item))} initialPermissionMode={task.permissionMode} onPermissionChange={permissionMode => setTasks(items => items.map(item => item.id === task.id ? { ...item, permissionMode } : item))} compressionThreshold={preferences.compressionThreshold} initialCompaction={task.compaction} onCompactionChange={compaction => setTasks(items => items.map(item => item.id === task.id ? { ...item, compaction } : item))} initialModelId={task.modelId} onModelChange={modelId => setTasks(items => items.map(item => item.id === task.id && item.modelId !== modelId ? { ...item, modelId } : item))} customPrompt={composeCustomPrompt(task.prompt, task.project ? projectMeta[task.project]?.prompt : undefined, preferences.customPrompt)} project={task.project} providers={settings?.providers} initialMessages={task.messages} initialDraft={task.draft} initialDraftImages={task.draftImages} initialDraftSkillIds={task.draftSkillIds} initialQueue={task.queuedMessages} initialQueuePaused={task.queuePaused} initialQueueEdit={task.queueEdit} onQueueChange={(queuedMessages, queuePaused, queueEdit) => setTasks(items => items.map(item => item.id === task.id && (item.queuedMessages !== queuedMessages || item.queuePaused !== queuePaused || item.queueEdit !== queueEdit) ? { ...item, queuedMessages, queuePaused, queueEdit } : item))} onDraftChange={(draft, draftImages, draftSkillIds) => setTasks(items => items.map(item => item.id === task.id && (item.draft !== draft || item.draftImages !== draftImages || item.draftSkillIds !== draftSkillIds) ? { ...item, draft, draftImages, draftSkillIds } : item))} profile={activeProfile} profiles={settings?.profiles} onModelSettingsChange={setSettings} onWaitingForInputChange={waiting => {
+        {mountedTasks.map(task => <div className="task-chat" key={task.id} hidden={task.id !== currentTask?.id}><ModelChat snapshots={task.agentSnapshots} active={task.id === currentTask?.id && settingsSection === null} projectReady={!pendingProjectDirectories[task.project ?? ''] && Boolean(task.project && [...readyProjects].some(root => sameSandboxProject(root, task.project!)))} projectCurrent={!isBusy && Boolean(project && task.project && sameSandboxProject(project, task.project))} conversationId={task.id} initialIntentMode={task.intentMode} onIntentChange={intentMode => setTasks(items => items.map(item => item.id === task.id ? { ...item, intentMode } : item))} initialPermissionMode={task.permissionMode} onPermissionChange={permissionMode => setTasks(items => items.map(item => item.id === task.id ? { ...item, permissionMode } : item))} compressionThreshold={preferences.compressionThreshold} initialCompaction={task.compaction} onCompactionChange={compaction => setTasks(items => items.map(item => item.id === task.id ? { ...item, compaction } : item))} initialModelId={task.modelId} onModelChange={modelId => setTasks(items => items.map(item => item.id === task.id && item.modelId !== modelId ? { ...item, modelId } : item))} customPrompt={composeCustomPrompt(task.prompt, task.project ? projectMeta[task.project]?.prompt : undefined, preferences.customPrompt)} project={task.project} providers={settings?.providers} initialMessages={task.messages} initialDraft={task.draft} initialDraftImages={task.draftImages} initialDraftSkillIds={task.draftSkillIds} initialQueue={task.queuedMessages} initialQueuePaused={task.queuePaused} initialQueueEdit={task.queueEdit} onQueueChange={(queuedMessages, queuePaused, queueEdit) => setTasks(items => items.map(item => item.id === task.id && (item.queuedMessages !== queuedMessages || item.queuePaused !== queuePaused || item.queueEdit !== queueEdit) ? { ...item, queuedMessages, queuePaused, queueEdit } : item))} onDraftChange={(draft, draftImages, draftSkillIds) => setTasks(items => items.map(item => item.id === task.id && (item.draft !== draft || item.draftImages !== draftImages || item.draftSkillIds !== draftSkillIds) ? { ...item, draft, draftImages, draftSkillIds } : item))} profile={activeProfile} profiles={settings?.profiles} onModelSettingsChange={setSettings} onWaitingForInputChange={(waiting, reason) => {
           setWaitingTaskIds(items => waiting ? items.includes(task.id) ? items : [...items, task.id] : items.includes(task.id) ? items.filter(id => id !== task.id) : items)
+          if (waiting && reason) sendNotification('input', task.title, reason === 'plan-question' ? '计划正在等待你的回答' : reason === 'plan-review' ? '计划已准备好，等待你的批准' : '需要你批准一个操作', task.id)
           if (waiting) setCollapsedProjects(items => items.filter(root => root !== (task.project ?? UNLINKED_PROJECT_LABEL)))
-        }} onReplyComplete={() => {
+        }} onTaskEnd={ok => sendNotification(ok ? 'success' : 'failure', task.title, ok ? '任务已完成' : '任务执行失败', task.id)} onReplyComplete={() => {
           const unreadCompletion = task.id !== currentTask?.id || settingsSection !== null || document.hidden
           setTasks(items => items.map(item => item.id === task.id ? { ...item, unreadCompletion } : item))
           setCollapsedProjects(items => items.filter(root => root !== (task.project ?? UNLINKED_PROJECT_LABEL)))
-        }} onBusyChange={busy => { setBusyTasks(items => busy ? [...items.filter(id => id !== task.id), task.id] : items.filter(id => id !== task.id)); if (busy) setTasks(items => items.map(item => item.id === task.id ? { ...item, updatedAt: Date.now() } : item)) }} onOpenSettings={section => setSettingsSection(section ?? 'models')} sendWithCtrlEnter={preferences.sendWithCtrlEnter} onMessagesChange={(messages, restored) => setTasks(items => items.map(item => item.id === task.id ? { ...item, messages, updatedAt: restored ? item.updatedAt : Date.now(), title: item.titleEdited ? item.title : messages.find(message => message.role === 'user')?.content.slice(0, 36) || (messages.some(message => message.images?.length) ? '附件对话' : '新建对话'), preview: messages.at(-1)?.content.slice(0, 90) ?? '开始一段新的对话' } : item))} /></div>)}
+        }} onBusyChange={busy => { setBusyTasks(items => busy ? [...items.filter(id => id !== task.id), task.id] : items.filter(id => id !== task.id)); if (busy) setTasks(items => items.map(item => item.id === task.id ? { ...item, updatedAt: Date.now(), lastSentAt: Date.now() } : item)) }} onOpenSettings={section => setSettingsSection(section ?? 'models')} sendWithCtrlEnter={preferences.sendWithCtrlEnter} onMessagesChange={(messages, restored) => setTasks(items => items.map(item => item.id === task.id ? { ...item, messages, updatedAt: restored ? item.updatedAt : Date.now(), title: item.titleEdited ? item.title : messages.find(message => message.role === 'user')?.content.slice(0, 36) || (messages.some(message => message.images?.length) ? '附件对话' : '新建对话'), preview: messages.at(-1)?.content.slice(0, 90) ?? '开始一段新的对话' } : item))} /></div>)}
         {error && <p role="alert" className="error">{error}</p>}
         {settingsError && <p role="alert" className="error">{settingsError}<Button onClick={loadSettings}>重新读取设置</Button></p>}
 

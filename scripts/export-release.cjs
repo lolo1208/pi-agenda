@@ -3,20 +3,22 @@ const path = require('node:path')
 const { build, createTargets, Platform } = require('electron-builder')
 const { packageWindows, assertX64, getCompiler } = require('./native-windows.cjs')
 const { verifyPackagedRuntime } = require('./verify-packaged-runtime.cjs')
+const { getSevenZip, compressDirectory } = require('./seven-zip.cjs')
 
 const projectDir = path.resolve(__dirname, '..')
 
 function getExportOptions(mode, host = process.platform) {
   const options = {
     win: { host: 'win32', platform: Platform.WINDOWS, target: 'nsis' },
+    'win-all': { host: 'win32', platform: Platform.WINDOWS, target: 'dir' },
     'win-portable': { host: 'win32', platform: Platform.WINDOWS, target: 'portable' },
     'win-zip': { host: 'win32', platform: Platform.WINDOWS, target: 'zip' },
     mac: { host: 'darwin', platform: Platform.MAC, target: 'dmg' },
     dir: { host, platform: Platform.current(), target: 'dir' },
   }
-  if (!Object.hasOwn(options, mode)) throw new Error('请选择有效的导出类型：win、win-portable、win-zip、mac、dir。')
+  if (!Object.hasOwn(options, mode)) throw new Error('请选择有效的导出类型：win-all、win、win-portable、win-zip、mac、dir。')
   const option = options[mode]
-  if (option.host !== host) throw new Error('请在对应系统上导出发行包：Windows 使用 win / win-portable / win-zip，macOS 使用 mac。')
+  if (option.host !== host) throw new Error('请在对应系统上导出发行包：Windows 使用 win-all / win / win-portable / win-zip，macOS 使用 mac。')
   return option
 }
 
@@ -39,31 +41,51 @@ async function copyArtifacts(artifacts, destination) {
 }
 
 async function exportRelease(mode) {
+  const started = performance.now()
   const option = getExportOptions(mode)
   const stagingDir = path.join(projectDir, 'build-work', mode)
   const destination = path.join(projectDir, 'release')
-  const nativeWindows = mode === 'win' || mode === 'win-portable'
+  const windowsRelease = ['win-all', 'win', 'win-portable', 'win-zip'].includes(mode)
+  const nativeWindows = windowsRelease && mode !== 'win-zip'
   const config = { directories: { output: stagingDir }, afterPack: verifyPackagedRuntime }
   if (option.platform === Platform.WINDOWS) {
     // 直接使用已安装的 Electron，避免依赖下载缓存或联网获取运行时。
     const electronDist = path.join(path.dirname(require.resolve('electron/package.json')), 'dist')
     await assertX64(path.join(electronDist, 'electron.exe'))
     if (nativeWindows) await getCompiler(projectDir)
+    if (windowsRelease) await getSevenZip(projectDir)
     config.electronDist = electronDist
     config.npmRebuild = false
     // 图标与版本信息仍由本地资源编辑器处理，不查询签名证书或下载签名工具。
     config.win = { signExecutable: false }
-    if (mode === 'win-zip') config.win.artifactName = 'pi-agenda-portable.zip'
   }
   let artifacts = await build({
     projectDir,
-    targets: createTargets([option.platform], nativeWindows ? 'dir' : option.target, 'x64'),
+    targets: createTargets([option.platform], windowsRelease ? 'dir' : option.target, 'x64'),
     publish: 'never',
     config,
   })
 
-  if (nativeWindows) {
-    artifacts = [await packageWindows({ projectDir, stagingDir, portable: mode === 'win-portable' })]
+  if (windowsRelease) {
+    const tasks = []
+    if (nativeWindows) {
+      tasks.push((async () => {
+        const payload = await compressDirectory({ projectDir, stagingDir })
+        const variants = mode === 'win-all' ? [false, true] : [mode === 'win-portable']
+        const results = await Promise.allSettled(variants.map(portable => packageWindows({ projectDir, stagingDir, portable, payload })))
+        const failed = results.find(result => result.status === 'rejected')
+        if (failed) throw failed.reason
+        return results.map(result => result.value)
+      })())
+    }
+    if (mode === 'win-all' || mode === 'win-zip') {
+      tasks.push(compressDirectory({ projectDir, stagingDir, zip: true }).then(file => [file]))
+    }
+    // 等待全部子进程结束后再报告失败，避免后台仍在写入产物。
+    const results = await Promise.allSettled(tasks)
+    const failed = results.find(result => result.status === 'rejected')
+    if (failed) throw failed.reason
+    artifacts = results.flatMap(result => result.value)
   }
 
   // release 仅平铺发行文件；目录版、更新文件和调试配置留在 build-work。
@@ -73,6 +95,7 @@ async function exportRelease(mode) {
   }
   await copyArtifacts(artifacts, destination)
   console.log(`\n发行内容已导出到：${destination}`)
+  console.log(`打包与导出用时：${((performance.now() - started) / 1000).toFixed(1)} 秒（不含前置编译）`)
 }
 
 if (require.main === module) {

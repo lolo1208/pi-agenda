@@ -27,6 +27,8 @@ export interface Conversation {
   preview: string
   project: string | null
   updatedAt?: number
+  /** 最后一次用户发送消息的时间，会话列表按它从新到旧排序。 */
+  lastSentAt?: number
   /** 已成功完成、但用户尚未查看的回复。 */
   unreadCompletion?: boolean
   messages?: ChatMessage[]

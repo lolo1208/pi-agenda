@@ -3,10 +3,14 @@ import { NativeTerminalSandbox, type TerminalSandbox } from './terminal-sandbox'
 import { AppContainerSandbox } from './appcontainer-sandbox'
 import { sandboxVerificationFingerprint } from './sandbox-verification-fingerprint'
 import { ModelError } from './model-validation'
-import { checkGitWorkingDirectory } from './git-working-directory-check'
+import { checkGitWorkingDirectory, retryableGitInspection } from './git-working-directory-check'
+import { developerCommand } from './developer-command-policy'
+import { literalCommand } from './windows-command-parser'
 
 /** 不同 Windows 版本共用真实检测与错误处理，不再启动要求全盘读取的旧兼容后端。 */
 export class WindowsSandboxEngine implements TerminalSandbox {
+  readonly failClosed = true
+  readonly developerTools = true
   private backend: SandboxBackend = 'mxc'
   private native: NativeTerminalSandbox
   private appcontainer: AppContainerSandbox
@@ -38,5 +42,28 @@ export class WindowsSandboxEngine implements TerminalSandbox {
     await pending
     signal?.throwIfAborted()
   }
-  exec(command: string, cwd: string, options: Parameters<TerminalSandbox['exec']>[2]): Promise<{ exitCode: number }> { return this.selected.exec(command, cwd, options) }
+  async exec(command: string, cwd: string, options: Parameters<TerminalSandbox['exec']>[2]): Promise<{ exitCode: number }> {
+    if (retryableGitInspection(command)) return this.appcontainer.exec(command, cwd, options)
+    if (await developerCommand(command, options.signal)) {
+      const parts = command.trim().split(/;|\r?\n/).map(value => value.trim()).filter(Boolean)
+      if (parts.length > 1 && parts.length <= 32 && parts.every(part => literalCommand(part))) {
+        const deadline = options.timeout === undefined ? undefined : Date.now() + options.timeout * 1000
+        let result = { exitCode: 0 }
+        for (const part of parts) {
+          options.signal?.throwIfAborted()
+          const timeout = deadline === undefined ? undefined : Math.max(0, (deadline - Date.now()) / 1000)
+          if (timeout === 0) throw new ModelError('开发命令组合执行超时，已停止剩余操作')
+          result = await this.exec(part, cwd, { ...options, timeout })
+        }
+        return result
+      }
+      try { await this.native.prepare(cwd, options.signal, true) }
+      catch (error) {
+        options.signal?.throwIfAborted()
+        throw new ModelError(`开发工具隔离环境准备失败，用户命令尚未执行：${error instanceof Error ? error.message : String(error)}。请排查系统沙箱兼容性；不会改为完整本机执行`)
+      }
+      return this.native.exec(command, cwd, options)
+    }
+    return this.selected.exec(command, cwd, options)
+  }
 }

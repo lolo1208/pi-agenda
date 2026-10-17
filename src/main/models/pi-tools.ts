@@ -3,12 +3,14 @@ import path from 'node:path'
 import { createReadToolDefinition, createEditToolDefinition, createWriteToolDefinition, createLsToolDefinition, createFindToolDefinition, createGrepToolDefinition, createPowerShellToolDefinition, createBashToolDefinition, type ToolDefinition } from '@earendil-works/pi-coding-agent'
 import { ModelError } from './model-validation'
 import type { PermissionMode } from '../../shared/models'
-import { commandApprovalReason, highRiskFileMutation, safeFileCommand, safeLocationCommand } from './tool-permissions'
+import { commandApprovalReason, highRiskFileMutation, readOnlyCommand, safeFileCommand, safeLocationCommand } from './tool-permissions'
 import { createDeleteToolDefinition, validateDeleteFile } from './delete-tool'
 import { filesystemToolDefinitions, validateOrdinaryPath, validateOrdinaryTree } from './filesystem-tools'
 import type { TerminalSandbox } from './terminal-sandbox'
 import { WindowsCommandRecovery, withCommandRecovery } from './windows-command-recovery'
 import { delegateWindowsFileCommand } from './windows-file-command'
+import { developerCommand } from './developer-command-policy'
+import { developerToolReads } from './developer-tool-access'
 
 const fileMutations = new Set(['edit', 'write', 'delete', 'mkdir', 'rmdir', 'move', 'copy'])
 const treeOperations = new Set(['rmdir', 'move', 'copy'])
@@ -123,8 +125,8 @@ export function piProjectTools(root: string, beforeMutation: () => Promise<void>
   const definitions: ToolDefinition<any, any>[] = [createReadToolDefinition(root), createEditToolDefinition(root), createWriteToolDefinition(root), createDeleteToolDefinition(), ...filesystemToolDefinitions(protectPath), createLsToolDefinition(root), createFindToolDefinition(root), createGrepToolDefinition(root), process.platform === 'win32' ? createPowerShellToolDefinition(root) : createBashToolDefinition(root)]
   return definitions.map(tool => ({ ...tool,
     ...(['bash', 'powershell'].includes(tool.name) ? {
-      description: `${tool.description} 受限自动模式下在系统沙箱内运行，项目外访问和联网会被拦截。项目内复制、移动、删除及目录操作优先使用 copy、move、delete、mkdir、rmdir 专用文件工具。Windows 工作目录映射为 Project:，原生程序的工作目录仍为项目路径。Windows PowerShell 5 的 Copy-Item、Move-Item、Remove-Item 可能额外读取项目祖先而失败；应用会自动将语义一致的简单命令转交文件工具，复合脚本可使用 System.IO API。宿主 PATH 中的工具安装目录也可能不可访问，尤其是用户目录内的 pnpm、Python、版本管理器；AppContainer 下部分系统安装的 Node.js 也可能无法访问。“无法识别命令”不能证明本机未安装，绝对路径也不能绕过访问限制。优先使用已有的项目内运行时；不得擅自下载安装或复制宿主工具、放开用户目录或整盘权限。子进程与缓存、全局配置访问同样受限，npm install 等联网操作需要另行批准，不能将其归为模型授权故障。应用会诊断有限运行时的命令发现问题，优先使用已有项目内运行时；只有确认原操作尚未开始且本机已安装工具时，才自动请求本次完整本机执行批准并在批准后继续。工具结果中的 partial-or-unknown 表示可能已部分执行，先核对结果，只完成剩余操作；denied/awaiting-approval 不得重复申请。其他明确需要项目外访问或联网的剩余操作可以设置 outsideSandbox=true，应用将请求本次批准。不要因普通语法或程序错误申请脱离沙箱。`,
-      parameters: { ...tool.parameters, properties: { ...tool.parameters.properties, outsideSandbox: { type: 'boolean', description: '显式申请脱离系统沙箱执行，需要用户批准；默认 false' } } }
+      description: `${tool.description} 受限自动模式在系统沙箱内运行项目命令，调用已安装的全局开发工具、测试子进程和联网无需审批；项目外普通文件的读写仍需批准。不要仅因绝对工具路径、复合命令、测试或联网设置 outsideSandbox=true。只有确需项目外普通文件访问时才同时设置 externalFileAccess=true 和 outsideSandbox=true。全局工具的安装文件只读，用户配置和缓存使用独立临时区；缺少依赖、普通程序错误或沙箱兼容性错误不等于模型授权故障，也不自动申请完整本机权限。项目内文件操作优先使用 copy、move、delete、mkdir、rmdir 专用工具。Windows PowerShell 5 的路径命令可能探测项目祖先，简单文件操作会自动转交专用工具。partial-or-unknown 表示可能已部分执行，先核对结果，只完成剩余操作，不重放整段脚本；denied/awaiting-approval 不得重复申请相同授权。`,
+      parameters: { ...tool.parameters, properties: { ...tool.parameters.properties, outsideSandbox: { type: 'boolean', description: '申请沙箱外执行。开发工具调用、测试子进程和联网应在沙箱内免审批执行；项目外普通文件访问须同时明确 externalFileAccess。' }, externalFileAccess: { type: 'boolean', description: '本次命令确需读取或写入项目外普通文件时设为 true，受限自动模式需要批准。全局工具及其安装依赖不属于普通文件访问。' } } }
     } : {}),
     ...(['find', 'grep'].includes(tool.name) ? { description: `${tool.name === 'find' ? '按 glob 查找普通文件和目录' : '按模式搜索普通文件内容'}；不跟随链接，排除 Git 元数据、应用内部数据和 node_modules。` } : {}),
     execute: async (id, args, signal, update, context) => {
@@ -139,7 +141,11 @@ export function piProjectTools(root: string, beforeMutation: () => Promise<void>
       input.path = await projectToolPath(root, typeof input.path === 'string' ? input.path : '.')
     } else if (['bash', 'powershell'].includes(tool.name)) {
       const command = String(input.command ?? '')
-      if (permissions.mode === 'auto') {
+      const development = permissions.mode === 'auto' && !!permissions.project && await developerCommand(command, signal)
+      // 模型不得仅因工具位于项目外、测试或联网而升级整条命令的权限。
+      if (development && input.externalFileAccess !== true) input.outsideSandbox = false
+      if (input.externalFileAccess === true) input.outsideSandbox = true
+      if (permissions.mode === 'auto' && input.externalFileAccess !== true) {
         const previous = recovery.previous(command)
         if (previous) return previous
       }
@@ -199,7 +205,8 @@ export function piProjectTools(root: string, beforeMutation: () => Promise<void>
           approve: (actualCommand, runtime, explanation) => permissions.approve(id, tool.name, { ...input, command: actualCommand, originalCommand: command, runtime, outsideSandbox: true }, explanation, signal),
           execute: async (actualCommand, outside) => {
             signal?.throwIfAborted()
-            await beforeMutation()
+            // 只读命令不修改项目文件，不需要为回滚保存修改前快照。
+            if (!readOnlyCommand(command)) await beforeMutation()
             signal?.throwIfAborted()
             return (outside ? tool : executionTool).execute(id, { ...input, command: actualCommand }, signal, update, context)
           }
@@ -220,6 +227,7 @@ export function piProjectTools(root: string, beforeMutation: () => Promise<void>
       const target = await canonicalToolPath(requestedPath)
       const project = permissions.project ? await canonicalToolPath(permissions.project) : undefined
       const protectedDirectories = await Promise.all(permissions.protectedDirectories.map(canonicalToolPath))
+      const toolReads = !mutation && permissions.mode === 'auto' && project && ['read', 'stat'].includes(tool.name) ? await developerToolReads(project, protectedDirectories) : []
       let reason = mutation && permissions.mode === 'default' ? '“每次询问”模式下，文件和目录修改需要逐次确认' : undefined
       const checkPath = async (value: string): Promise<void> => {
         const canonical = await canonicalToolPath(value)
@@ -227,7 +235,7 @@ export function piProjectTools(root: string, beforeMutation: () => Promise<void>
         if (protectedDirectories.some(directory => within(directory, value))) throw new ModelError('工具不能访问应用内部会话、凭据或快照数据')
         if (value.split(path.sep).some(part => hiddenProjectData(part))) throw new ModelError('文件工具不能访问 Git 元数据或应用内部数据')
         if (treeOperations.has(tool.name) && (value === project || value === path.parse(value).root)) throw new ModelError('工具不能删除、移动或复制项目根目录或系统根目录')
-        if (!(project && within(project, value)) && permissions.mode !== 'full') reason = '目标文件或目录位于当前项目外，需要确认本次访问'
+        if (!(project && within(project, value)) && !toolReads.some(directory => within(directory, value)) && permissions.mode !== 'full') reason = '目标文件或目录位于当前项目外，需要确认本次访问'
         if (mutation && permissions.mode !== 'full' && highRiskFileMutation(value)) reason = '该路径涉及系统、登录或自动启动配置，需要确认本次修改'
       }
       let destination: string | undefined
@@ -257,7 +265,7 @@ export function piProjectTools(root: string, beforeMutation: () => Promise<void>
       input.path = target
       if (['find', 'grep'].includes(tool.name)) return restrictedSearch(tool.name, input, await Promise.all(permissions.protectedDirectories.map(canonicalToolPath)), signal)
     }
-    if (fileMutations.has(tool.name) || ['bash', 'powershell'].includes(tool.name)) await beforeMutation()
+    if (fileMutations.has(tool.name) || (['bash', 'powershell'].includes(tool.name) && !readOnlyCommand(String(input.command ?? '')))) await beforeMutation()
     signal?.throwIfAborted()
     if (revalidate) await revalidate()
     return executionTool.execute(id, input, signal, update, context)

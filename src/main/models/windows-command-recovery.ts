@@ -74,6 +74,8 @@ export class WindowsCommandRecovery {
     const key = tokens ? JSON.stringify(tokens) : command.trim()
     const previous = this.blocked.get(key)
     if (previous) return previous
+    // 开发后端已负责工具安装文件的只读访问；仍保留部分执行与禁止自动重放的结果管理。
+    if (sandbox.developerTools) return this.execute(options, key, command, false)
     let actual = command, repaired = false
     const name = tokens?.[0]
     // 裸字符串不是 PowerShell 调用；仅诊断有限的原生程序，绝不拆开复合脚本。
@@ -105,22 +107,9 @@ export class WindowsCommandRecovery {
         } else {
           const originalError = `隔离进程无法定位命令：${name}`
           if (!host) return withCommandRecovery(failure(`${originalError}；宿主 PATH 中也未找到可用程序。请配置已安装工具的路径，或安装工具后继续。`), { kind: 'runtime-access', state: 'unresolved', execution: 'not-started', attempts: 0, originalError, message: '尚不能确认工具已安装，不申请扩权，也不自动下载安装。' })
-          const actualCommand = `& ${[host, ...tokens.slice(1)].map(quote).join(' ')}`
-          const reason = `本机已找到 ${host}，但隔离进程无法访问；原命令尚未启动。没有可用的项目内运行时。本次批准后将脱离沙箱，以当前用户的完整本机权限执行所示命令（包含项目外文件和网络访问能力），并非仅授权该安装目录。`
-          const pending = this.blocked.get(key)
-          if (pending) return pending
-          this.blocked.set(key, withCommandRecovery(failure('相同命令正在等待本机执行批准，请勿重复申请。'), { kind: 'runtime-access', state: 'awaiting-approval', execution: 'not-started', attempts: 0, originalError, message: reason }))
-          onRecovery?.('已定位到本机工具，但沙箱无法访问；正在请求本次执行批准')
-          try { await options.approve(actualCommand, host, reason) }
-          catch (error) {
-            const denied = withCommandRecovery(failure(error instanceof Error ? error.message : '本次执行未获批准'), { kind: 'runtime-access', state: 'denied', execution: 'not-started', attempts: 0, originalError, message: '原命令未执行；不再自动申请相同授权，请改用项目内工具或由用户调整方案。' })
-            this.blocked.set(key, denied)
-            signal?.throwIfAborted()
-            return denied
-          }
-          signal?.throwIfAborted()
-          onRecovery?.('本次执行已获批准，正在继续原任务')
-          return this.execute(options, key, actualCommand, true, originalError)
+          const result = withCommandRecovery(failure(`${originalError}；本机已找到 ${host}，但当前隔离后端无法访问该工具。原命令未执行，请排查开发工具隔离环境。`), { kind: 'runtime-access', state: 'unresolved', execution: 'not-started', attempts: 0, originalError, message: '工具调用无需审批，不申请或静默使用完整本机权限。' })
+          this.blocked.set(key, result)
+          return result
         }
       }
     }

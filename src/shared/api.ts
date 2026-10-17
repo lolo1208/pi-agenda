@@ -3,8 +3,13 @@ export interface Checkpoint { hash: string; createdAt: string; label: string }
 export interface ChangedFile { path: string; status: 'A' | 'M' | 'D'; additions: number; deletions: number; binary: boolean }
 export interface FileDiff { path: string; before: string; after: string; binary: boolean; hunks?: string[] }
 export type FileAction = 'copy-file' | 'copy-path' | 'open-directory' | 'open-file'
+/** 通知类型：任务成功、任务失败、等待用户输入；界面按类型使用不同图标。 */
+export type NotificationKind = 'success' | 'failure' | 'input'
+export interface AppNotification { kind: NotificationKind; title: string; body: string; /** 点击通知后需要选中的会话。 */ conversationId?: string }
 import type { ConversationState } from './conversations'
 export interface PiAgendaApi {
+  showNotification(notification: AppNotification): Promise<void>
+  onNotificationActivate(callback: (conversationId: string) => void): () => void
   readCodePreview(project: string, path: string, ranges: import('./code-preview').CodeLineRange[], snapshotId?: string): Promise<import('./code-preview').CodePreview>
   getSkills(): Promise<ModelResult<import('./skills').LocalSkill[]>>
   installSkill(source?: 'zip' | 'directory'): Promise<ModelResult<import('./skills').LocalSkill[] | null>>
@@ -45,6 +50,7 @@ export interface PiAgendaApi {
   openProjectDirectory(path: string): Promise<void>
   removeProject(path: string): Promise<void>
   createCheckpoint(label: string): Promise<Checkpoint>
+  /** 界面展示用改动列表，已过滤项目 .gitignore 排除项；快照与回滚仍使用完整范围。 */
   getChanges(base: string, current: string, project?: string): Promise<ChangedFile[]>
   getDiff(base: string, current: string, path: string, project?: string): Promise<FileDiff>
   rollbackCheckpoint(base: string, current: string, project?: string): Promise<Checkpoint>
@@ -73,6 +79,7 @@ export const IPC_CHANNELS = {
   skillsList: 'models:skills-list', skillsInstall: 'models:skills-install', skillsEnable: 'models:skills-enable', skillsDelete: 'models:skills-delete', skillsRefresh: 'models:skills-refresh', skillsDirectory: 'models:skills-directory', skillsOpenDirectory: 'models:skills-open-directory',
   fileAction: 'files:action',
   copyText: 'clipboard:copy-text',
+  notification: 'app:notification', notificationActivate: 'app:notification-activate',
   saveAttachment: 'files:save-attachment',
   sandboxStatus: 'models:sandbox-status', sandboxEnsure: 'models:sandbox-ensure', sandboxStart: 'models:sandbox-start', sandboxStop: 'models:sandbox-stop', sandboxState: 'sandbox:state',
   planInteraction: 'models:plan-interaction',

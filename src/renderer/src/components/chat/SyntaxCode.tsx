@@ -2,17 +2,18 @@ import { Fragment, useEffect, useState, type ReactNode } from 'react'
 import { Check, Copy } from 'lucide-react'
 import { Button } from '../ui/button'
 import { useSyntaxHighlight } from '../../hooks/useSyntaxHighlight'
-import type { SyntaxToken } from '../../lib/syntax-types'
+import type { SyntaxResult, SyntaxToken } from '../../lib/syntax-types'
 
 export function SyntaxTokens({ tokens }: { tokens: SyntaxToken[] }): ReactNode {
   return tokens.map((token, index) => token.className ? <span key={index} className={token.className}>{token.text}</span> : <Fragment key={index}>{token.text}</Fragment>)
 }
 
-/** 行内和多行代码共享着色，原始文本始终作为加载与失败回退。 */
-export function SyntaxCode({ code, language, inline = false, copyable = false }: { code: string; language?: string; inline?: boolean; copyable?: boolean }): React.JSX.Element {
-  const highlighted = useSyntaxHighlight({ code, language, inline })
-  const content = highlighted ? highlighted.lines.map((line, index) => <Fragment key={index}><SyntaxTokens tokens={line.tokens} />{line.ending}</Fragment>) : code
-  const element = <code className="syntax-code" data-language={highlighted?.language ?? language}>{content}</code>
+/** 行内和多行代码共享着色，原始文本始终作为加载与失败回退；tokens 用于已经有本地结果的命令等文本。 */
+export function SyntaxCode({ code, language, inline = false, copyable = false, tokens }: { code: string; language?: string; inline?: boolean; copyable?: boolean; tokens?: SyntaxResult }): React.JSX.Element {
+  const highlighted = useSyntaxHighlight({ code: tokens ? '' : code, language, inline })
+  const result = tokens ?? highlighted
+  const content = result ? result.lines.map((line, index) => <Fragment key={index}><SyntaxTokens tokens={line.tokens} />{line.ending}</Fragment>) : code
+  const element = <code className="syntax-code" data-language={result?.language ?? language}>{content}</code>
   if (inline) return element
   return copyable ? <CopyableCodeBlock code={code}><pre>{element}</pre></CopyableCodeBlock> : <pre>{element}</pre>
 }

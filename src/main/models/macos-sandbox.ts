@@ -6,6 +6,8 @@ import path from 'node:path'
 import type { SandboxBackend } from '../../shared/sandbox'
 import type { TerminalSandbox } from './terminal-sandbox'
 import { ModelError } from './model-validation'
+import { developerCommand } from './developer-command-policy'
+import { developerToolReads } from './developer-tool-access'
 
 const executable = '/usr/bin/sandbox-exec'
 const shell = '/bin/bash'
@@ -13,7 +15,7 @@ const systemReads = ['/bin', '/sbin', '/usr/bin', '/usr/sbin', '/usr/lib', '/usr
 const quoted = (value: string): string => JSON.stringify(value)
 
 /** 仅允许系统工具、项目和本次临时区；不开放用户目录、全盘读取或网络。 */
-export function macosSandboxProfile(project: string, scratch: string, protectedDirectories: string[], systemDirectories: string[] = systemReads): string {
+export function macosSandboxProfile(project: string, scratch: string, protectedDirectories: string[], systemDirectories: string[] = systemReads, development = false): string {
   if (![project, scratch, ...protectedDirectories].every(root => path.posix.isAbsolute(root))) throw new ModelError('macOS 隔离路径必须是绝对路径')
   const subpath = (value: string): string => `(subpath ${quoted(value)})`
   const ancestors = new Set<string>(['/', '/private', '/private/var', '/System/Volumes', '/System/Volumes/Data'])
@@ -29,7 +31,7 @@ export function macosSandboxProfile(project: string, scratch: string, protectedD
     '(allow file-read* (literal "/dev/random") (literal "/dev/urandom") (literal "/private/etc/localtime"))',
     '(allow file-read* file-write-data (literal "/dev/null") (literal "/dev/zero"))',
     '(allow file-read-data file-write-data (subpath "/dev/fd"))',
-    '(deny network*)', `(deny file-write-unlink (literal ${quoted(project)}) (literal ${quoted(scratch)}))`,
+    development ? '(allow network*)' : '(deny network*)', `(deny file-write-unlink (literal ${quoted(project)}) (literal ${quoted(scratch)}))`,
     '(deny file-write* (regex #"(^|/)\\.git(/|$)"))',
     '(deny file-read* file-write* (regex #"(^|/)(\\.agents|\\.codex|\\.aws|\\.pi-agenda)(/|$)"))']
   for (const root of protectedDirectories) {
@@ -81,7 +83,9 @@ export class MacosSandboxEngine implements TerminalSandbox {
       // 系统动态库可能经 Cryptex 或系统链接映射到其他只读位置；只解析固定系统根。
       const resolvedSystem = (await Promise.all(systemReads.map(root => realpath(root).catch(() => root)))).filter(root =>
         systemReads.some(allowed => root === allowed || root.startsWith(allowed + '/') || root === '/System/Volumes/Data' + allowed || root.startsWith('/System/Volumes/Data' + allowed + '/')) || root.startsWith('/System/Volumes/Preboot/Cryptexes/OS/'))
-      const profile = macosSandboxProfile(cwd, scratch, protectedDirectories, [...new Set([...systemReads, ...resolvedSystem])])
+      const development = await developerCommand(command, options.signal)
+      const tools = await developerToolReads(cwd, protectedDirectories)
+      const profile = macosSandboxProfile(cwd, scratch, protectedDirectories, [...new Set([...systemReads, ...resolvedSystem, ...tools])], development)
       return await new Promise<{ exitCode: number }>((resolve, reject) => {
         options.signal?.throwIfAborted()
         const child = spawn(executable, ['-p', profile, shell, '--noprofile', '--norc', '-c', command], { cwd, env: macosSandboxEnvironment(cwd, scratch), detached: true, stdio: ['ignore', 'pipe', 'pipe'] })

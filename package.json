@@ -16,6 +16,7 @@
     "preview": "pnpm electron:install && electron-vite preview",
     "test": "vitest run --config tests/vitest.config.ts",
     "dist:win": "pnpm build && node scripts/export-release.cjs win",
+    "dist:win:all": "pnpm build && node scripts/export-release.cjs win-all",
     "dist:win:portable": "pnpm build && node scripts/export-release.cjs win-portable",
     "dist:win:zip": "pnpm build && node scripts/export-release.cjs win-zip",
     "dist:mac": "pnpm build && node scripts/export-release.cjs mac",
@@ -36,6 +37,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cn": "^0.4.0",
+    "ignore": "^7.0.12",
     "lowlight": "3.3.0",
     "lucide-react": "^0.468.0",
     "marked": "18.0.11",
@@ -77,7 +79,14 @@
       "out/main/**/*",
       "out/preload/**/*",
       "out/renderer/**/*",
-      "package.json"
+      "package.json",
+      "!**/*.{map,d.ts,d.mts,d.cts,tsbuildinfo}",
+      "!**/{README,readme,CHANGELOG,changelog,HISTORY,history,CONTRIBUTING,contributing}.{md,markdown,rst,txt}",
+      "!**/{docs,doc}/**/*.{md,markdown,rst,txt,html,pdf}"
+    ],
+    "electronLanguages": [
+      "zh-CN",
+      "en-US"
     ],
     "asar": true,
     "extraResources": [

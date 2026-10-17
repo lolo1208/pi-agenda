@@ -4,9 +4,9 @@ import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/modal'
 import { PagedList } from '../PagedList'
 import { baseName, DiffFileHeader, DiffStat, DiffView, DiffViewSwitch, fileIcon, initialDiffViewMode, type DiffViewMode } from './DiffView'
+import { isCommandApproval, isFileChangeApproval } from '../../lib/tool-approval'
 import type { ToolApproval, ToolApprovalPreview } from '../../../../shared/models'
 
-function isFileChange(approval: ToolApproval): boolean { return ['edit', 'write'].includes(approval.tool) }
 function filePath(approval: ToolApproval): string { return typeof approval.args.path === 'string' ? approval.args.path : approval.cwd }
 type PreviewLoader = (approval: ToolApproval, signal: AbortSignal) => Promise<ToolApprovalPreview>
 
@@ -40,7 +40,7 @@ function ApprovalReview({ approval, mode, load }: { approval: ToolApproval; mode
   const [error, setError] = useState('')
   const [retry, setRetry] = useState(0)
   const [stats, setStats] = useState<{ added: number; removed: number }>()
-  const isFile = isFileChange(approval)
+  const isFile = isFileChangeApproval(approval)
   const path = filePath(approval)
   useEffect(() => { setPreview(undefined); setStats(undefined); setError('') }, [approval, load])
   useEffect(() => {
@@ -71,15 +71,17 @@ export function ToolApprovalDiffDialog({ open, onOpenChange, approvals, getPrevi
 }): React.JSX.Element {
   const [mode, setMode] = useState<DiffViewMode>(initialDiffViewMode)
   const load = useMemo(() => previewLoader(getPreview), [getPreview])
-  const fileCount = approvals.filter(isFileChange).length
+  // 终端命令有自己的审批弹窗，这里只保留文件改动和其他普通操作。
+  const operations = approvals.filter(approval => !isCommandApproval(approval))
+  const fileCount = operations.filter(isFileChangeApproval).length
   return <Modal open={open} onOpenChange={onOpenChange} title={<span className="tool-approval-file-title"><FileCode2 size={18} aria-hidden="true" /><span>{fileCount > 0 ? `${fileCount} 个文件` : '执行操作'}</span></span>}
-    description={<span>本次请求批准的操作共 {approvals.length} 项，确认后将按权限执行</span>}
+    description={<span>本次请求批准的操作共 {operations.length} 项，确认后将按权限执行</span>}
     headingExtra={<DiffViewSwitch mode={mode} onChange={setMode} />}
     contentClassName="tool-approval-preview tool-approval-multi">
     <div className="tool-approval-filelist">
-      {approvals.length === 0 && <div className="tool-approval-preview-state" role="status">没有待审批的文件操作</div>}
-      <PagedList items={approvals} label="待审批操作" pageSize={10}>{page => page.map(approval => <ApprovalReview key={approval.id} approval={approval} mode={mode} load={load} />)}</PagedList>
+      {operations.length === 0 && <div className="tool-approval-preview-state" role="status">没有待审批的文件操作</div>}
+      <PagedList items={operations} label="待审批操作" pageSize={10}>{page => page.map(approval => <ApprovalReview key={approval.id} approval={approval} mode={mode} load={load} />)}</PagedList>
     </div>
-    <footer className="tool-approval-preview-footer"><span className="tool-approval-readonly"><LockKeyhole size={12} aria-hidden="true" />只读预览</span><span className="tool-approval-reason">{approvals[0]?.reason}</span></footer>
+    <footer className="tool-approval-preview-footer"><span className="tool-approval-readonly"><LockKeyhole size={12} aria-hidden="true" />只读预览</span><span className="tool-approval-reason">{operations[0]?.reason}</span></footer>
   </Modal>
 }

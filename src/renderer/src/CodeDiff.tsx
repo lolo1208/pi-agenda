@@ -3,6 +3,7 @@ import { DiffFile, disableCache } from '@git-diff-view/core'
 import { DiffModeEnum, DiffView } from '@git-diff-view/react'
 import '@git-diff-view/react/styles/diff-view.css'
 import { Button } from '@/components/ui/button'
+import { alignTopInScroller } from './components/PagedList'
 import { loadPreparedDiff } from './lib/diff-worker-client'
 import type { DiffSource, DiffStats, PreparedDiff } from './lib/diff-processing'
 import './components/paged-list.css'
@@ -25,7 +26,7 @@ export default function CodeDiff({ path, before, after, hunks, mode, theme, onSt
   const turning = useRef(false)
   const changePage = (next: number): void => { turning.current = true; setPage(next) }
   useLayoutEffect(() => {
-    if (turning.current) { turning.current = false; root.current?.scrollIntoView?.({ block: 'start', inline: 'nearest' }) }
+    if (turning.current) { turning.current = false; if (root.current) alignTopInScroller(root.current) }
   })
   const statsCallback = useRef(onStats)
   statsCallback.current = onStats

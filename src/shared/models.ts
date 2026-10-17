@@ -127,6 +127,8 @@ export interface ToolApproval {
   cwd: string
   reason: string
 }
+/** “每次询问”模式下命令审批的默认说明；命令弹窗不重复展示这条模式说明，只保留真正的扩权原因。 */
+export const DEFAULT_COMMAND_APPROVAL_REASON = '“每次询问”模式下，终端命令需要逐次确认。未隔离的 Shell 命令获准后可能访问项目外文件或网络'
 export interface ToolApprovalPreview { before: string; after: string; path: string }
 export type IntentMode = 'plan' | 'execute'
 export interface PlanQuestion { id: string; header: string; question: string; options: { label: string; description?: string; recommended?: boolean }[] }

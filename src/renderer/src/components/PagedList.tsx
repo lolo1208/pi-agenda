@@ -2,6 +2,17 @@ import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
 import './paged-list.css'
 
+/** 仅在最近的滚动容器内把元素顶部滚入视野；不用 scrollIntoView，避免连带滚动 overflow:hidden 的弹窗面板（标题会被顶出去且无法滚回）。 */
+export function alignTopInScroller(el: HTMLElement): void {
+  let scroller: HTMLElement | null = el.parentElement
+  while (scroller && !/(auto|scroll)/.test(getComputedStyle(scroller).overflowY)) scroller = scroller.parentElement
+  if (!scroller) { el.scrollIntoView({ block: 'start', inline: 'nearest' }); return }
+  const style = getComputedStyle(scroller)
+  const border = parseFloat(style.borderTopWidth) || 0
+  const offset = el.getBoundingClientRect().top - scroller.getBoundingClientRect().top - border
+  scroller.scrollTop = Math.max(0, scroller.scrollTop + offset)
+}
+
 /** 限制每次挂载的条目数，翻页替换内容，避免“加载更多”最终仍挂载全部条目。 */
 export function PagedList<T>({ items, children, label, resetKey = '', pageSize = 40, page: externalPage, onPageChange }: {
   items: readonly T[]
@@ -24,7 +35,7 @@ export function PagedList<T>({ items, children, label, resetKey = '', pageSize =
     onPageChange?.(next)
   }
   useLayoutEffect(() => {
-    if (turning.current) { turning.current = false; root.current?.scrollIntoView?.({ block: 'start', inline: 'nearest' }) }
+    if (turning.current) { turning.current = false; if (root.current) alignTopInScroller(root.current) }
   })
   return <div ref={root} className="paged-list">
     {children(items.slice(page * pageSize, (page + 1) * pageSize))}

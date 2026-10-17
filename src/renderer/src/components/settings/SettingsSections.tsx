@@ -95,6 +95,14 @@ export function GeneralSettingsSection({ preferences, onPreferences, isMac, sett
           <Label htmlFor="send-with-modifier" className="sr-only">启用修饰键加 Enter 发送</Label>
         </div>
       </div>
+      <div className="settings-divider" />
+      <div className="shortcut-setting">
+        <span><b>系统通知</b><small>任务结束或需要你输入时提醒。macOS 使用系统通知，Windows 显示桌面右下角气泡。</small></span>
+        <div className="flex shrink-0 items-center gap-2">
+          <Switch id="system-notifications" checked={preferences.systemNotifications} onCheckedChange={systemNotifications => onPreferences({ ...preferences, systemNotifications })} />
+          <Label htmlFor="system-notifications" className="sr-only">开启系统通知</Label>
+        </div>
+      </div>
     </section>
     <p className="hint">设置自动保存在此设备。</p>
   </>

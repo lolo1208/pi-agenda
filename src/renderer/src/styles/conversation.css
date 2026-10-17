@@ -26,7 +26,7 @@
 .tool-approval-actions .tool-approval-approve { border-color: transparent; background: var(--accent); color: var(--accent-foreground); }
 .tool-approval-actions .tool-approval-approve:hover { background: color-mix(in srgb, var(--accent) 88%, var(--text)); }
 .tool-approval-actions .tool-approval-approve:disabled { background: var(--hover); color: var(--muted); }
-.modal-panel.tool-approval-preview { display: flex; flex-direction: column; width: calc(100vw - 40px); height: calc(100dvh - 60px); max-height: calc(100dvh - 60px); padding: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); }
+.modal-panel.tool-approval-preview { display: flex; flex-direction: column; width: calc(100vw - 40px); height: calc(100dvh - 60px); max-height: calc(100dvh - 60px); padding: 0; overflow: clip; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); }
 .tool-approval-preview .modal-heading, .tool-approval-preview .modal-description, .tool-approval-preview-footer { flex-shrink: 0; }
 .tool-approval-preview .modal-heading { margin: 0; padding: 20px 24px 5px; }
 .tool-approval-preview .modal-title { min-width: 0; width: 100%; font-size: calc(15rem / 14); }
@@ -64,7 +64,7 @@
 .tool-approval-diffstat em { font-style: normal; color: var(--diff-add); }
 .tool-approval-diffstat em.is-del { color: var(--diff-del); }
 .tool-approval-binary { flex-shrink: 0; color: var(--muted); font-size: calc(12rem / 14); }
-.tool-approval-file-body { border-top: 1px solid var(--border); }
+/* 展开后的对比与文件标题同属一张卡片，不加分隔线，避免看起来像两张叠在一起的卡片。 */
 .tool-approval-file-body .tool-approval-diff { max-height: max(56px, calc(100cqh - 60px)); }
 .tool-approval-file-body .tool-approval-preview-state { min-height: 140px; height: 140px; }
 .tool-approval-file-body .tool-approval-operation { max-height: max(56px, calc(100cqh - 60px)); border-top: 0; }
@@ -73,6 +73,34 @@
 .tool-approval-operation { margin: 0; padding: 20px 24px; border-top: 1px solid var(--border); background: var(--bg); max-height: 55dvh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: calc(13rem / 14); line-height: 1.7; }
 @media (max-width: 600px) { .modal-panel.tool-approval-preview { width: calc(100vw - 24px); height: calc(100dvh - 24px); max-height: calc(100dvh - 24px); } .tool-approval-preview .modal-heading { padding-left: 16px; } .tool-approval-preview .modal-description { padding-left: 44px; } .tool-approval-preview-footer { padding: 10px 16px; } }
 @media (max-width: 700px) { .tool-approval-card { flex-wrap: wrap; } .tool-approval-summary { flex-basis: calc(100% - 32px); } .tool-approval-actions { margin-left: auto; } }
+/* “重复不再提醒”在同一对话内复用同一决定，卡片与命令弹窗共用同一个勾选状态。 */
+.tool-approval-repeat { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: calc(12rem / 14); line-height: 1.2; white-space: nowrap; cursor: pointer; user-select: none; }
+.tool-approval-repeat:hover { color: var(--text); }
+.tool-approval-repeat span { white-space: nowrap; }
+/* 终端命令审批弹窗：只用代码高亮展示命令，不复用文件对比视图。 */
+.modal-panel.command-approval-dialog { display: flex; flex-direction: column; width: min(720px, calc(100vw - 40px)); max-height: calc(100dvh - 60px); padding: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); }
+.command-approval-dialog .modal-heading { margin: 0; padding: 18px 24px 4px; }
+.command-approval-dialog .modal-title { min-width: 0; width: 100%; font-size: calc(15rem / 14); }
+.command-approval-dialog .modal-close { top: 15px; right: 15px; border-radius: 6px; }
+.command-approval-dialog .modal-description { margin: 0; padding: 0 52px 14px; font-size: calc(12rem / 14); line-height: 1.6; color: var(--muted); white-space: normal; overflow-wrap: anywhere; }
+.command-approval-body { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px; padding: 10px 16px 16px; overflow: auto; }
+.command-approval-meta { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--muted); font-family: var(--font-mono); font-size: calc(11.5rem / 14); }
+.command-approval-meta > span:first-child { flex-shrink: 0; }
+.command-approval-cwd { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.command-approval-label { display: block; margin-bottom: 6px; color: var(--muted); font-size: calc(11.5rem / 14); }
+.command-approval-command { min-width: 0; }
+.command-approval-dialog .markdown-code-block { margin: 0; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); }
+.command-approval-dialog .markdown-code-block > pre { margin: 0; padding: 14px 48px 14px 14px; max-height: 46dvh; overflow: auto; }
+.command-approval-dialog .syntax-code { font-size: calc(12.5rem / 14); line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
+.command-approval-original { min-width: 0; }
+.command-approval-original > pre { margin: 0; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--muted); font-family: var(--font-mono); font-size: calc(12rem / 14); line-height: 1.65; max-height: 22dvh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.command-approval-footer { display: flex; align-items: center; gap: 16px; flex-shrink: 0; padding: 12px 16px; border-top: 1px solid var(--border); }
+.command-approval-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.command-approval-actions .ui-button { min-height: calc(32rem / 14); padding: 6px 14px; font-size: calc(12.5rem / 14); }
+.command-approval-actions .tool-approval-approve { border-color: transparent; background: var(--accent); color: var(--accent-foreground); }
+.command-approval-actions .tool-approval-approve:hover { background: color-mix(in srgb, var(--accent) 88%, var(--text)); }
+.command-approval-actions .tool-approval-approve:disabled { background: var(--hover); color: var(--muted); }
+@media (max-width: 600px) { .command-approval-dialog.modal-panel { width: calc(100vw - 24px); } .command-approval-dialog .modal-heading { padding-left: 16px; } .command-approval-dialog .modal-description { padding: 0 44px 12px 16px; } .command-approval-footer { flex-wrap: wrap; } }
 .full-access-dialog { display: grid; gap: 12px; width: min(460px, calc(100vw - 32px)); border: 0; }
 .full-access-dialog .alert-dialog-title, .full-access-dialog .alert-dialog-description { margin: 0; }
 .full-access-dialog .alert-dialog-footer { margin-top: 10px; }
@@ -428,6 +456,12 @@
 .composer textarea:focus-visible {
   outline: 0;
   box-shadow: none;
+}
+
+/* 空输入时的占位提示只是界面语言，框选输入区时不应被选中；有内容时仍可正常选中文本。 */
+.composer textarea:placeholder-shown {
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .chat-images {

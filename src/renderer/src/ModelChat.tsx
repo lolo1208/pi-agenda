@@ -10,6 +10,8 @@ import { DEFAULT_COMPRESSION_THRESHOLD, contextMessages, type ContextCompaction 
 import type { PermissionMode, ToolApproval } from '../../shared/models'
 import { ToolApprovalCard } from './components/chat/ToolApprovalCard'
 import { ToolApprovalDiffDialog } from './components/chat/ToolApprovalDiffDialog'
+import { CommandApprovalDialog } from './components/chat/CommandApprovalDialog'
+import { isCommandApproval } from './lib/tool-approval'
 import { FullAccessDialog } from './components/chat/FullAccessDialog'
 import { SandboxSetupDialog } from './components/chat/SandboxSetupDialog'
 import { SandboxStatus } from './components/chat/SandboxStatus'
@@ -46,14 +48,15 @@ interface Props {
   initialModelId?: string | null
   onModelChange?(modelId: string): void
   onReplyComplete?(): void
-  onWaitingForInputChange?(waiting: boolean): void
+  onTaskEnd?(ok: boolean): void
+  onWaitingForInputChange?(waiting: boolean, reason?: 'plan-question' | 'plan-review' | 'approval'): void
   project?: string | null; providers?: ModelProviderConnection[]
   /** 快捷面板改完推理档位后回传新的模型设置，由顶层刷新。 */
   onModelSettingsChange?(settings: ModelSettings): void
   profile: ModelProfileView | undefined; onBusyChange(busy: boolean): void; onOpenSettings(section?: 'models' | 'skills'): void
   onMessagesChange?(messages: ChatMessage[], restored?: boolean): void; settingsDisabled?: boolean; sendWithCtrlEnter?: boolean
 }
-export default function ModelChat({ snapshots, initialIntentMode = 'execute', onIntentChange, initialPermissionMode = 'default', onPermissionChange, active = true, projectReady = true, projectCurrent = true, conversationId, initialMessages = [], initialDraft = '', initialDraftImages = [], initialDraftSkillIds = [], initialQueue = [], initialQueuePaused = false, initialQueueEdit, onQueueChange, initialCompaction, onCompactionChange, compressionThreshold = DEFAULT_COMPRESSION_THRESHOLD, onDraftChange, profile: defaultProfile, profiles, project, providers, onModelSettingsChange, onBusyChange, onReplyComplete, onWaitingForInputChange, onOpenSettings, onMessagesChange, initialModelId, onModelChange, settingsDisabled, sendWithCtrlEnter = true, customPrompt = '' }: Props): React.JSX.Element {
+export default function ModelChat({ snapshots, initialIntentMode = 'execute', onIntentChange, initialPermissionMode = 'default', onPermissionChange, active = true, projectReady = true, projectCurrent = true, conversationId, initialMessages = [], initialDraft = '', initialDraftImages = [], initialDraftSkillIds = [], initialQueue = [], initialQueuePaused = false, initialQueueEdit, onQueueChange, initialCompaction, onCompactionChange, compressionThreshold = DEFAULT_COMPRESSION_THRESHOLD, onDraftChange, profile: defaultProfile, profiles, project, providers, onModelSettingsChange, onBusyChange, onReplyComplete, onTaskEnd, onWaitingForInputChange, onOpenSettings, onMessagesChange, initialModelId, onModelChange, settingsDisabled, sendWithCtrlEnter = true, customPrompt = '' }: Props): React.JSX.Element {
   const [permissionMode, setPermissionMode] = useState(initialPermissionMode)
   const [intentMode, setIntentMode] = useState<IntentMode>(initialIntentMode)
   const intentCallback = useRef(onIntentChange)
@@ -64,12 +67,20 @@ export default function ModelChat({ snapshots, initialIntentMode = 'execute', on
   const [planProgress, setPlanProgress] = useState('')
   const [approvals, setApprovals] = useState<ToolApproval[]>([])
   const [approvalDetailsOpen, setApprovalDetailsOpen] = useState(false)
+  const [commandApproval, setCommandApproval] = useState<ToolApproval | null>(null)
+  /** 勾选“重复不再提醒”后，本次对话按同一决定自动回应后续命令审批。 */
+  const [approvalRepeat, setApprovalRepeat] = useState(false)
+  const [autoApproval, setAutoApproval] = useState<boolean | null>(null)
+  const autoDecision = useRef<boolean | null>(null)
   const [permissionChanging, setPermissionChanging] = useState(false)
   const [fullConfirmation, setFullConfirmation] = useState<{ requestId: string; approval: ToolApproval } | null>(null)
   const waitingForInput = Boolean(interaction || approvals.length || fullConfirmation)
+  const waitingReason: 'plan-question' | 'plan-review' | 'approval' | undefined = interaction
+    ? interaction.kind === 'questions' ? 'plan-question' : 'plan-review'
+    : fullConfirmation || approvals.length ? 'approval' : undefined
   const waitingCallback = useRef(onWaitingForInputChange)
   waitingCallback.current = onWaitingForInputChange
-  useEffect(() => { waitingCallback.current?.(waitingForInput) }, [waitingForInput])
+  useEffect(() => { waitingCallback.current?.(waitingForInput, waitingReason) }, [waitingForInput])
   useEffect(() => () => { waitingCallback.current?.(false) }, [])
   const [sandboxState, setSandboxState] = useState<SandboxState | null>(null)
   const currentSandboxState = project && sandboxState && sameSandboxProject(sandboxState.project, project) ? sandboxState : null
@@ -208,6 +219,12 @@ export default function ModelChat({ snapshots, initialIntentMode = 'execute', on
     if (!requestId || !conversationId) throw new Error('审批请求已失效')
     return unwrapModelResult(await window.piAgenda.getToolApprovalPreview(requestId, conversationId, approval.id))
   }, [requestId, conversationId])
+  /** 回应审批；勾选“重复不再提醒”时把本次决定延续到本对话后续审批。 */
+  const respondApproval = async (requestId: string, approval: ToolApproval, allow: boolean): Promise<void> => {
+    if (!conversationId) throw new Error('审批请求已失效')
+    if (approvalRepeat) { autoDecision.current = allow; setAutoApproval(allow) }
+    unwrapModelResult(await window.piAgenda.respondToolApproval(requestId, conversationId, approval.id, allow))
+  }
   const [pending, setPending] = useState<{ message: ChatMessage; firstMessage: number } | null>(null)
   const [streamedText, setStreamedText] = useState('')
   const [agentStatus, setAgentStatus] = useState('')
@@ -220,6 +237,8 @@ export default function ModelChat({ snapshots, initialIntentMode = 'execute', on
   // 请求期间可以切换会话，完成时必须使用当前的查看状态。
   const replyCompleteCallback = useRef(onReplyComplete)
   replyCompleteCallback.current = onReplyComplete
+  const taskEndCallback = useRef(onTaskEnd)
+  taskEndCallback.current = onTaskEnd
   useEffect(() => {
     if (!conversationId || !window.piAgenda.getAgentHistory) return
     let active = true
@@ -238,8 +257,19 @@ export default function ModelChat({ snapshots, initialIntentMode = 'execute', on
     if (event.type === 'plan-interaction' && event.interaction) { setPlanProgress(''); setInteraction(event.interaction); setInteractionOpen(true) }
     if (event.type === 'plan-interaction-end') setInteraction(previous => previous?.id === event.interactionId ? null : previous)
     if (event.type === 'intent-mode' && event.intentMode) { setPlanProgress(''); changeIntent(event.intentMode) }
-    if (event.type === 'approval' && event.approval) { const approval = event.approval; setApprovals(items => [...items.filter(item => item.id !== approval.id), approval]) }
-    if (event.type === 'approval-end') setApprovals(items => items.filter(item => item.id !== event.approvalId))
+    if (event.type === 'approval' && event.approval) {
+      const approval = event.approval
+      // 已勾选“重复不再提醒”时不再打扰，直接按同一决定回应。
+      if (autoDecision.current !== null && conversationId) {
+        void window.piAgenda.respondToolApproval(event.requestId, conversationId, approval.id, autoDecision.current).then(unwrapModelResult).catch(e => setError(e instanceof Error ? e.message : '审批回应失败，请重试'))
+        return
+      }
+      setApprovals(items => [...items.filter(item => item.id !== approval.id), approval])
+    }
+    if (event.type === 'approval-end') {
+      setApprovals(items => items.filter(item => item.id !== event.approvalId))
+      setCommandApproval(previous => previous?.id === event.approvalId ? null : previous)
+    }
     if (event.type === 'text') setStreamedText(text => event.resetText ? event.text ?? '' : text + (event.text ?? ''))
     if (event.type === 'status') { setAgentStatus(event.text ?? ''); if (event.resetText) setStreamedText('') }
     if (event.type === 'transcript' && event.messages) {
@@ -297,6 +327,8 @@ export default function ModelChat({ snapshots, initialIntentMode = 'execute', on
     return () => { disposed = true; clearInterval(timer); window.removeEventListener('focus', refresh) }
   }, [active, profile?.provider, requestId])
   const busyRef = useRef(false)
+  /** 用户主动取消时不算失败，避免弹出误导性的失败通知。 */
+  const cancelledRef = useRef(false)
   const draftCallback = useRef(onDraftChange)
   draftCallback.current = onDraftChange
   useEffect(() => { draftCallback.current?.(prompt, images, skillIds) }, [prompt, images, skillIds])
@@ -306,6 +338,7 @@ export default function ModelChat({ snapshots, initialIntentMode = 'execute', on
   useEffect(() => { queueCallback.current?.(queue, queuePaused || Boolean(editingId), queueEdit) }, [queue, queuePaused, queueEdit])
   const stopRequest = async (): Promise<void> => {
     if (!requestId) return
+    cancelledRef.current = true
     // 立即暂停，即使取消与正常完成同时发生，也不能启动下一条。
     setQueuePaused(true)
     unwrapModelResult(await window.piAgenda.cancelModelRequest(requestId))
@@ -316,6 +349,7 @@ export default function ModelChat({ snapshots, initialIntentMode = 'execute', on
     setQueue(items => items.filter(queued => queued.id !== item.id))
     setScrollToLatestRequest(value => value + 1)
     busyRef.current = true; setError(''); setNotice(''); setPending({ message, firstMessage: messages.length }); setStreamedText(''); setAgentStatus('正在连接模型…')
+    cancelledRef.current = false
     const id = crypto.randomUUID(); setRequestId(id); activeRequest.current = id
     setExecution({ model: profile.model, provider: profile.provider, startedAt: performance.now(), firstMessage: messages.length })
     const next: ChatMessage[] = [...messages, message]
@@ -336,18 +370,21 @@ export default function ModelChat({ snapshots, initialIntentMode = 'execute', on
         message.role === 'assistant' && index >= messages.length && message.execution?.elapsedMs === undefined ? { ...message, execution: { model: reply.model, provider: profile.provider, elapsedMs: reply.elapsedMs } } : message)
       setMessages(completed); onMessagesChange?.(completed)
       replyCompleteCallback.current?.()
+      taskEndCallback.current?.(true)
       if (reply.compaction) {
         const updated = { ...reply.compaction, coveredMessages: reply.compaction.coveredMessages + (compaction ? compaction.coveredMessages - 1 : 0) }
         setCompaction(updated); onCompactionChange?.(updated)
       } else if (conversationId) { setCompaction(undefined); onCompactionChange?.(undefined) }
       setNotice([reply.compaction ? '已自动压缩上下文，完整记录已保留' : '', reply.truncated ? '已达到输出上限，可在设置中调整' : '', ...(reply.warnings ?? [])].filter(Boolean).join(' · '))
     } catch (e) {
-      if (replyReceived) { setNotice('回复已完成，但界面收尾失败，请重新打开会话查看结果'); return }
+      if (replyReceived) { setNotice('回复已完成，但界面收尾失败，请重新打开会话查看结果'); taskEndCallback.current?.(true); return }
       setError(e instanceof Error ? e.message : '模型请求失败，请重试')
+      // 用户主动取消不发送失败通知。
+      if (!cancelledRef.current) taskEndCallback.current?.(false)
       setQueue(items => [item, ...items]); setQueuePaused(true)
     }
     finally {
-      busyRef.current = false; activeRequest.current = null; setRequestId(null); setPending(null); setStreamedText(''); setAgentStatus(''); setApprovals([]); setFullConfirmation(null); setInteraction(null); setPlanProgress('')
+      busyRef.current = false; activeRequest.current = null; setRequestId(null); setPending(null); setStreamedText(''); setAgentStatus(''); setApprovals([]); setCommandApproval(null); setFullConfirmation(null); setInteraction(null); setPlanProgress('')
       try { onBusyChange(false) }
       catch { setNotice('界面运行状态更新失败，请重新打开会话') }
     }
@@ -385,11 +422,17 @@ export default function ModelChat({ snapshots, initialIntentMode = 'execute', on
     <div className="composer-wrap" hidden={!active}>
       {requestId && !interaction && planProgress && <div className="plan-waiting plan-progress" role="status"><LoaderCircle size={18} className="plan-progress-spinner" aria-hidden="true" /><span>{planProgress}</span></div>}
       {interaction && <div className="plan-waiting"><span>{interaction.kind === 'questions' ? '计划正在等待你的回答' : '计划已准备好，等待你的批准'}</span><Button variant="outline" onClick={() => setInteractionOpen(true)}>{interaction.kind === 'questions' ? '回答问题' : '审阅计划'}</Button></div>}
-      <PagedList items={approvals} pageSize={10} label="待审批请求">{page => page.map(approval => <ToolApprovalCard key={approval.id} approval={approval} onViewDetails={() => setApprovalDetailsOpen(true)} onRespond={async allow => {
+      {autoApproval !== null && <div className="plan-waiting"><span>本次对话后续审批将自动{autoApproval ? '批准' : '拒绝'}，不再提醒</span><Button variant="outline" onClick={() => { autoDecision.current = null; setAutoApproval(null); setApprovalRepeat(false) }}>恢复提醒</Button></div>}
+      <PagedList items={approvals} pageSize={10} label="待审批请求">{page => page.map(approval => <ToolApprovalCard key={approval.id} approval={approval} repeat={approvalRepeat} onRepeatChange={setApprovalRepeat} onViewDetails={() => { if (isCommandApproval(approval)) setCommandApproval(approval); else setApprovalDetailsOpen(true) }} onRespond={async allow => {
         if (!requestId || !conversationId) return
-        try { unwrapModelResult(await window.piAgenda.respondToolApproval(requestId, conversationId, approval.id, allow)) }
+        try { await respondApproval(requestId, approval, allow) }
         catch (e) { setError(e instanceof Error ? e.message : '审批回应失败，请重试') }
       }} />)}</PagedList>
+      {active && commandApproval && <CommandApprovalDialog open onOpenChange={open => { if (!open) setCommandApproval(null) }} approval={commandApproval} repeat={approvalRepeat} onRepeatChange={setApprovalRepeat} onRespond={async allow => {
+        if (!requestId || !conversationId) return
+        try { await respondApproval(requestId, commandApproval, allow); setCommandApproval(null) }
+        catch (e) { setError(e instanceof Error ? e.message : '审批回应失败，请重试') }
+      }} />}
       <ToolApprovalDiffDialog open={active && approvalDetailsOpen} onOpenChange={setApprovalDetailsOpen} approvals={approvals} getPreview={getApprovalPreview} />
       {active && error && <p className="error" role="alert">{error}</p>}
       {active && notice && <p className="request-notice" role="status">{notice}</p>}

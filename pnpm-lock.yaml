@@ -233,6 +233,9 @@ importers:
       cn:
         specifier: ^0.4.0
         version: 0.4.0
+      ignore:
+        specifier: ^7.0.12
+        version: 7.0.12
       lowlight:
         specifier: 3.3.0
         version: 3.3.0
@@ -3007,6 +3010,10 @@ packages:
   https-proxy-agent@9.1.0:
     resolution: {integrity: sha512-ag87y7cJJ9/3+GxFr8Oy4O5faDsGRGnBGsJj/YjOSsSx/5eadKLYTMPlzuR6obgoCDDm0abAAZitXXQkMOPSpA==}
     engines: {node: '>= 20'}
+
+  ignore@7.0.12:
+    resolution: {integrity: sha512-/8UvqAPU9DGTI9k4mxtf49U37Isfwr8Uts96+SBHIkFxPJnHS0Ew4f00sM4Scd8V8EjM0jUNtVDdv1kPdt35lg==}
+    engines: {node: '>= 4'}
 
   ignore@7.0.8:
     resolution: {integrity: sha512-YYNsSlXBjMk92SKnkwvB5LOVSa6OznlFUGcsvrFgNJbJCd0M1XKeFVRc8ZByeCqz32FivYNHJVooLmdqrmvp/Q==}
@@ -6942,6 +6949,8 @@ snapshots:
     transitivePeerDependencies:
       - kerberos
       - supports-color
+
+  ignore@7.0.12: {}
 
   ignore@7.0.8: {}
 

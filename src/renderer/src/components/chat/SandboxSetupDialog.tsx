@@ -30,7 +30,7 @@ export function SandboxSetupDialog({ open, state, taskRunning, onClose, onRun, o
         </li>)}
       </ol>}
       {!running && state.phase !== 'ready' && <div className="sandbox-guidance">
-        <p>Windows 10、Windows 11 和 macOS 均可自动准备隔离环境，无需另装插件。应用会检测文件与网络边界，通过后才启用自动终端执行。</p>
+        <p>Windows 10、Windows 11 和 macOS 均可自动准备隔离环境，无需另装插件。应用会检测项目外文件保护和开发工具网络能力，通过后才启用自动终端执行。</p>
         {failed && <p>排查会自动恢复应用工作目录、重建执行配置并复测隔离。系统策略、账户权限或内置程序损坏无法自动解决时，会保留失败原因；可重新配置或联系管理员。</p>}
         <p>完全访问会使用当前用户的本机权限，文件操作与命令执行不再逐项确认。应用不会替你自动切换。</p>
       </div>}

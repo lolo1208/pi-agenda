@@ -13,6 +13,12 @@ const api: PiAgendaApi = {
   refreshSkills: () => ipcRenderer.invoke(IPC_CHANNELS.skillsRefresh),
   performFileAction: (project, path, action) => ipcRenderer.invoke(IPC_CHANNELS.fileAction, project, path, action),
   copyText: text => ipcRenderer.invoke(IPC_CHANNELS.copyText, text),
+  showNotification: notification => ipcRenderer.invoke(IPC_CHANNELS.notification, notification),
+  onNotificationActivate: callback => {
+    const listener = (_event: Electron.IpcRendererEvent, conversationId: string): void => callback(conversationId)
+    ipcRenderer.on(IPC_CHANNELS.notificationActivate, listener)
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.notificationActivate, listener)
+  },
   saveAttachment: (name, dataUrl) => ipcRenderer.invoke(IPC_CHANNELS.saveAttachment, name, dataUrl),
   getSandboxStatus: () => ipcRenderer.invoke(IPC_CHANNELS.sandboxStatus),
   ensureSandbox: () => ipcRenderer.invoke(IPC_CHANNELS.sandboxEnsure),

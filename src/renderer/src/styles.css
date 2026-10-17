@@ -21,6 +21,25 @@
 @import './styles/project-picker.css';
 @import './styles/responsive.css';
 
+/* 界面元素默认不可选中：标题栏、侧边栏、输入区、状态栏、下拉菜单等只作为界面语言。 */
+html,
+body {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* 正文内容单独放开选中，便于复制代码、对话、差异与诊断信息。 */
+:where(input, textarea, [contenteditable="true"],
+  .chat-markdown, .plan-document, .chat-message.user,
+  pre, code, .syntax-code, .markdown-code-block pre,
+  .chat-work-detail pre, .file-preview-text,
+  .tool-approval-diff, .tool-approval-operation, .command-approval-original pre,
+  .code-preview-scroll, .code-preview-lines, .code-preview-gap,
+  .error, .success) {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 /* 全局取消非文字输入控件的焦点外框及 Tailwind 光环，保留输入框及其容器的蓝色焦点样式。 */
 :focus:not(:where(textarea, input:not([type="button"], [type="submit"], [type="reset"], [type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"], [type="image"], [type="hidden"]), [contenteditable="true"])) {
   outline: none !important;

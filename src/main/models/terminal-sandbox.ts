@@ -6,14 +6,17 @@ import os from 'node:os'
 import path from 'node:path'
 import type { BashOperations } from '@earendil-works/pi-coding-agent'
 import { ModelError } from './model-validation'
-import { checkGitWorkingDirectory, retryableGitInspection } from './git-working-directory-check'
+import { checkGitWorkingDirectory, parseGitInspection } from './git-working-directory-check'
 import { prepareSandboxConfiguration } from './sandbox-configuration'
+import { developerCommand } from './developer-command-policy'
+import { developerToolReads, rustToolInvocation } from './developer-tool-access'
 
 export interface TerminalSandbox extends BashOperations {
   prepare(project: string, signal?: AbortSignal): Promise<void>
   checkGitWorkingDirectory?(project: string, signal?: AbortSignal): Promise<void>
   /** 配置或隔离失败必须由用户选择后续方式，不能转成普通命令审批。 */
   failClosed?: boolean
+  developerTools?: boolean
 }
 
 const runtimeVersion = '0.159.2'
@@ -23,14 +26,18 @@ const environmentKeys = new Set(['path', 'pathext', 'systemroot', 'windir', 'com
 /** 命令环境只继承运行工具所需的系统信息，不向子进程传递模型密钥或会话凭据。 */
 export function sandboxEnvironment(home: string, scratch: string, inherited: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   const env = Object.fromEntries(Object.entries(inherited).filter(([key, value]) => value !== undefined && environmentKeys.has(key.toLowerCase())))
+  Object.assign(env, { USERPROFILE: scratch, APPDATA: path.join(scratch, 'appdata'), LOCALAPPDATA: path.join(scratch, 'localappdata') })
+  // Rust 用户数据留在临时区；实际工具链安装文件由 developerToolReads 逐项只读授权。
+  Object.assign(env, { RUSTUP_HOME: path.join(scratch, 'rustup'), RUSTUP_AUTO_INSTALL: '0', CARGO_HOME: path.join(scratch, 'cargo'), PLAYWRIGHT_BROWSERS_PATH: inherited.PLAYWRIGHT_BROWSERS_PATH ?? path.join(inherited.LOCALAPPDATA ?? path.join(os.homedir(), 'AppData', 'Local'), 'ms-playwright') })
   // Node 默认逐级 realpath 会探测项目外祖先；保留模块路径，链接目标仍由内核检查。
   // Git 不能访问宿主用户配置；使用隔离临时区作为 HOME，避免读取 .gitconfig 时直接失败。
   return { ...env, HOME: scratch, XDG_CONFIG_HOME: path.join(scratch, 'config'), XDG_CACHE_HOME: path.join(scratch, 'cache'), GIT_CONFIG_GLOBAL: 'NUL', GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0', CODEX_HOME: home, TEMP: scratch, TMP: scratch, NODE_OPTIONS: '--preserve-symlinks --preserve-symlinks-main', npm_config_cache: path.join(scratch, 'npm-cache'), npm_config_userconfig: path.join(scratch, 'config', 'npmrc'), npm_config_globalconfig: path.join(scratch, 'config', 'npm-globalrc'), npm_config_store_dir: path.join(scratch, 'pnpm-store'), PNPM_HOME: path.join(scratch, 'pnpm-home'), COREPACK_HOME: path.join(scratch, 'corepack'), COREPACK_ENABLE_NETWORK: '0', COREPACK_ENABLE_DOWNLOAD_PROMPT: '0', NO_COLOR: '1' }
 }
 
-export function sandboxProfile(project: string, scratch: string, protectedDirectories: string[]): string {
+export function sandboxProfile(project: string, scratch: string, protectedDirectories: string[], toolReads: string[] = []): string {
   // 独立的受限配置默认拒绝未列出的路径；不继承任何全盘读取权限。
   const filesystem: Record<string, string> = { ':minimal': 'read', [project]: 'write', [scratch]: 'write' }
+  for (const entry of toolReads) filesystem[entry] = 'read'
   for (const directory of protectedDirectories) filesystem[directory] = 'deny'
   // 专用临时目录仅用于当前项目，独立于会话、凭据和快照。
   filesystem[scratch] = 'write'
@@ -41,6 +48,7 @@ export function sandboxProfile(project: string, scratch: string, protectedDirect
 
 /** 原生 MXC 负责文件、网络和子进程隔离；不允许回退到弱隔离或无沙箱执行。 */
 export class NativeTerminalSandbox implements TerminalSandbox {
+  readonly developerTools = true
   private backend: 'mxc' | 'elevated' = 'mxc'
   setBackend(backend: 'mxc' | 'elevated'): void { this.backend = backend; this.reset() }
   reset(): void { this.contexts.clear(); this.runtimeChecked = undefined }
@@ -102,7 +110,7 @@ export class NativeTerminalSandbox implements TerminalSandbox {
     try { await this.runtimeChecked }
     catch { this.runtimeChecked = undefined; throw new ModelError('终端系统沙箱运行时缺失或校验失败，请恢复应用内置运行时') }
   }
-  async prepare(project: string, signal?: AbortSignal): Promise<void> {
+  async prepare(project: string, signal?: AbortSignal, developer = false): Promise<void> {
     signal?.throwIfAborted()
     await this.checkBackend(this.backend)
     await this.checkRuntime()
@@ -117,9 +125,9 @@ export class NativeTerminalSandbox implements TerminalSandbox {
     const scratch = await realpath(await mkdtemp(path.join(os.tmpdir(), 'pi-agenda-command-')))
     await prepareSandboxConfiguration(scratch)
     const protectedDirectories = await Promise.all([...this.options.protectedDirectories, this.options.runtimeDirectory].map(async directory => { try { return await realpath(directory) } catch { return path.resolve(directory) } }))
-    const context = { home, scratch, profile: sandboxProfile(project, scratch, protectedDirectories) }
+    const context = { home, scratch, profile: sandboxProfile(project, scratch, protectedDirectories, await developerToolReads(project, protectedDirectories)) }
     try {
-      await checkGitWorkingDirectory({ exec: (command, cwd, options) => this.run(command, cwd, context, options) }, project, signal)
+      if (!developer) await checkGitWorkingDirectory({ exec: (command, cwd, options) => this.run(command, cwd, context, options) }, project, signal)
     } catch (error) {
       await rm(scratch, { recursive: true, force: true })
       throw error
@@ -131,25 +139,29 @@ export class NativeTerminalSandbox implements TerminalSandbox {
     const context = this.contexts.get(cwd)
     if (!context) throw new ModelError('终端系统沙箱尚未就绪，不能执行命令')
     if (await realpath(cwd) !== cwd) throw new ModelError('项目路径发生变化，不能执行命令')
-    if (retryableGitInspection(command)) {
+    const queries = parseGitInspection(command)
+    if (queries) {
       // 允许自动重试的查询不得写索引或启动 fsmonitor、外部 diff/textconv 程序。
-      command = command.trim().split(/;|\r?\n/).map(line => line.trim()).filter(Boolean).map(line => {
-        const args = line.split(/[ \t]+/).slice(1)
+      command = queries.map(args => {
         if (args[0] === 'diff') args.splice(1, 0, '--no-ext-diff', '--no-textconv')
-        return `git --no-optional-locks -c core.fsmonitor=false -c core.untrackedCache=false ${args.join(' ')}`
+        return `git --no-optional-locks -c core.fsmonitor=false -c core.untrackedCache=false ${args.map(arg => "'" + arg.replace(/'/g, "''") + "'").join(' ')}`
       }).join('; ')
     }
-    return this.run(command, cwd, context, options)
+    const rust = await rustToolInvocation(command, cwd, options.signal)
+    return this.run(rust?.command ?? command, cwd, context, options, rust?.env)
   }
-  private run(command: string, cwd: string, context: { home: string; scratch: string; profile: string }, options: Parameters<BashOperations['exec']>[2]): Promise<{ exitCode: number }> {
+  private async run(command: string, cwd: string, context: { home: string; scratch: string; profile: string }, options: Parameters<BashOperations['exec']>[2], runtimeEnv: NodeJS.ProcessEnv = {}): Promise<{ exitCode: number }> {
     const systemRoot = process.env.SystemRoot ?? process.env.SYSTEMROOT ?? 'C:\\Windows'
     const powershell = path.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
     const literalCwd = cwd.replace(/'/g, "''")
     const script = `$ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'; [Console]::OutputEncoding=[System.Text.Encoding]::UTF8; try { New-PSDrive -Name Project -PSProvider FileSystem -Root '${literalCwd}' | Out-Null; Set-Location -LiteralPath 'Project:\\'; [Environment]::CurrentDirectory='${literalCwd}'; & {\n${command}\n}; if (-not $?) { exit 1 }; if ($LASTEXITCODE) { exit $LASTEXITCODE } } catch { [Console]::Error.WriteLine($_.Exception.Message + '\n' + $_.InvocationInfo.PositionMessage); exit 1 }`
-    const args = ['sandbox', '--permission-profile', 'agenda', '-C', cwd, '-c', context.profile, '-c', `windows.sandbox="${this.backend}"`, '-c', 'features.prefer_mxc=false', '-c', 'shell_environment_policy.inherit="all"', '--', powershell, '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-OutputFormat', 'Text', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')]
+    const development = await developerCommand(command, options.signal)
+    const profile = development ? context.profile.replace('network={enabled=false}', 'network={enabled=true}') : context.profile
+    const args = ['sandbox', '--permission-profile', 'agenda', '-C', cwd, '-c', profile, '-c', `windows.sandbox="${this.backend}"`, '-c', 'features.prefer_mxc=false', '-c', 'shell_environment_policy.inherit="all"', '--', powershell, '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-OutputFormat', 'Text', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')]
     return new Promise((resolve, reject) => {
       if (options.signal?.aborted) { reject(options.signal.reason); return }
-      const child = spawn(this.executable, args, { cwd, env: sandboxEnvironment(context.home, context.scratch), stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true })
+      const env = { ...sandboxEnvironment(context.home, context.scratch), ...runtimeEnv, COREPACK_ENABLE_NETWORK: development ? '1' : '0' }
+      const child = spawn(this.executable, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true })
       let timer: ReturnType<typeof setTimeout> | undefined, timedOut = false
       const terminate = (): void => {
         if (!child.pid) return

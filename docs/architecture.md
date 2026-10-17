@@ -10,18 +10,17 @@ Renderer（React 19、Tailwind、git-diff-view）只负责界面；Preload 暴�
 
 ```text
 Renderer → window.piAgenda → Preload → Main IPC → ShadowGitManager
-                                             → SessionStore（待实现）
-                                             → ModelSettingsStore / ModelService / ModelClient
-                                             → AgentRuntime（待实现）
+                                             → ConversationStore
+                                             → ModelSettingsStore / PiAgentService（pi SDK）
 ```
 
 现有目录：`src/shared` 定义 DTO/IPC；`src/main/snapshot` 管理快照；`src/preload` 提供桥接；`src/renderer` 提供工作台。git-diff-view 与计算 Worker 打包进应用，不使用 CDN；对比区使用库默认的行底色、增删符号、词级高亮与上下文展开控件。
 
-快照改动列表和文件对比按项目存储路径与提交哈希缓存，跨管理器实例合并重复读取，并限制缓存大小；删除项目存储时清除相应缓存。`FileDiff.hunks` 携带含文件头的 Git 差异，前后全文并行读取并保留，供默认控件展开上下文。审批预览在 Worker 内生成差异；两类对比的高亮与视图数据也在 Worker 内准备，增删统计复用同一结果，统一/分栏切换无需重新计算。界面的准备结果缓存有容量上限，每个视图使用独立副本。
+快照改动列表和文件对比按项目存储路径与提交哈希缓存，跨管理器实例合并重复读取，并限制缓存大小；删除项目存储时清除相应缓存。展示层过滤在主进程读取缓存之后执行，不写回缓存，因此回滚与还原仍拿到完整改动。`FileDiff.hunks` 携带含文件头的 Git 差异，前后全文并行读取并保留，供默认控件展开上下文。审批预览在 Worker 内生成差异；两类对比的高亮与视图数据也在 Worker 内准备，增删统计复用同一结果，统一/分栏切换无需重新计算。界面的准备结果缓存有容量上限，每个视图使用独立副本。
 
 ## 快照策略
 
-项目影子仓库与独立暂存工作树保存在 `app.getPath('home')/.pi-agenda/projects/<项目路径 SHA-256>/shadow-git` 和 `staging` 下，能排除用户 Git 配置、属性过滤器及嵌套仓库的干扰，且不会在项目目录写入应用元数据。所有 Git 调用通过 simple-git 指定专用 GIT_DIR 与 GIT_WORK_TREE，隔离继承的 GIT_* 环境和全局配置，禁用换行转换、提交签名和钩子。强制添加符合快照策略的文件，因此原 `.gitignore` 不决定快照覆盖范围。
+项目影子仓库与独立暂存工作树保存在 `app.getPath('home')/.pi-agenda/projects/<项目路径 SHA-256>/shadow-git` 和 `staging` 下，能排除用户 Git 配置、属性过滤器及嵌套仓库的干扰，且不会在项目目录写入应用元数据。所有 Git 调用通过 simple-git 指定专用 GIT_DIR 与 GIT_WORK_TREE，隔离继承的 GIT_* 环境和全局配置，禁用换行转换、提交签名和钩子。强制添加符合快照策略的文件，因此原 `.gitignore` 不决定快照覆盖范围。改动列表只在展示层过滤：`src/main/snapshot/project-ignores.ts` 用 `ignore` 解析项目根与相关目录的 `.gitignore`，按 Git 的目录优先级匹配（深目录规则优先，父目录被排除时不读取其中的规则）；读取失败或路径异常按未忽略处理；不读取全局 gitignore 与 `.git/info/exclude`，匹配器按 `.gitignore` 的 mtime 与大小有限缓存。
 
 单个 Manager 串行执行操作。当前仅支持单窗口/单个 Manager 使用项目；下一阶段需进程级项目锁与配额。快照前必须暂停 Agent 工具写入。识别改名暂按删除和新增处理；二进制展示状态，不渲染文本。Diff 路径必须出现在指定提交间的改动列表中。
 
@@ -46,7 +45,7 @@ Renderer → window.piAgenda → Preload → Main IPC → ShadowGitManager
 
 执行轮流程：锁项目 → 建立 base 快照 → 持久化运行中的 Turn → 执行有界 Agent 工具循环 → 无论成功、失败或取消均捕获 end 快照 → 保存 Diff 与轮次结果 → 解锁。计划澄清轮只保存对话与计划状态，不启动项目修改。崩溃恢复需区分孤立 Git 提交与未完成 Turn。
 
-## Skill 与计划模式（待实现）
+## Skill 与计划模式
 
 主进程 `SkillRegistry` 管理内置、自定义及导入定义；`SkillImporter` 读取 `SKILL.md` 和资源清单，校验标识、引用路径与内容，拒绝资源越界和符号链接逃逸。用户定义保存在应用 userData 下的 skills 目录；内置计划 Skill 随应用打包、独立标识且不可被同名导入覆盖。导入不运行脚本，启用 Skill 也不扩大工具权限。任务记录所用版本/内容哈希，执行中修改 Skill 不静默改变正在运行的任务。
 
@@ -74,9 +73,9 @@ Renderer → window.piAgenda → Preload → Main IPC → ShadowGitManager
 
 Main 已接入 `ModelSettingsStore`，通过 safeStorage 加密 API Key，写入 userData 下的版本化配置文件。Endpoint/参数与密钥密文分字段保存；渲染层读取仅返回配置元数据与 `hasApiKey`，新密钥经专用 IPC 提交后清空输入。加密不可用时禁止明文降级。详情见[模型配置](model-configuration.md)。
 
-`ModelService` 控制单请求、超时和取消；`ModelClient` 使用主进程 fetch，当前实现 OpenAI 兼容 Chat Completions 与 Claude Messages 的非流式文本请求。连接测试使用固定短消息；聊天发送显式对话，不自动上传项目。URL 与参数在主进程验证，请求禁止跟随重定向，上游错误正文不传到 UI；模型 IPC 继续验证来源。后续统一流和工具事件，当前未接入工具执行。
+`ModelService` 控制单请求、超时和取消；模型调用统一经由主进程加载的 pi SDK（`@earendil-works/pi-coding-agent`），由其负责流式回复、工具执行、会话历史与上下文压缩。连接测试使用固定短消息，不读取聊天历史或启用项目工具。URL 与参数在主进程验证，请求禁止跟随重定向，上游错误正文不传到 UI；模型 IPC 继续验证来源。
 
-文件工具要校验格范路径与符号链接边界；node-pty 命令是实际本机执行，不能仅凭字符串黑名单宣称沙箱隔离。需要审批请求、输出上限、超时、进程树终止与取消。后续接入 shadcn/ui + Radix 的设置/确认弹窗。
+文件工具要校验路径与符号链接边界；终端命令是实际本机执行，受限自动模式经系统沙箱隔离，完全访问模式需首次确认。需要审批请求、输出上限、超时、进程树终止与取消。设置/确认弹窗使用已接入的 shadcn/ui + Radix。
 
 ## 验证范围
 

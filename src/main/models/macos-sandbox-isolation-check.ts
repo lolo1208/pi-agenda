@@ -47,12 +47,12 @@ export const checkMacosSandboxIsolation: typeof checkSandboxIsolation = async (s
     })
     await check('network', SANDBOX_CHECKS.network.label, async () => {
       let requests = 0
-      const server = createServer((_request, response) => { requests++; response.end('unexpected') })
+      const server = createServer((_request, response) => { requests++; response.end(token) })
       await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve) })
       try {
         const port = (server.address() as { port: number }).port
-        for (const url of [`http://127.0.0.1:${port}`, 'http://1.1.1.1:443']) await run(`if /usr/bin/curl --noproxy '*' --silent --show-error --connect-timeout 1 --max-time 2 ${shellLiteral(url)}; then exit 23; fi; printf 'NETWORK_BLOCKED\\n'`, 'NETWORK_BLOCKED')
-        if (requests) throw new ModelError('macOS 本机网络隔离无效')
+        await run(`/usr/bin/curl --noproxy '*' --silent --show-error --connect-timeout 2 --max-time 5 ${shellLiteral(`http://127.0.0.1:${port}`)}`, token)
+        if (requests !== 1) throw new ModelError('macOS 开发命令网络能力未通过验证')
       } finally { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())) }
     })
   } finally {

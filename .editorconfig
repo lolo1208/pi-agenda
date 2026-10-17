@@ -16,6 +16,6 @@ trim_trailing_whitespace = false
 end_of_line = crlf
 
 # Windows PowerShell 5.1 通过 BOM 正确识别中文脚本。
-[scripts/run-windows.ps1]
+[scripts/dev-menu-windows.ps1]
 charset = utf-8-bom
 end_of_line = crlf

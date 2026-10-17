@@ -6,6 +6,7 @@ import { defaultConversationPermission } from '../shared/conversations'
 import { fileURLToPath } from 'node:url'
 import { IPC_CHANNELS } from '../shared/api'
 import { ShadowGitManager } from './snapshot/shadow-git-manager'
+import { clearProjectIgnoreCache, filterIgnoredChanges } from './snapshot/project-ignores'
 import { ModelSettingsStore } from './models/model-settings-store'
 import { ModelService, modelResult } from './models/model-service'
 import type { ChatgptService } from './models/chatgpt-service'
@@ -16,6 +17,8 @@ import type { FileAction } from '../shared/api'
 import { SkillStore } from './skill-store'
 import { readCodePreview } from './code-preview'
 import { readCodePreviewSnapshot } from './code-preview-snapshots'
+import { showNotification } from './notifications'
+import type { AppNotification } from '../shared/api'
 import { ATTACHMENT_DATA_URL } from '../shared/attachments'
 
 interface IpcHandlerDependencies {
@@ -128,6 +131,21 @@ export function registerIpcHandlers(dependencies: IpcHandlerDependencies): void 
   handle(IPC_CHANNELS.copyText, text => {
     if (typeof text !== 'string') throw new ModelError('复制内容格式无效')
     clipboard.writeText(text)
+  })
+  handle(IPC_CHANNELS.notification, notification => {
+    const value = notification as AppNotification | undefined
+    if (!value || !['success', 'failure', 'input'].includes(value.kind) || typeof value.title !== 'string' || typeof value.body !== 'string' || (value.conversationId !== undefined && typeof value.conversationId !== 'string')) throw new ModelError('通知内容格式无效')
+    const conversationId = typeof value.conversationId === 'string' ? value.conversationId : undefined
+    showNotification(value, () => {
+      const window = dependencies.getMainWindow()
+      if (!window) return
+      if (window.isMinimized()) window.restore()
+      window.setSkipTaskbar(false)
+      window.show()
+      window.focus()
+      // 点击通知时同时选中对应会话，让用户直接回到该任务；会话不存在时渲染进程会保持当前界面。
+      if (conversationId && !window.webContents.isDestroyed()) window.webContents.send(IPC_CHANNELS.notificationActivate, conversationId)
+    })
   })
   handle(IPC_CHANNELS.saveAttachment, async (name, dataUrl) => {
     const window = dependencies.getMainWindow()
@@ -244,6 +262,7 @@ export function registerIpcHandlers(dependencies: IpcHandlerDependencies): void 
     if (!path.isAbsolute(root)) throw new Error('项目路径必须是绝对路径')
     if (dependencies.getModelService().isBusy()) throw new ModelError('请先停止代理任务，再移除项目')
     const canonicalRoot = await ShadowGitManager.removeProjectStorage(root, dependencies.dataDirectory)
+    clearProjectIgnoreCache(canonicalRoot)
     if (dependencies.getSnapshotManager()?.getRoot() === canonicalRoot) dependencies.setSnapshotManager(undefined)
   })
   handle(IPC_CHANNELS.projectDirectory, async value => {
@@ -262,7 +281,8 @@ export function registerIpcHandlers(dependencies: IpcHandlerDependencies): void 
     const root = project === undefined ? undefined : parseString(project)
     if (root && !path.isAbsolute(root)) throw new Error('项目路径必须是绝对路径')
     const manager = root ? await ShadowGitManager.open(root, dependencies.dataDirectory) : requireSnapshotManager()
-    return manager.getChanges(parseString(base), parseString(current))
+    // 展示列表隐藏项目 .gitignore 排除项；快照、回滚与还原仍读取未过滤的完整改动。
+    return filterIgnoredChanges(manager.getRoot(), await manager.getChanges(parseString(base), parseString(current)))
   })
   const snapshotForProject = async (project: unknown): Promise<ShadowGitManager> => {
     if (project === undefined) return requireSnapshotManager()

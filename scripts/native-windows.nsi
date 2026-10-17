@@ -10,20 +10,37 @@ Name "${APP_NAME}"
 OutFile "${OUTPUT_FILE}"
 Icon "${APP_ICON}"
 RequestExecutionLevel user
-SetCompressor /SOLID lzma
+SetCompress off
 VIProductVersion "${APP_VERSION}.0"
 VIAddVersionKey "ProductName" "${APP_NAME}"
 VIAddVersionKey "FileDescription" "${APP_NAME}"
 VIAddVersionKey "FileVersion" "${APP_VERSION}"
 VIAddVersionKey "LegalCopyright" "Pi Agenda"
 
+; 载荷已由多线程 LZMA2 压缩，外层直接嵌入，避免再次单线程压缩。
+!macro ExtractPayload DESTINATION
+  InitPluginsDir
+  SetOutPath "$PLUGINSDIR\7zip"
+  File "${SEVEN_ZIP_DIR}\7z.exe"
+  File "${SEVEN_ZIP_DIR}\7z.dll"
+  File "${SEVEN_ZIP_DIR}\License.txt"
+  File /oname=app.7z "${PAYLOAD_FILE}"
+  nsExec::Exec '"$PLUGINSDIR\7zip\7z.exe" x -y -bd -bso0 -bsp0 "-o${DESTINATION}" "$PLUGINSDIR\7zip\app.7z"'
+  Pop $2
+  StrCmp $2 0 extract_done
+    MessageBox MB_ICONSTOP "应用文件解压失败，请检查磁盘空间并重新运行。"
+    SetErrorLevel 1
+    Quit
+  extract_done:
+  Delete "$PLUGINSDIR\7zip\app.7z"
+  SetOutPath "${DESTINATION}"
+!macroend
+
 !ifdef PORTABLE
   SilentInstall silent
   AutoCloseWindow true
   Section
-    InitPluginsDir
-    SetOutPath "$PLUGINSDIR\app"
-    File /r "${APP_DIR}\*"
+    !insertmacro ExtractPayload "$PLUGINSDIR\app"
     System::Call 'kernel32::SetEnvironmentVariableW(w "PORTABLE_EXECUTABLE_DIR", w "$EXEDIR")i'
     System::Call 'kernel32::SetEnvironmentVariableW(w "PORTABLE_EXECUTABLE_FILE", w "$EXEPATH")i'
     System::Call 'kernel32::SetEnvironmentVariableW(w "PORTABLE_EXECUTABLE_APP_FILENAME", w "${APP_NAME}")i'
@@ -55,8 +72,7 @@ VIAddVersionKey "LegalCopyright" "Pi Agenda"
   Section "安装"
     SetRegView 64
     SetShellVarContext current
-    SetOutPath "$INSTDIR"
-    File /r "${APP_DIR}\*"
+    !insertmacro ExtractPayload "$INSTDIR"
     WriteUninstaller "$INSTDIR\Uninstall.exe"
     WriteRegStr HKCU "Software\PiAgenda" "InstallDir" "$INSTDIR"
     WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\PiAgenda" "DisplayName" "${APP_NAME}"

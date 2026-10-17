@@ -22,6 +22,7 @@ export interface SandboxEngine extends TerminalSandbox {
 }
 export class SandboxService implements TerminalSandbox {
   readonly failClosed = true
+  get developerTools(): boolean { return this.engine.developerTools === true }
   private states = new Map<string, SandboxState>()
   private verified = new Set<string>()
   private readonly records: SandboxVerificationStore

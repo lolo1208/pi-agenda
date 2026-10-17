@@ -10,8 +10,8 @@ case "$(uname -s)" in
     package_label='导出 macOS(x64) 安装包'
     ;;
   MINGW*|MSYS*|CYGWIN*)
-    package_command=dist:win
-    package_label='导出 Windows(x64) 安装包'
+    package_command=dist:win:all
+    package_label='一次导出 Windows(x64) 安装包、便携版和 ZIP 包'
     ;;
 esac
 
@@ -20,20 +20,34 @@ while true; do
   printf '%s\n' \
     '1. 运行开发桌面端' \
     '2. 生成程序图标' \
-    "3. $package_label" \
+    "a. $package_label" \
     '0. 退出'
+  if [ "$package_command" = 'dist:win:all' ]; then
+    printf '%s\n' 'b. 导出 Windows(x64) 安装包' 'c. 导出 Windows(x64) 便携版' 'd. 导出 Windows(x64) ZIP 包'
+  fi
   printf '\n请输入菜单编号，按回车执行：'
   IFS= read -r selection || exit 0
   case "$selection" in
     1) command=dev ;;
     2) command=icons:generate ;;
-    3)
+    a|A)
       if [ -n "$package_command" ]; then
         command=$package_command
       else
         printf '当前系统暂不支持导出发行包，请选择其他菜单项。\n'
         continue
       fi
+      ;;
+    b|B|c|C|d|D)
+      if [ "$package_command" != 'dist:win:all' ]; then
+        printf '当前系统不支持 Windows 导出命令。\n'
+        continue
+      fi
+      case "$selection" in
+        b|B) command=dist:win ;;
+        c|C) command=dist:win:portable ;;
+        d|D) command=dist:win:zip ;;
+      esac
       ;;
     0) exit 0 ;;
     *) printf '输入无效，请输入菜单中显示的编号并按回车。\n'; continue ;;

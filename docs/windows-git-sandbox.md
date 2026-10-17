@@ -18,7 +18,11 @@
 
 ## 应用修复
 
-后续修复增加了仅对 AppContainer Git 子进程可见的私有项目入口，避免 Git 解析 cwd 时枚举真实父目录。启动探针与支持的查询均使用这一入口，仍指向原项目；宿主盘符和父目录 ACL 不变。实现范围和真实权限对照见 [Git 工作目录后续修复](windows-git-cwd-followup.md)。
+后续修复增加了仅对 AppContainer Git 子进程可见的私有项目入口，避免 Git 解析 cwd 时枚举真实父目录。实现方式：宿主在内置 AppContainer 宿主中为 Git 子进程创建私有项目入口（匿名对象目录与进程设备映射），以项目自身作为盘符根；不使用宿主 `DefineDosDevice`，不修改全局盘符、父目录 ACL 或 Mount Manager 权限，不提升管理员权限。对完整匹配的有限 Git 查询组合，宿主直接创建暂停状态的原生 `mingw64/bin/git.exe`，使用原有 AppContainer 令牌、继承句柄白名单及 Job，在线程运行前仅给 Git 子进程应用映射，Git 使用 `-C` 切入私有根；应用不通过 `cmd/git.exe` 包装程序启动 Git。启动探针使用同一条原生隔离路径。支持裸 `git status`、`git diff`、`git diff --cached`、`git rev-parse --show-toplevel` 及 status/diff 的常见只读输出选项（允许最多三条分号/换行组合及选项换序）；可重试查询关闭 optional locks、fsmonitor、untracked cache、外部 diff 和 textconv。任意脚本、其他 Git 参数和修改命令不套用此路径；不能据此宣称所有开发工具的路径兼容性都已解决。对象生命周期绑定进程句柄；映射/校验失败保持关闭，不降级为无隔离执行。完全访问模式首次选择时确认，后续不再逐项审批。
+
+本机验证：私有入口的 `GetLongPathNameW` 成功，同一 AppContainer 中真实物理路径返回错误码 5；真实令牌检查确认 Git 未脱离 AppContainer；并发项目各自隔离，项目外文件和联接读取被拒，取消与超时后宿主盘符集合不变。原故障机器仍需安装新构建复测。
+
+启动探针之外的遗漏及修复：此前仅接受若干完整命令字符串，裸 status、裸 diff 和不带 stat 的 cached diff 被遗漏，一条未匹配会令整段脚本退回普通 PowerShell 启动路径。现以同一参数解析结果驱动 MXC 查询保护、AppContainer 私有映射和恢复后的重试判断，三处识别范围一致；仍拒绝写文件参数、外部 diff/textconv、项目外 no-index 对比、管道、重定向及混合修改脚本的自动重试。
 
 - Windows 隔离命令使用专用临时区作为 `HOME` 和 `XDG_CONFIG_HOME`；`GIT_CONFIG_GLOBAL=NUL`、`GIT_CONFIG_NOSYSTEM=1`，避免读取隔离范围外的 Git 配置。项目自己的 `.git/config` 仍可读取。宿主的全局别名、过滤器及凭证配置不在自动隔离命令中继承。
 - MXC 和 AppContainer 首次准备每个项目执行环境时，在隔离进程自己的临时区写入最小空仓库，再从真实项目目录执行 `git --no-optional-locks --git-dir=<临时仓库> --work-tree=<项目> status --porcelain --untracked-files=no`。空索引且关闭未跟踪文件扫描，探针不修改用户项目的 `.git`，也不遍历项目内容；宿主 PATH 能定位 `git.exe`、但隔离进程找不到 Git 时明确报兼容性故障，不能当作未安装而跳过。宿主和沙箱均未找到 Git 时才跳过 Git 检查。不能用 `git init <临时目录>` 单独判断项目 cwd，因为 Git 会先切换到该临时目录。两个后端都验证工作目录兼容性，不能仅因 AppContainer 能读写文件就判定 Git 可用。

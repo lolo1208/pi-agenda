@@ -45,7 +45,7 @@ function parseState(value: unknown): ConversationState {
     }
     if (task.permissionMode !== undefined && !PERMISSION_MODES.includes(task.permissionMode as PermissionMode)) throw new Error('会话权限模式无效')
     if (task.intentMode !== undefined && !['plan', 'execute'].includes(String(task.intentMode))) throw new Error('会话目的模式无效')
-    if (typeof task.id !== 'string' || !task.id || ids.has(task.id) || typeof task.title !== 'string' || typeof task.preview !== 'string' || !(task.project === null || typeof task.project === 'string') || !(task.updatedAt === undefined || typeof task.updatedAt === 'number' && Number.isFinite(task.updatedAt)) || !(task.draft === undefined || typeof task.draft === 'string') || !(task.modelId === undefined || typeof task.modelId === 'string') || !images(task.draftImages)) throw new Error('会话文件格式无效')
+    if (typeof task.id !== 'string' || !task.id || ids.has(task.id) || typeof task.title !== 'string' || typeof task.preview !== 'string' || !(task.project === null || typeof task.project === 'string') || !(task.updatedAt === undefined || typeof task.updatedAt === 'number' && Number.isFinite(task.updatedAt)) || !(task.lastSentAt === undefined || typeof task.lastSentAt === 'number' && Number.isFinite(task.lastSentAt)) || !(task.draft === undefined || typeof task.draft === 'string') || !(task.modelId === undefined || typeof task.modelId === 'string') || !images(task.draftImages)) throw new Error('会话文件格式无效')
     ids.add(task.id)
     if (task.compaction !== undefined) {
       const compaction = record(task.compaction)

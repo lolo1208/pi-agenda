@@ -7,7 +7,7 @@ import path from 'node:path'
 import { ModelError } from './model-validation'
 import { sandboxEnvironment, type TerminalSandbox } from './terminal-sandbox'
 import { prepareSandboxConfiguration } from './sandbox-configuration'
-import { retryableGitInspection } from './git-working-directory-check'
+import { parseGitInspection } from './git-working-directory-check'
 import { findHostRuntime } from './windows-command-recovery'
 import { SandboxCompatibilityError } from './sandbox-compatibility-error'
 
@@ -38,11 +38,11 @@ export class AppContainerSandbox implements TerminalSandbox {
     if (await realpath(project) !== project || path.parse(project).root === project) throw new ModelError('项目路径发生变化或是整个盘符，不能配置 AppContainer')
   }
   async exec(command: string, project: string, options: Parameters<TerminalSandbox['exec']>[2]): Promise<{ exitCode: number }> {
-    if (retryableGitInspection(command)) {
+    const gitQueries = parseGitInspection(command)
+    if (gitQueries) {
       const deadline = options.timeout === undefined ? undefined : Date.now() + options.timeout * 1000
-      for (const line of command.trim().split(/;|\r?\n/).map(value => value.trim()).filter(Boolean)) {
+      for (const argv of gitQueries) {
         options.signal?.throwIfAborted()
-        const argv = line.split(/[ \t]+/).slice(1)
         if (argv[0] === 'diff') argv.splice(1, 0, '--no-ext-diff', '--no-textconv')
         const timeout = deadline === undefined ? undefined : Math.max(0, (deadline - Date.now()) / 1000)
         if (timeout === 0) throw new ModelError('Git 组合查询执行超时，已停止剩余查询')

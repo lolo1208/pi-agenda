@@ -11,7 +11,7 @@ export const SANDBOX_CHECKS = {
   private: { label: '测试应用会话、凭据和快照目录的保护', progress: '正在检测应用内部数据是否受到保护。' },
   links: { label: '测试目录链接能否绕过项目边界', progress: '正在检测目录链接是否会绕过项目边界。' },
   children: { label: '测试子进程是否继承隔离限制', progress: '正在检测子进程是否继承隔离限制。' },
-  network: { label: '测试本机与外部网络连接是否被禁止', progress: '正在检测是否已禁止网络访问。' }
+  network: { label: '测试开发工具的网络连接能力', progress: '正在检测开发命令能否连接网络。' }
 } as const
 export const SANDBOX_MESSAGES = {
   unconfigured: '首次准备安全执行环境，完成隔离检测后即可自动执行项目命令。',

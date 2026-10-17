@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import type { AgentEvent, PermissionMode, ToolApproval } from '../../shared/models'
+import path from 'node:path'
+import { DEFAULT_COMMAND_APPROVAL_REASON, type AgentEvent, type PermissionMode, type ToolApproval } from '../../shared/models'
 import { ModelError } from './model-validation'
 import { toolApprovalPreview } from './tool-approval-preview'
 
@@ -57,6 +58,47 @@ export function safeFileCommand(command: string): { tool: 'read' | 'ls'; path: s
   return { tool, path: target ?? '.' }
 }
 
+// 只收录常见参数下也不会写入文件的查看类程序；tree 等可借参数写文件的程序不收录（如 tree -o），
+// 且重定向、管道、组合脚本在下面的判定中一律排除。
+const readOnlyPrograms = new Set([
+  'ls', 'dir', 'pwd', 'get-location', 'gl', 'get-childitem', 'gci',
+  'cat', 'type', 'get-content', 'gc', 'more', 'head', 'tail', 'wc',
+  'stat', 'get-item', 'gi', 'test-path', 'resolve-path', 'get-itemproperty',
+  'grep', 'rg', 'select-string', 'sls', 'where', 'get-command', 'gcm',
+  'echo', 'write-output', 'write-host', 'get-help'
+])
+// 这些 Git 子命令只读取仓库状态；reflog 改写、外部 diff 与 --output 等写文件参数另行排除。
+const readOnlyGitSubcommands = new Set(['status', 'diff', 'log', 'show', 'rev-parse', 'rev-list', 'blame', 'describe', 'cat-file', 'ls-files', 'ls-tree', 'grep', 'shortlog', 'whatchanged', 'reflog', 'count-objects', 'for-each-ref', 'show-ref', 'name-rev', 'merge-base', 'version', 'help'])
+
+/** 只把完整单条且确定不写入项目文件的命令判为只读。组合、重定向、管道、变量展开、未知程序或可能写文件的参数都返回 false，继续保存修改前快照。 */
+export function readOnlyCommand(command: string): boolean {
+  const text = command.trim()
+  if (!text || text.length > 1024) return false
+  // 组合、管道、重定向、后台执行、命令替换与变量展开都可能间接写文件。
+  if (/[\r\n;&|<>`]|\$\(|\$\{|@\(/.test(text)) return false
+  const tokens = text.split(/\s+/)
+  const program = path.basename(tokens[0]).replace(/\.(exe|cmd|bat|ps1)$/i, '').toLowerCase()
+  const args = tokens.slice(1)
+  if (program !== 'git') return readOnlyPrograms.has(program)
+  let index = 0
+  // 跳过不改变只读语义的 Git 全局选项，例如 git --no-pager status。
+  while (index < args.length) {
+    const value = args[index]
+    // -c 可以重定义别名（如 alias.status=!脚本），不能据此判定只读。
+    if (value === '-c' || value.startsWith('-c')) return false
+    if (['--no-pager', '--paginate', '--no-optional-locks', '--literal-pathspecs', '--no-replace-objects'].includes(value)) { index++; continue }
+    if (value === '-C') { index += 2; continue }
+    if (value.startsWith('--git-dir=') || value.startsWith('--work-tree=') || value.startsWith('--namespace=') || value.startsWith('--exec-path=')) { index++; continue }
+    break
+  }
+  const subcommand = args[index]?.toLowerCase()
+  if (!subcommand || !readOnlyGitSubcommands.has(subcommand)) return false
+  const rest = args.slice(index + 1).map(value => value.toLowerCase())
+  if (subcommand === 'reflog' && rest.some(value => ['expire', 'delete', 'drop'].includes(value))) return false
+  if (['diff', 'log', 'show', 'grep'].includes(subcommand) && rest.some(value => value === '--ext-diff' || value === '--textconv' || value === '--output' || value.startsWith('--output='))) return false
+  return true
+}
+
 /** 默认或受限模式中的敏感路径；完全访问模式不再逐项确认。 */
 export function highRiskFileMutation(target: string): boolean {
   const normalized = target.replace(/\\/g, '/').toLowerCase()
@@ -67,7 +109,7 @@ export function highRiskFileMutation(target: string): boolean {
 
 export function commandApprovalReason(mode: PermissionMode, command: string): string | undefined {
   if (mode === 'full') return undefined
-  if (mode === 'default') return '“每次询问”模式下，终端命令需要逐次确认。未隔离的 Shell 命令获准后可能访问项目外文件或网络'
+  if (mode === 'default') return DEFAULT_COMMAND_APPROVAL_REASON
   if (safeLocationCommand(command) || safeFileCommand(command)) return undefined
   if (mode === 'auto') return '当前命令没有可用的项目系统沙箱。获准后将使用本机权限，可能访问项目外文件或网络'
   return undefined

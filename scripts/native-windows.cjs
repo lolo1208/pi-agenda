@@ -3,6 +3,7 @@ const path = require('node:path')
 const { createHash } = require('node:crypto')
 const { execFileSync } = require('node:child_process')
 const { createRequire } = require('node:module')
+const { run, getSevenZip, compressDirectory } = require('./seven-zip.cjs')
 
 // 只提交版本和校验信息；Windows 打包时才准备工具。
 const compilerManifest = require('./nsis-x64-manifest.json')
@@ -128,7 +129,7 @@ async function getCompiler(projectDir) {
   return preparingCompilers.get(key)
 }
 
-async function packageWindows({ projectDir, stagingDir, portable }) {
+async function packageWindows({ projectDir, stagingDir, portable, payload }) {
   const metadata = JSON.parse(await fs.readFile(path.join(projectDir, 'package.json'), 'utf8'))
   const appName = metadata.build.productName
   const executableName = metadata.build.win?.executableName ?? metadata.build.executableName ?? appName
@@ -136,12 +137,15 @@ async function packageWindows({ projectDir, stagingDir, portable }) {
   const unpacked = path.join(stagingDir, 'win-unpacked')
   await assertX64(path.join(unpacked, appExe))
   const compiler = await getCompiler(projectDir)
+  const tool = await getSevenZip(projectDir)
+  payload ??= await compressDirectory({ projectDir, stagingDir })
   const output = path.join(stagingDir, portable ? 'pi-agenda-portable.exe' : 'pi-agenda-setup.exe')
   const args = [
     '/V2', '/INPUTCHARSET', 'UTF8',
     `/DAPP_NAME=${appName}`, `/DAPP_EXE=${appExe}`, `/DAPP_VERSION=${metadata.version}`,
     `/DAPP_DIRECTORY_NAME=${executableName}`,
     `/DAPP_DIR=${unpacked}`, `/DOUTPUT_FILE=${output}`,
+    `/DPAYLOAD_FILE=${payload}`, `/DSEVEN_ZIP_DIR=${tool.directory}`,
     `/DAPP_ICON=${path.join(projectDir, 'resources', 'icons', 'icon.ico')}`,
   ]
   if (portable) {
@@ -170,7 +174,7 @@ async function packageWindows({ projectDir, stagingDir, portable }) {
   }
   args.push(path.join(projectDir, 'scripts', 'native-windows.nsi'))
   console.log(`正在生成原生 x64 ${portable ? '便携版' : '安装包'}……`)
-  execFileSync(compiler, args, { stdio: 'inherit', env: { ...process.env, NSISDIR: path.dirname(path.dirname(compiler)) } })
+  await run(compiler, args, { env: { ...process.env, NSISDIR: path.dirname(path.dirname(compiler)) } })
   await assertX64(output)
   return output
 }

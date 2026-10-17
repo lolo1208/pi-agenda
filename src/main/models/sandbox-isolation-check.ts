@@ -70,13 +70,12 @@ export async function checkSandboxIsolation(sandbox: TerminalSandbox, _project: 
     })
     await check('network', SANDBOX_CHECKS.network.label, async () => {
       let requests = 0
-      const server = createServer((_request, response) => { requests++; response.end('unexpected') })
+      const server = createServer((_request, response) => { requests++; response.setHeader('Content-Type', 'text/plain'); response.end(token) })
       await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve) })
       try {
         const address = server.address() as { port: number }
-        await blocked(`Invoke-WebRequest 'http://127.0.0.1:${address.port}' -UseBasicParsing -TimeoutSec 2 | Out-Null`)
-        if (requests) throw new ModelError('本机网络隔离无效，已禁用自动终端执行')
-        await blocked("[Net.Sockets.TcpClient]::new('1.1.1.1',443).Dispose()")
+        await run(`$body=(Invoke-WebRequest 'http://127.0.0.1:${address.port}' -UseBasicParsing -TimeoutSec 5).Content; if ($body -ne '${token}') { throw '网络响应不一致' }; Write-Output 'NETWORK_OK'`, 'NETWORK_OK')
+        if (requests !== 1) throw new ModelError('开发命令网络能力未通过验证')
       } finally { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())) }
     })
   } finally {
